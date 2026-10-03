@@ -7,7 +7,6 @@
     "@radix-ui/react-dialog": "^1.1.6",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
-    "@supabase/supabase-js": "^2.45.0",
     "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.11.6",
     "lucide-react": "^0.469.0",

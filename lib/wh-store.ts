@@ -12,8 +12,9 @@ export type Load = { shipment: string; pallet: string; wr: string; no: number; d
 export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string };
 
 const today = () => new Date().toLocaleDateString("en-US");
-const g = globalThis as unknown as { __wh3?: { items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; customers: Map<string, number>; n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number } } };
-export const db = (g.__wh3 ??= {
+type WhDb = { items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; customers: Map<string, number>; n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number } };
+const g = globalThis as unknown as { __wh3?: WhDb };
+export const db: WhDb = (g.__wh3 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
