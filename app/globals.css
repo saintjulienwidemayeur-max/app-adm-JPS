@@ -9,14 +9,16 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-se
 input:focus-visible, button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
 
 @media print {
-  body:has(.label-4x6) * { visibility: hidden }
-  .label-4x6, .label-4x6 * { visibility: visible }
-  .label-4x6 { position: fixed; inset: 0 }
   .no-print { display: none !important }
-  body:has(.wh-labels) * { visibility: hidden }
-  .wh-labels, .wh-labels * { visibility: visible }
-  .wh-labels { position: absolute; left: 0; top: 0 }
-  .wh-label { break-after: page }
+  /* Label sheets (4x3 in): the nav and toolbar are .no-print, so the labels just flow, one per page.
+     Don't hide the page with `visibility` + :has(): that rule out-ranks the "visible" one and prints a blank page. */
+  body:has(.wh-labels) .min-h-screen { min-height: 0 }
+  body:has(.wh-labels) main { max-width: none; margin: 0; padding: 0 }
+  .wh-labels { display: block }
+  .wh-label { margin: 0; overflow: hidden; break-inside: avoid; break-after: page }
+  .wh-label:last-child { break-after: auto }
+  /* Parcel label (4x6 in): printed by react-to-print from an iframe holding only the label. */
+  .label-4x6 { position: static }
 }
 
 body { background: #f3f5fa; }
