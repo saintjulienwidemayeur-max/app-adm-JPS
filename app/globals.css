@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --color-muted-foreground: oklch(0.552 0.016 285.938);
+  --color-brand: #20338f;
+}
+
+body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #18181b; background: #fff; font-feature-settings: "tnum"; }
+input:focus-visible, button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+
+@media print {
+  body:has(.label-4x6) * { visibility: hidden }
+  .label-4x6, .label-4x6 * { visibility: visible }
+  .label-4x6 { position: fixed; inset: 0 }
+  .no-print { display: none !important }
+  body:has(.wh-labels) * { visibility: hidden }
+  .wh-labels, .wh-labels * { visibility: visible }
+  .wh-labels { position: absolute; left: 0; top: 0 }
+  .wh-label { break-after: page }
+}
+
+body { background: #f3f5fa; }
+main { padding-bottom: 3rem; }
+main h1 { color: var(--color-brand); font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; }
+main .rounded-lg { background: #fff; border-color: #dfe4f0; box-shadow: 0 1px 3px rgb(16 24 40 / 0.06); }
+main table { background: #fff; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 1px 3px rgb(16 24 40 / 0.06); }
+main thead { background: #eaeefb; color: var(--color-brand) !important; }
+main tbody tr:hover { background: #f6f8fd; }
+main input:not([type="checkbox"]), main select { border-color: #cfd6e8; }
+@media print { body { background: #fff } main table, main .rounded-lg { box-shadow: none } main thead { background: none } }

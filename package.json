@@ -1,0 +1,30 @@
+{
+  "name": "jps-logistics",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.4",
+    "@supabase/supabase-js": "^2.45.0",
+    "html5-qrcode": "^2.3.8",
+    "jsbarcode": "^3.11.6",
+    "lucide-react": "^0.469.0",
+    "next": "^15.3.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-to-print": "^3.0.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/jsbarcode": "^3.11.4",
+    "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.7.0"
+  }
+}
