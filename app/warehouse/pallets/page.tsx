@@ -35,7 +35,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
       {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{/^\d+$/.test(q.ok) ? `Piece ${q.ok} loaded on ${pallet}.` : q.ok}</p>}
       {q.warn && <p role="alert" className="mt-1 text-sm font-medium text-amber-700">{q.warn}</p>}
-      {sh && <p className="mt-3 text-sm text-zinc-700">Cargo ID <b>{sh.cargoId}</b> · created {sh.date} · {sh.shipped ? <b className="text-green-700">Shipped {sh.shipped}</b> : "Open"}</p>}
+      {sh && <p className="mt-3 text-sm text-zinc-700">Cargo ID <b>{sh.cargoId}</b> · created {sh.date} · {sh.shipped ? <b className="text-green-700">Shipped {sh.shipped}</b> : "Open"} · <Link href={`/warehouse/shipments/${encodeURIComponent(sh.name)}`} className="text-brand underline">Booking and documents</Link></p>}
       {rows.length === 0 ? <p className="mt-6 text-sm text-zinc-600">Nothing loaded on {shipment} yet. Scan a piece label to start.</p> : (
         <>
           <table className="mt-3 w-full text-left text-sm">

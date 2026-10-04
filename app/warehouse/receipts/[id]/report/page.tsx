@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf } from "@/lib/wh-store";
 import { DISCLAIMER } from "@/lib/disclaimer";
+import { cardFees } from "@/lib/pricing";
 import { PrintButton } from "@/components/print-button";
 
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1 align-top";
@@ -18,6 +19,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const cf = r2(w.pieces.reduce((a, p) => a + cuft(p), 0));
   const chg = r2(w.pieces.reduce((a, p) => a + chargeable(p), 0));
   const ins = quote(w);
+  const card = cardFees(balance(w));
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 text-sm">
       <div className="flex items-start justify-between gap-4">
@@ -88,6 +90,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <dt>Balance</dt><dd className="text-right">{money(balance(w))}</dd>
         <dt>Status</dt><dd className="text-right">{payStatus(w)}</dd>
       </dl>
+
+      {balance(w) > 0 && (
+        <div className="ml-auto mt-4 max-w-xs border-2 border-black p-2">
+          <div className="text-center font-semibold">If Paying with Credit Card</div>
+          <div className="flex justify-between"><span>Card Present</span><b>{money(card.present.total)}</b></div>
+          <div className="flex justify-between"><span>Pay Online</span><b>{money(card.invoice.total)}</b></div>
+        </div>
+      )}
 
       <p className="mt-8 text-center text-xl font-bold text-zinc-700">THANK YOU FOR YOUR BUSINESS</p>
       <h2 className="mt-3 text-center text-lg font-bold text-zinc-700">***** Disclaimer *****</h2>

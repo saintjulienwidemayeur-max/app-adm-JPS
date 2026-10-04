@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, PAY_METHODS } from "@/lib/wh-store";
+import { cardFees } from "@/lib/pricing";
 import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, addFee, saveFees, deleteFee } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const mail = `mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics – Warehouse receipt ${code}`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nYour warehouse receipt ${code} has ${w.pieces.length} piece(s). Total: ${money(total(w))}.\n\nJP's Logistics & More`)}`;
   const lbs = r2(w.pieces.reduce((a, p) => a + p.lbs, 0));
   const ins = quote(w);
+  const card = cardFees(balance(w));
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/receipts" className="text-sm text-brand underline">All receipts</Link>
@@ -125,6 +127,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <dt>Balance</dt><dd className="text-right">{money(balance(w))}</dd>
           <dt>Payment status</dt><dd className="text-right font-semibold">{payStatus(w)}</dd>
         </dl>
+        {balance(w) > 0 && (
+          <p className="mt-2 text-xs text-zinc-600">
+            Paying the balance ({money(balance(w))}) by credit card: Square invoice <b>{money(card.invoice.total)}</b> · card present <b>{money(card.present.total)}</b> · manual entry <b>{money(card.manual.total)}</b>.
+          </p>
+        )}
       </section>
 
       <section className="mt-5 rounded-lg border p-3">
@@ -156,7 +163,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
       <section className="mt-5 rounded-lg border p-3">
         <div className="flex items-center justify-between"><h2 className="font-bold">Invoice and payments</h2>
-          {w.invoice ? <span className="text-sm font-semibold">{w.invoice}</span> : <form action={createInvoice}><input type="hidden" name="wr" value={w.id} /><Button type="submit" variant="outline">Create invoice</Button></form>}
+          {w.invoice ? <Link href={`/warehouse/invoices/${w.invoice}`} className="text-sm font-semibold text-brand underline">{w.invoice} · view invoice</Link> : <form action={createInvoice}><input type="hidden" name="wr" value={w.id} /><Button type="submit" variant="outline">Create invoice</Button></form>}
         </div>
         {w.payments.length > 0 && <ul className="mt-2 text-sm">{w.payments.map((p, i) => <li key={i}>{p.date} · {money(p.amount)} · {p.method}{p.ref && ` · ${p.ref}`}</li>)}</ul>}
         {balance(w) > 0 && (

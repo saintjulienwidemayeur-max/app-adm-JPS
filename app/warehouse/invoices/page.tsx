@@ -38,8 +38,8 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <td className={td}>{wrCode(w)}</td><td className={td}>{w.customer}</td><td className={td}>{repLabel(w.rep) || "–"}</td>
               <td className={td}>{money(total(w))}</td><td className={td}>{money(paidAmt(w))}</td>
               <td className={`${td} font-medium ${balance(w) > 0 ? "text-red-700" : "text-green-700"}`}>{money(balance(w))}</td>
-              <td className={td}><Link href={`/warehouse/receipts/${w.id}`} className="text-brand underline">Open</Link></td>
-              <td className={td}><Link href={`/warehouse/receipts/${w.id}/report`} className="text-brand underline">Receipt</Link></td>
+              <td className={td}><Link href={`/warehouse/invoices/${w.invoice}`} className="text-brand underline">Invoice</Link></td>
+              <td className={`${td} space-x-3`}><Link href={`/warehouse/receipts/${w.id}`} className="text-brand underline">Pay</Link><Link href={`/warehouse/receipts/${w.id}/report`} className="text-brand underline">Receipt</Link></td>
             </tr>))}</tbody>
           <tfoot><tr className="font-semibold"><td className={td} colSpan={5}>{rows.length} invoice{rows.length > 1 ? "s" : ""}</td><td className={td}>{money(sum(total))}</td><td className={td}>{money(sum(paidAmt))}</td><td className={td}>{money(sum(balance))}</td><td colSpan={2} /></tr></tfoot>
         </table>
