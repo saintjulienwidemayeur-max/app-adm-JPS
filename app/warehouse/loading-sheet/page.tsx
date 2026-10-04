@@ -1,4 +1,4 @@
-import { db } from "@/lib/wh-store";
+import { db, wrCode } from "@/lib/wh-store";
 import { PrintButton } from "@/components/print-button";
 
 export const metadata = { title: "Loading sheet · JP's Logistics" };
@@ -18,7 +18,7 @@ export default function Page() {
           <thead className="border-b-2 border-black"><tr>{["WR", "", "Item", "Type", "Bill To"].map((h, i) => <th key={i} className="px-2 py-1 font-semibold">{h}</th>)}</tr></thead>
           <tbody>{groups.flatMap(({ w, pieces }) => pieces.map((p, i) => (
             <tr key={p.no} className="border-b border-zinc-300">
-              <td className="px-2 py-1 font-bold">{i === 0 ? w.id : ""}</td>
+              <td className="px-2 py-1 font-bold">{i === 0 ? wrCode(w) : ""}</td>
               <td className="px-2 py-1"><span className="inline-block h-4 w-4 border-2 border-black" /></td>
               <td className="px-2 py-1">{p.no}</td><td className="px-2 py-1">{p.type}</td><td className="px-2 py-1">{i === 0 ? w.customer : ""}</td>
             </tr>)))}</tbody>

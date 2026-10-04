@@ -11,10 +11,14 @@ const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 function Fields() {
   return (
     <>
-      <Input name="customer" list="cust" placeholder="Customer (name, box JPS-1234 or e-mail)" className="min-w-56 flex-1" required />
+      <Input name="customer" list="cust" placeholder="Customer (name, number 1001, box JPS-1234 or e-mail)" className="min-w-56 flex-1" required />
       <select name="ship" aria-label="Ship type" className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
       <Input name="type" placeholder="Type (BOX - OTHER)" className="w-40" />
       {["l", "w", "h", "lbs"].map((k) => <Input key={k} name={k} type="number" step="any" min="0" placeholder={k === "lbs" ? "lb" : k.toUpperCase()} aria-label={k} className="w-16" required />)}
+      <div className="flex w-full flex-wrap gap-x-5 gap-y-1 text-sm">
+        <label className="flex items-center gap-1.5"><input type="radio" name="receipt" value="new" defaultChecked /> New warehouse receipt (JPF by air, JPL by boat)</label>
+        <label className="flex items-center gap-1.5"><input type="radio" name="receipt" value="open" /> Add to the customer&apos;s latest open receipt</label>
+      </div>
     </>
   );
 }
@@ -22,11 +26,10 @@ function Fields() {
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
   const open = db.items.filter((i) => !i.piece);
-  const customers = [...new Set(db.wrs.map((w) => w.customer))];
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>Consolidate</h1>
-      <p className="text-sm text-zinc-600">A parcel that ships alone gets its own JP&apos;s piece number and label. Several parcels for the same customer share one new piece.</p>
+      <p className="text-sm text-zinc-600">A parcel that ships alone gets its own JP&apos;s piece number and label. Several parcels for the same customer share one new piece. Each piece opens its own warehouse receipt, unless you choose to add it to the customer&apos;s open one.</p>
       {q.err && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{q.err}</p>}
       {q.ok && (
         <p className="mt-2 text-sm font-medium text-green-700">{q.ok}{" "}
@@ -34,7 +37,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
         </p>
       )}
       {q.warn && <p role="alert" className="mt-1 text-sm font-medium text-amber-700">{q.warn}</p>}
-      <datalist id="cust">{customers.map((c) => <option key={c} value={c} />)}</datalist>
+      <datalist id="cust">{db.customers.map((c) => <option key={c.no} value={c.name}>{c.no}</option>)}</datalist>
 
       <h2 className="mt-5 font-bold">Parcels waiting ({open.length})</h2>
       {open.length === 0 ? <p className="mt-1 text-sm text-zinc-600">Nothing to consolidate. Scan parcels on Received items first.</p> : (
