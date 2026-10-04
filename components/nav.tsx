@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PackageOpen, ReceiptText, ScanLine, Truck, ClipboardList, MapPin, Layers } from "lucide-react";
+import { PackageOpen, ReceiptText, ScanLine, Truck, ClipboardList, MapPin, Layers, Users, UserCheck, FileText } from "lucide-react";
 
 const links = [
   ["/warehouse/intake", "Intake", ScanLine], ["/warehouse/receiving", "Received items", PackageOpen],
   ["/warehouse/consolidate", "Consolidate", Layers], ["/warehouse/receipts", "Warehouse receipts", ReceiptText], ["/warehouse/pallets", "Load pallet", Truck],
   ["/warehouse/loading-sheet", "Loading sheet", ClipboardList], ["/warehouse/arrivals", "Arrivals PV", MapPin],
+  ["/warehouse/invoices", "Invoices", FileText], ["/warehouse/customers", "Customers", Users], ["/warehouse/reps", "Reps", UserCheck],
 ] as const;
 
 export function Nav() {

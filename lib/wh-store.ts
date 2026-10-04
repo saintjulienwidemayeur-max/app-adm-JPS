@@ -1,43 +1,109 @@
 // In-memory warehouse data (frontend mode). Resets when the dev server restarts.
+import { calcInsurance } from "./pricing";
+
 export type Ship = "Air" | "Ocean";
 export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string };
 export type Piece = { no: number; type: string; l: number; w: number; h: number; lbs: number };
 export type Payment = { date: string; amount: number; method: string; ref: string };
+export type Rep = { id: string; name: string; initials: string };
+// A customer ("Bill To"). `no` is the customer number printed on every label (1001, 1002, ...).
+// The consignee is the person who receives the cargo in the destination country; blank fields mean "same as the customer".
+export type Customer = {
+  no: number; name: string; phone: string; email: string; billing: string;
+  consignee: string; consigneePhone: string; consigneeAddress: string; consigneeCity: string; consigneeCountry: string;
+  rep: string; route: string;
+};
+// One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
+export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit" };
 export type WR = {
-  id: string; date: string; customer: string; email: string; route: string; ship: Ship; comments: string;
-  subtotal: number; handling: number; other: number; declared: number; insurance: "Declined" | "Accepted";
-  invoice?: string; hereNotified?: boolean; ready?: boolean; payments: Payment[]; pieces: Piece[];
+  id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
+  comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
+  fees: Fee[]; invoice?: string; hereNotified?: boolean; ready?: boolean; payments: Payment[]; pieces: Piece[];
 };
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string };
 export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string };
 
+export const FEE_PRESETS = [
+  "Freight charges", "Handling fees", "Packaging material E-container", "Packaging material EH-container",
+  "Import Conatel fees", "DG paperwork", "Pickup fee", "Repacking and consolidation", "Storage fee", "TCA",
+];
+export const CREDIT_PRESETS = ["Credit", "Discount", "Auth Discount", "Credit memo"];
+export const PAY_METHODS = ["Cash", "CashApp", "Check", "Credit Card", "Zelle", "Wire", "WISE", "Virement", "MonCash", "Voucher", "Credit Memo", "Auth Discount", "Depot", "NO CHARGE", "Other"];
+export const COUNTRIES = ["Haiti", "Dominican Republic", "United States", "Jamaica", "Bahamas", "Turks and Caicos", "Cuba", "Canada"];
+export const DEFAULT_CONTENTS = "Personal Web orders(eBay, Amazon, Shein, Temu, etc.)";
+
 const today = () => new Date().toLocaleDateString("en-US");
-type WhDb = { items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; customers: Map<string, number>; n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number } };
-const g = globalThis as unknown as { __wh3?: WhDb };
-export const db: WhDb = (g.__wh3 ??= {
+type WhDb = {
+  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; customers: Customer[]; reps: Rep[];
+  feeNames: { charge: string[]; credit: string[] };
+  n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number };
+};
+const g = globalThis as unknown as { __wh4?: WhDb };
+export const db: WhDb = (g.__wh4 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
-  wrs: [], loads: [], shipments: [], customers: new Map(), n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1 },
+  wrs: [], loads: [], shipments: [], customers: [], reps: [],
+  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] },
+  n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1 },
 });
 export const nowStr = today;
-export const custId = (name: string) => {
-  if (!db.customers.has(name)) db.customers.set(name, 1000 + db.customers.size * 7 + 1);
-  return db.customers.get(name)!;
-};
 export const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// ---------- Receipt numbers ----------
+// JPF = shipped by air, JPL = shipped by boat. The label code is  customer number | receipt | piece.
+export const prefix = (ship: Ship) => (ship === "Ocean" ? "JPL" : "JPF");
+export const wrCode = (w: Pick<WR, "ship" | "id">) => `${prefix(w.ship)}-${w.id}`;
+export const labelCode = (w: WR, p: Piece) => `${w.cust}|${wrCode(w)}|${p.no}`;
+
+// ---------- Customers and reps ----------
+export const findCustomer = (q: string) => {
+  const t = q.trim().toLowerCase();
+  if (!t) return undefined;
+  if (/^\d+$/.test(t)) return db.customers.find((c) => c.no === Number(t));
+  if (t.includes("@")) return db.customers.find((c) => c.email.toLowerCase() === t);
+  return db.customers.find((c) => c.name.toLowerCase() === t);
+};
+export const newCustomer = (name: string, init: Partial<Customer> = {}): Customer => {
+  const c: Customer = {
+    no: db.n.cust++, name, phone: "", email: "", billing: "", consignee: "", consigneePhone: "", consigneeAddress: "", consigneeCity: "",
+    consigneeCountry: "Haiti", rep: "", route: "", ...init,
+  };
+  db.customers.push(c);
+  return c;
+};
+export const custOf = (w: WR) => db.customers.find((c) => c.no === w.cust);
+export const repOf = (id: string) => db.reps.find((r) => r.id === id);
+export const repLabel = (id: string) => repOf(id)?.initials ?? "";
+
+// A new, empty receipt for a customer. The route and rep default to the customer's.
+export const openWR = (c: Customer, ship: Ship, init: Partial<WR> = {}): WR => {
+  const w: WR = {
+    id: String(db.n.wr++), date: nowStr(), customer: c.name, cust: c.no, email: c.email, route: c.route, rep: c.rep, ship,
+    comments: "", contents: DEFAULT_CONTENTS, declared: 0, insurance: "Declined", fees: [], payments: [], pieces: [], ...init,
+  };
+  db.wrs.unshift(w);
+  return w;
+};
+
+// ---------- Pieces ----------
 export const vol = (p: Piece) => r2((p.l * p.w * p.h) / 139);
 export const cuft = (p: Piece) => r2((p.l * p.w * p.h) / 1728);
 export const chargeable = (p: Piece) => Math.max(p.lbs, vol(p));
-export const labelCode = (w: WR, p: Piece) => `${custId(w.customer)}|JPF-${w.id}|${p.no}`;
 export const findPiece = (no: number) => {
   for (const w of db.wrs) { const p = w.pieces.find((x) => x.no === no); if (p) return { w, p }; }
 };
-// The charge is typed in by staff for each receipt (no fixed rate).
-export const subtotal = (w: WR) => w.subtotal;
-export const total = (w: WR) => r2(subtotal(w) + w.handling + w.other);
+
+// ---------- Money ----------
+// Charges and credits are typed in by staff as lines on each receipt (no fixed rate).
+// Insurance is automatic: only when the customer accepted it and a declared value is set.
+export const charges = (w: WR) => r2(w.fees.filter((f) => f.kind === "charge").reduce((a, f) => a + f.amount, 0));
+export const credits = (w: WR) => r2(w.fees.filter((f) => f.kind === "credit").reduce((a, f) => a + f.amount, 0));
+export const quote = (w: WR) => calcInsurance(w.declared);
+export const insuranceFee = (w: WR) => (w.insurance === "Accepted" ? quote(w).customer : 0);
+export const total = (w: WR) => Math.max(0, r2(charges(w) + insuranceFee(w) - credits(w)));
 export const paidAmt = (w: WR) => r2(w.payments.reduce((a, p) => a + p.amount, 0));
 export const balance = (w: WR) => r2(total(w) - paidAmt(w));
-export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? "Unpaid" : balance(w) <= 0 ? "Paid in full" : "Partially paid");
+export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && w.fees.length ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
 export const money = (n: number) => `$${n.toFixed(2)}`;

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db, findPiece, chargeable, r2 } from "@/lib/wh-store";
+import { db, findPiece, chargeable, r2, wrCode } from "@/lib/wh-store";
 import { loadPiece, unloadPiece, shipCargo } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { CameraScan } from "@/components/camera-scan";
 export const metadata = { title: "Load pallet · JP's Logistics" };
 type SP = Promise<Record<string, string | undefined>>;
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
+
+const wrOf = (id: string) => { const w = db.wrs.find((x) => x.id === id); return w ? wrCode(w) : id; };
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
@@ -39,7 +41,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           <table className="mt-3 w-full text-left text-sm">
             <thead><tr>{["Loaded", "WR – item", "Weight (lb)", "Chargeable (lb)", "Pallet", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
             <tbody>{rows.map(({ l, p }) => (
-              <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{l.date}</td><td className={td}>{l.wr} – {l.no}</td><td className={td}>{p.lbs}</td><td className={td}>{chargeable(p)}</td><td className={td}>{l.pallet}</td>
+              <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{l.date}</td><td className={td}>{wrOf(l.wr)} – {l.no}</td><td className={td}>{p.lbs}</td><td className={td}>{chargeable(p)}</td><td className={td}>{l.pallet}</td>
                 <td className={td}>{!sh?.shipped && <form action={unloadPiece}><input type="hidden" name="no" value={l.no} /><button className="text-red-700 underline" aria-label={`Remove ${l.no}`}>Remove</button></form>}</td></tr>))}</tbody>
             <tfoot><tr className="font-semibold"><td className={td}>{rows.length} pieces</td><td /><td className={td}>{lbs}</td><td className={td}>{chg}</td><td className={td} colSpan={2}>{r2(lbs * 0.45359)} KG</td></tr></tfoot>
           </table>

@@ -1,4 +1,4 @@
-import { db, money } from "@/lib/wh-store";
+import { db, money, balance, wrCode } from "@/lib/wh-store";
 import { receiveHere, arriveShipment, markHereNotified, markReady } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const shipped = db.shipments.filter((x) => x.shipped);
   const loads = db.loads.filter((l) => shipped.some((x) => x.name === l.shipment));
   const cust = (wr: string) => db.wrs.find((w) => w.id === wr)?.customer ?? "";
+  const code = (wr: string) => { const w = db.wrs.find((x) => x.id === wr); return w ? wrCode(w) : wr; };
   const expected = shipped.map((sh) => ({ sh, rows: loads.filter((l) => l.shipment === sh.name && !l.here) })).filter((g) => g.rows.length);
   const hereWrs = [...new Set(loads.filter((l) => l.here).map((l) => l.wr))].map((id) => {
     const w = db.wrs.find((x) => x.id === id)!;
@@ -42,7 +43,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           </div>
           <table className="w-full text-left text-sm">
             <thead><tr>{["WR", "Customer", "Item", "Pallet"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
-            <tbody>{rows.map((l) => <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{l.wr}</td><td className={td}>{cust(l.wr)}</td><td className={td}>{l.no}</td><td className={td}>{l.pallet}</td></tr>)}</tbody>
+            <tbody>{rows.map((l) => <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{code(l.wr)}</td><td className={td}>{cust(l.wr)}</td><td className={td}>{l.no}</td><td className={td}>{l.pallet}</td></tr>)}</tbody>
           </table>
         </section>
       ))}
@@ -52,12 +53,11 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
         <table className="mt-2 w-full text-left text-sm">
           <thead><tr>{["WR", "Customer", "Pieces here", "Balance", "Customer notified", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
           <tbody>{hereWrs.map(({ w, here, total }) => {
-            const paid = w.payments.reduce((a, p) => a + p.amount, 0);
-            const bal = Math.max(0, w.subtotal + w.handling + w.other - paid);
-            const mail = `mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics – your package is here (JPF-${w.id})`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nYour package(s) for receipt JPF-${w.id} have arrived in Pétion-Ville.\n\nJP's Logistics & More`)}`;
+            const bal = Math.max(0, balance(w));
+            const mail = `mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics – your package is here (${wrCode(w)})`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nYour package(s) for receipt ${wrCode(w)} have arrived in Pétion-Ville.\n\nJP's Logistics & More`)}`;
             return (
               <tr key={w.id} className="border-b border-zinc-100">
-                <td className={td}>JPF-{w.id}</td><td className={td}>{w.customer}</td>
+                <td className={td}>{wrCode(w)}</td><td className={td}>{w.customer}</td>
                 <td className={td}>{here} of {total}{here < total && <span className="ml-1 text-amber-700">· partial</span>}</td>
                 <td className={td}>{money(bal)}</td><td className={td}>{w.hereNotified ? "Yes" : "No"}</td>
                 <td className={`${td} flex gap-2`}>

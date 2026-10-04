@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, type Ship } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
 
 type F = FormData;
@@ -67,31 +67,37 @@ const CO = "/warehouse/consolidate";
 async function assign(ids: number[], f: F) {
   const items = db.items.filter((i) => ids.includes(i.id) && !i.piece);
   const customer = s(f, "customer"), ship = shipOf(s(f, "ship"));
+  const addToOpen = s(f, "receipt") === "open";
   if (!items.length) return back(CO, { err: "Select at least one parcel that is not assigned yet." });
   if (!customer) return back(CO, { err: "Enter the customer." });
   const p = pieceInput(f);
   if (typeof p === "string") return back(CO, { err: p });
-  let name = customer, email = "", clientId: string | undefined, warn = "";
+  let clientId: string | undefined, warn = "", site: { name?: string; email?: string } = {};
   if (syncEnabled()) {
     const r = await findClientId(customer);
-    if (r.id) { clientId = r.id; name = r.name ?? customer; email = r.email ?? ""; }
+    if (r.id) { clientId = r.id; site = r; }
     else warn = `${r.error} The customer won't see this on the website.`;
   }
-  // Reuse the customer's open receipt (same ship type, not invoiced, nothing loaded yet), otherwise open a new one.
-  let w = db.wrs.find((x) => x.customer.toLowerCase() === name.toLowerCase() && x.ship === ship && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no)));
-  if (!w) {
-    w = { id: String(db.n.wr++), date: nowStr(), customer: name, email, route: "", ship, comments: "", subtotal: 0, handling: 0, other: 0, declared: 0, insurance: "Declined", payments: [], pieces: [] };
-    db.wrs.unshift(w);
-  } else if (!w.email && email) w.email = email;
+  // Our own customer record (number 1001, 1002, ...): found by number, e-mail or name, otherwise created now.
+  let c = findCustomer(customer) ?? (site.name ? findCustomer(site.name) : undefined);
+  const created = !c;
+  if (!c) c = newCustomer(site.name ?? customer, { email: site.email ?? "" });
+  else if (!c.email && site.email) c.email = site.email;
+  // Every piece gets its own new warehouse receipt, unless staff chose to add it to the customer's open one
+  // (same ship type, not invoiced, nothing loaded yet).
+  const cno = c.no;
+  let w = addToOpen ? db.wrs.find((x) => x.cust === cno && x.ship === ship && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) : undefined;
+  if (!w) w = openWR(c, ship);
   const no = db.n.piece++;
   w.pieces.push({ no, ...p });
-  for (const i of items) Object.assign(i, { customer: name, piece: no, wr: w.id, clientId, ship });
+  for (const i of items) Object.assign(i, { customer: c.name, piece: no, wr: w.id, clientId, ship });
   // Website status 0 "received in Miami": the customer gets the push + e-mail now that we know who it belongs to.
   if (clientId) for (const i of items) {
     const e = await pushStatus({ tracking: i.tracking, status: 0, clientId, type: ship, description: `JP's ${no}` });
     if (e) warn = `Piece created, but the website update failed: ${e}`;
   }
-  return back(CO, { ok: `Piece ${no} created for ${name} (JPF-${w.id}) from ${items.length} parcel${items.length > 1 ? "s" : ""}.`, wr: w.id, piece: String(no), ...(warn && { warn }) });
+  const note = created ? ` New customer ${c.no}: add the phone and address on the Customers page.` : "";
+  return back(CO, { ok: `Piece ${no} created for ${c.name} (customer ${c.no}, ${wrCode(w)}${addToOpen ? "" : ", new receipt"}) from ${items.length} parcel${items.length > 1 ? "s" : ""}.${note}`, wr: w.id, piece: String(no), ...(warn && { warn }) });
 }
 export async function singlePiece(f: F) { return assign([num(f, "id")], f); }
 export async function combinePieces(f: F) { return assign(f.getAll("id").map(Number), f); }
@@ -99,22 +105,146 @@ export async function combinePieces(f: F) { return assign(f.getAll("id").map(Num
 // ---------- Warehouse receipts ----------
 const emailOk = (e: string) => !e || /^\S+@\S+\.\S+$/.test(e);
 export async function createWR(f: F) {
-  const customer = s(f, "customer"), email = s(f, "email");
-  if (!customer) back("/warehouse/receipts", { err: "Enter the customer name." });
-  if (!emailOk(email)) back("/warehouse/receipts", { err: "That email address isn't valid." });
-  const id = String(db.n.wr++);
-  db.wrs.unshift({ id, date: nowStr(), customer, email, route: s(f, "route").toUpperCase(), ship: shipOf(s(f, "ship")), comments: s(f, "comments"), subtotal: 0, handling: 0, other: 0, declared: 0, insurance: "Declined", payments: [], pieces: [] });
-  back(wrPath(id));
+  const name = s(f, "customer");
+  if (!name) back("/warehouse/receipts", { err: "Choose or enter the customer." });
+  const c = findCustomer(name) ?? newCustomer(name);
+  const route = s(f, "route").toUpperCase();
+  const w = openWR(c, shipOf(s(f, "ship")), { comments: s(f, "comments"), ...(route && { route }) });
+  back(wrPath(w.id));
 }
 export async function updateWR(f: F) {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
-  const [subtotal, handling, other, declared] = [num(f, "subtotal") || 0, num(f, "handling") || 0, num(f, "other") || 0, num(f, "declared") || 0];
-  if ([subtotal, handling, other, declared].some((v) => v < 0)) back(wrPath(w.id), { err: "Charges and declared value can't be negative." });
+  const declared = num(f, "declared") || 0;
+  if (declared < 0) back(wrPath(w.id), { err: "Declared value can't be negative." });
   if (!emailOk(s(f, "email"))) back(wrPath(w.id), { err: "That email address isn't valid." });
-  Object.assign(w, { subtotal, handling, other, declared, insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined", comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email") });
+  const ship = shipOf(s(f, "ship") || w.ship);
+  if (ship !== w.ship && w.pieces.some((p) => db.loads.some((l) => l.no === p.no))) back(wrPath(w.id), { err: "Some pieces are already loaded on a shipment, so the ship type can't change." });
+  if (ship !== w.ship) db.items.forEach((i) => { if (i.wr === w.id) i.ship = ship; });
+  Object.assign(w, {
+    declared, ship, rep: repOf(s(f, "rep")) ? s(f, "rep") : "", insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined",
+    contents: s(f, "contents"), comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email"),
+  });
   back(wrPath(w.id), { ok: "Receipt saved." });
 }
+
+// ---------- Fees and credits on a receipt ----------
+const feeKind = (v: string): Fee["kind"] => (v === "credit" ? "credit" : "charge");
+const feeSum = (fees: Fee[], k: Fee["kind"]) => fees.filter((x) => x.kind === k).reduce((a, x) => a + x.amount, 0);
+const tooMuchCredit = (w: WR, fees: Fee[]) => r2(feeSum(fees, "charge") + insuranceFee(w) - feeSum(fees, "credit")) < 0;
+// New fee names are remembered so they show up in the list next time.
+const remember = (kind: Fee["kind"], label: string) => {
+  const list = db.feeNames[kind];
+  if (!list.some((n) => n.toLowerCase() === label.toLowerCase())) list.push(label);
+};
+const feeProblem = (label: string, amount: number) => {
+  if (!label) return "Enter what the fee is for.";
+  if (label.length > 60) return "The fee name is too long (60 characters max).";
+  if (!Number.isFinite(amount) || amount <= 0) return "Enter an amount more than 0.";
+  if (amount > 100000) return "That amount is too large.";
+  return "";
+};
+export async function addFee(f: F) {
+  const w = db.wrs.find((x) => x.id === s(f, "wr"));
+  if (!w) return;
+  const label = s(f, "label"), amount = num(f, "amount"), kind = feeKind(s(f, "kind"));
+  const bad = feeProblem(label, amount);
+  if (bad) back(wrPath(w.id), { err: bad });
+  const fee: Fee = { id: db.n.fee++, label, amount: r2(amount), kind };
+  if (tooMuchCredit(w, [...w.fees, fee])) back(wrPath(w.id), { err: "That credit is more than the charges on this receipt." });
+  w.fees.push(fee);
+  remember(kind, label);
+  back(wrPath(w.id), { ok: `${kind === "credit" ? "Credit" : "Fee"} "${label}" added.` });
+}
+export async function saveFees(f: F) {
+  const w = db.wrs.find((x) => x.id === s(f, "wr"));
+  if (!w) return;
+  const next: Fee[] = [];
+  for (const fee of w.fees) {
+    const label = s(f, `label_${fee.id}`), amount = num(f, `amount_${fee.id}`), kind = feeKind(s(f, `kind_${fee.id}`));
+    const bad = feeProblem(label, amount);
+    if (bad) back(wrPath(w.id), { err: `${fee.label}: ${bad}` });
+    next.push({ id: fee.id, label, amount: r2(amount), kind });
+  }
+  if (tooMuchCredit(w, next)) back(wrPath(w.id), { err: "Credits can't be more than the charges on this receipt." });
+  w.fees = next;
+  next.forEach((x) => remember(x.kind, x.label));
+  back(wrPath(w.id), { ok: "Fees saved." });
+}
+// Bound from the page as deleteFee.bind(null, receiptId, feeId): a submit button with a function formAction can't carry a name/value.
+export async function deleteFee(wr: string, fee: number) {
+  const w = db.wrs.find((x) => x.id === wr);
+  if (!w) return;
+  const next = w.fees.filter((x) => x.id !== fee);
+  if (tooMuchCredit(w, next)) back(wrPath(w.id), { err: "Remove the credit first: it would be more than the remaining charges." });
+  w.fees = next;
+  back(wrPath(w.id), { ok: "Fee removed." });
+}
+
+// ---------- Customers ----------
+const CU = "/warehouse/customers";
+const custFields = (f: F) => ({
+  name: s(f, "name"), phone: s(f, "phone"), email: s(f, "email"), billing: s(f, "billing"),
+  consignee: s(f, "consignee"), consigneePhone: s(f, "consigneePhone"), consigneeAddress: s(f, "consigneeAddress"),
+  consigneeCity: s(f, "consigneeCity"), consigneeCountry: s(f, "consigneeCountry") || "Haiti",
+  rep: repOf(s(f, "rep")) ? s(f, "rep") : "", route: s(f, "route").toUpperCase(),
+});
+const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+export async function createCustomer(f: F) {
+  const d = custFields(f);
+  if (!d.name) back(CU, { err: "Enter the customer's full name." });
+  if (!emailOk(d.email)) back(CU, { err: "That email address isn't valid." });
+  const dup = db.customers.find((x) => sameName(x.name, d.name));
+  if (dup) back(`${CU}/${dup.no}`, { err: `${dup.name} already exists (customer ${dup.no}).` });
+  const c = newCustomer(d.name, d);
+  back(`${CU}/${c.no}`, { ok: `Customer ${c.no} created.` });
+}
+export async function saveCustomer(f: F) {
+  const c = db.customers.find((x) => x.no === num(f, "no"));
+  if (!c) return;
+  const d = custFields(f), here = `${CU}/${c.no}`;
+  if (!d.name) back(here, { err: "Enter the customer's full name." });
+  if (!emailOk(d.email)) back(here, { err: "That email address isn't valid." });
+  const dup = db.customers.find((x) => x !== c && sameName(x.name, d.name));
+  if (dup) back(here, { err: `${dup.name} already exists (customer ${dup.no}).` });
+  const oldEmail = c.email;
+  Object.assign(c, d);
+  // Keep this customer's receipts and parcels in step with the new name / e-mail.
+  const mine = new Set<string>();
+  for (const w of db.wrs) if (w.cust === c.no) { mine.add(w.id); w.customer = c.name; if (!w.email || w.email === oldEmail) w.email = c.email; }
+  db.items.forEach((i) => { if (i.wr && mine.has(i.wr)) i.customer = c.name; });
+  back(here, { ok: "Customer saved." });
+}
+
+// ---------- Representatives ----------
+const RP = "/warehouse/reps";
+const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 3).toUpperCase();
+const repInput = (f: F) => { const name = s(f, "name"); return { name, initials: (s(f, "initials") || initialsOf(name)).toUpperCase().slice(0, 4) }; };
+export async function addRep(f: F) {
+  const { name, initials } = repInput(f);
+  if (!name) back(RP, { err: "Enter the representative's name." });
+  if (!initials) back(RP, { err: "Enter the initials." });
+  if (db.reps.some((r) => r.initials === initials)) back(RP, { err: `The initials ${initials} are already used by another representative.` });
+  db.reps.push({ id: String(db.n.rep++), name, initials });
+  back(RP, { ok: `${name} (${initials}) added.` });
+}
+export async function saveRep(f: F) {
+  const r = db.reps.find((x) => x.id === s(f, "id"));
+  if (!r) return;
+  const { name, initials } = repInput(f);
+  if (!name || !initials) back(RP, { err: "Enter the name and the initials." });
+  if (db.reps.some((x) => x !== r && x.initials === initials)) back(RP, { err: `The initials ${initials} are already used by another representative.` });
+  Object.assign(r, { name, initials });
+  back(RP, { ok: `${name} saved.` });
+}
+export async function deleteRep(f: F) {
+  const r = db.reps.find((x) => x.id === s(f, "id"));
+  if (!r) return;
+  if (db.customers.some((c) => c.rep === r.id) || db.wrs.some((w) => w.rep === r.id)) back(RP, { err: `${r.name} still has customers or receipts. Give them to another representative first.` });
+  db.reps = db.reps.filter((x) => x !== r);
+  back(RP, { ok: `${r.name} removed.` });
+}
+
 function pieceInput(f: F) {
   const [l, w, h, lbs] = [num(f, "l"), num(f, "w"), num(f, "h"), num(f, "lbs")];
   if (![l, w, h, lbs].every((v) => Number.isFinite(v) && v > 0)) return "Enter the weight and all three dimensions (more than 0).";
@@ -246,5 +376,5 @@ export async function markReady(f: F) {
   w.ready = true;
   let failed = 0;
   for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId })) failed++;
-  back(AR, { ok: `JPF-${w.id} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+  back(AR, { ok: `${wrCode(w)} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 }
