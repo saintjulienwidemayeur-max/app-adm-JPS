@@ -2,13 +2,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/auth";
-import { PackageOpen, ReceiptText, ScanLine, Truck, ClipboardList, MapPin, Layers, Users, UserCheck, FileText, Ship, Wallet } from "lucide-react";
+import { PackageOpen, ReceiptText, ScanLine, Truck, ClipboardList, MapPin, Layers, Users, UserCheck, FileText, Ship, Wallet, ShoppingCart } from "lucide-react";
 
 const links = [
   ["/warehouse/intake", "Intake", ScanLine], ["/warehouse/receiving", "Received items", PackageOpen],
   ["/warehouse/consolidate", "Consolidate", Layers], ["/warehouse/receipts", "Warehouse receipts", ReceiptText], ["/warehouse/pallets", "Load pallet", Truck], ["/warehouse/shipments", "Shipments", Ship],
   ["/warehouse/loading-sheet", "Loading sheet", ClipboardList], ["/warehouse/arrivals", "Arrivals PV", MapPin],
-  ["/warehouse/invoices", "Invoices", FileText], ["/warehouse/billing", "Billing", Wallet], ["/warehouse/customers", "Customers", Users], ["/warehouse/reps", "Reps", UserCheck],
+  ["/warehouse/invoices", "Invoices", FileText], ["/warehouse/billing", "Billing", Wallet], ["/warehouse/orders", "Orders", ShoppingCart], ["/warehouse/customers", "Customers", Users], ["/warehouse/reps", "Reps", UserCheck],
 ] as const;
 
 export function Nav({ mode = "memory", auth = false }: { mode?: "memory" | "database" | "down"; auth?: boolean }) {
