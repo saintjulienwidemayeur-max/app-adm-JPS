@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
 import { ensureLoaded, flush } from "./persist";
 import { isoToUs, usToIso } from "./clock";
@@ -360,6 +360,80 @@ export const cancelInvoice = act(async (wr: string) => {
   const no = w.invoice;
   w.invoice = undefined; w.invoiceDate = undefined; w.invoiceSent = undefined;
   back(wrPath(w.id), { ok: `Invoice ${no} cancelled.` });
+});
+
+// ---------- Purchase orders ----------
+const OR = "/warehouse/orders";
+const orderPath = (id: string) => `${OR}/${id}`;
+const itemInput = (desc: string, qty: number, unit: number) => {
+  if (!desc) return "Enter what is being bought.";
+  if (desc.length > 120) return "The description is too long (120 characters max).";
+  if (!Number.isFinite(qty) || qty <= 0 || qty > 10000) return "Enter a quantity (more than 0).";
+  if (!Number.isFinite(unit) || unit < 0 || unit > 1_000_000) return "Enter the unit cost (0 or more).";
+  return "";
+};
+export const createOrder = act(async (f: F) => {
+  const name = s(f, "customer");
+  if (!name) back(OR, { err: "Choose or enter the customer." });
+  const c = findCustomer(name) ?? newCustomer(name);
+  const o: Order = { id: newOrderId(), date: nowStr(), cust: c.no, customer: c.name, rep: c.rep, items: [], feePct: ORDER_FEE_PCT, notes: "", status: "Invoiced", tracking: "", payments: [] };
+  db.orders.unshift(o);
+  back(orderPath(o.id));
+});
+export const saveOrder = act(async (f: F) => {
+  const o = db.orders.find((x) => x.id === s(f, "order"));
+  if (!o) return;
+  const pct = num(f, "feePct");
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) back(orderPath(o.id), { err: "The purchasing fee must be between 0 and 100 %." });
+  const status = s(f, "status") as OrderStatus;
+  Object.assign(o, { feePct: pct, notes: s(f, "notes"), tracking: s(f, "tracking"), rep: repOf(s(f, "rep")) ? s(f, "rep") : "", status: ORDER_STATUSES.includes(status) ? status : o.status });
+  back(orderPath(o.id), { ok: "Order saved." });
+});
+export const addOrderItem = act(async (f: F) => {
+  const o = db.orders.find((x) => x.id === s(f, "order"));
+  if (!o) return;
+  const desc = s(f, "desc"), qty = num(f, "qty"), unit = num(f, "unit"), bad = itemInput(desc, qty, unit);
+  if (bad) back(orderPath(o.id), { err: bad });
+  o.items.push({ desc, qty, unit: r2(unit) });
+  back(orderPath(o.id), { ok: `"${desc}" added.` });
+});
+export const saveOrderItems = act(async (f: F) => {
+  const o = db.orders.find((x) => x.id === s(f, "order"));
+  if (!o) return;
+  const next = [];
+  for (let i = 0; i < o.items.length; i++) {
+    const desc = s(f, `d_${i}`), qty = num(f, `q_${i}`), unit = num(f, `u_${i}`), bad = itemInput(desc, qty, unit);
+    if (bad) back(orderPath(o.id), { err: `Line ${i + 1}: ${bad}` });
+    next.push({ desc, qty, unit: r2(unit) });
+  }
+  o.items = next;
+  back(orderPath(o.id), { ok: "Lines saved." });
+});
+// Bound from the page: deleteOrderItem.bind(null, orderId, lineIndex).
+export const deleteOrderItem = act(async (id: string, i: number) => {
+  const o = db.orders.find((x) => x.id === id);
+  if (!o) return;
+  o.items.splice(i, 1);
+  back(orderPath(o.id), { ok: "Line removed." });
+});
+export const addOrderPayment = act(async (f: F) => {
+  const o = db.orders.find((x) => x.id === s(f, "order"));
+  if (!o) return;
+  const amount = num(f, "amount"), method = s(f, "method");
+  if (!Number.isFinite(amount) || amount <= 0) back(orderPath(o.id), { err: "Enter a payment amount more than 0." });
+  if (amount > orderBalance(o) + 0.001) back(orderPath(o.id), { err: `That's more than the balance of ${money(orderBalance(o))}.` });
+  if (!method || method.length > 30) back(orderPath(o.id), { err: "Choose how the customer paid (or type a new payment method)." });
+  o.payments.push({ date: nowStr(), time: timeNow(), amount: r2(amount), method, ref: s(f, "ref") });
+  rememberName(db.payMethods, method);
+  if (orderBalance(o) <= 0 && o.status === "Invoiced") o.status = "Paid";
+  back(orderPath(o.id), { ok: `Payment of ${money(r2(amount))} by ${method} added. ${orderBalance(o) > 0 ? `Balance left: ${money(orderBalance(o))}.` : "Paid in full: JP's can buy the order."}` });
+});
+export const voidOrderPayment = act(async (id: string, i: number) => {
+  const o = db.orders.find((x) => x.id === id);
+  if (!o || !o.payments[i]) return;
+  const [p] = o.payments.splice(i, 1);
+  if (orderBalance(o) > 0 && o.status === "Paid") o.status = "Invoiced";
+  back(orderPath(o.id), { ok: `Payment of ${money(p.amount)} (${p.method}) voided.` });
 });
 
 // Scan a parcel on Consolidate: it is selected for consolidation, and if it was never received it is received right now.

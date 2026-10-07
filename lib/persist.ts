@@ -29,6 +29,7 @@ const TABLES: Table[] = [
   { name: "wh_items", key: (i: { id: number }) => String(i.id), rows: () => db.items, set: (r) => { db.items = r; } },
   { name: "wh_loads", key: (l: { no: number }) => String(l.no), rows: () => db.loads, set: (r) => { db.loads = r; } },
   { name: "wh_shipments", key: (s: { name: string }) => s.name, rows: () => db.shipments, set: (r) => { db.shipments = r; } },
+  { name: "wh_orders", key: (o: { id: string }) => o.id, rows: () => db.orders, set: (r) => { db.orders = (r as { id: string }[]).sort((a, b) => b.id.slice(4, 6).localeCompare(a.id.slice(4, 6)) || b.id.localeCompare(a.id)) as never; } },
   { name: "wh_bookings", key: (b: { shipment: string }) => b.shipment, rows: () => db.bookings, set: (r) => { db.bookings = r; } },
 ];
 // Counters and the fee-name lists are two small rows of a "meta" table.

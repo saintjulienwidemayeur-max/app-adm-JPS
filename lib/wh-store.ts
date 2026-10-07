@@ -25,6 +25,14 @@ export type WR = {
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
   fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; hereNotified?: boolean; ready?: boolean; payments: Payment[]; pieces: Piece[];
 };
+// A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
+export type OrderItem = { desc: string; qty: number; unit: number };
+export type OrderStatus = "Invoiced" | "Paid" | "Purchased" | "In Miami" | "Closed";
+export const ORDER_STATUSES: OrderStatus[] = ["Invoiced", "Paid", "Purchased", "In Miami", "Closed"];
+export type Order = {
+  id: string; date: string; cust: number; customer: string; rep: string; items: OrderItem[]; feePct: number; notes: string;
+  status: OrderStatus; tracking: string; payments: Payment[];
+};
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string };
 export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string };
 
@@ -55,17 +63,17 @@ export const DEFAULT_CONTENTS = "Personal Web orders(eBay, Amazon, Shein, Temu, 
 
 const today = () => usToday();
 type WhDb = {
-  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; customers: Customer[]; reps: Rep[];
+  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; customers: Customer[]; reps: Rep[];
   feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
   n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number };
 };
-const g = globalThis as unknown as { __wh7?: WhDb };
-export const db: WhDb = (g.__wh7 ??= {
+const g = globalThis as unknown as { __wh8?: WhDb };
+export const db: WhDb = (g.__wh8 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
-  wrs: [], loads: [], shipments: [], bookings: [], customers: [], reps: [],
+  wrs: [], loads: [], shipments: [], bookings: [], orders: [], customers: [], reps: [],
   feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
   n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001 },
 });
@@ -162,7 +170,24 @@ export const total = (w: WR) => Math.max(0, r2(charges(w) + insuranceFee(w) - cr
 export const paidAmt = (w: WR) => r2(w.payments.reduce((a, p) => a + p.amount, 0));
 export const balance = (w: WR) => r2(total(w) - paidAmt(w));
 export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && w.fees.length ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
-export const money = (n: number) => `$${n.toFixed(2)}`;
+export const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Lists that grow as staff type new values (fee names, payment methods, carriers).
 export const remember = (list: string[], v: string) => { if (v && !list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v); };
+
+// ---------- Purchase orders ----------
+export const ORDER_FEE_PCT = 15;
+export const orderLine = (i: OrderItem) => r2(i.qty * i.unit);
+export const orderSubtotal = (o: Order) => r2(o.items.reduce((a, i) => a + orderLine(i), 0));
+export const orderFee = (o: Order) => r2((orderSubtotal(o) * o.feePct) / 100);
+export const orderTotal = (o: Order) => r2(orderSubtotal(o) + orderFee(o));
+export const orderPaid = (o: Order) => r2(o.payments.reduce((a, p) => a + p.amount, 0));
+export const orderBalance = (o: Order) => r2(orderTotal(o) - orderPaid(o));
+// Number like 100726-001: the date (MMDDYY) and the order of the day.
+export const newOrderId = () => {
+  const [m, d, y] = nowStr().split("/");
+  const stem = `${m.padStart(2, "0")}${d.padStart(2, "0")}${y.slice(2)}`;
+  return `${stem}-${String(db.orders.filter((o) => o.id.startsWith(stem)).length + 1).padStart(3, "0")}`;
+};
+export const orderNotes = (o: Order) =>
+  o.notes || `***Prices include purchasing fees of ${o.feePct}% and shipping and delivery to Miami warehouse ****ETA 2 days Miami, Florida *****Full payment is required before purchasing ******Once the complete order will be in Miami warehouse, JP's will ship it out via Air Freight to Haiti.`;
