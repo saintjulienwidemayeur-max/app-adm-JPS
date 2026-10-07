@@ -11,3 +11,7 @@ export const isoToday = (d = new Date()) => { const p = parts(d); return `${p.ye
 export const isoToUs = (iso: string) => { const [y, m, d] = iso.split("-"); return `${Number(m)}/${Number(d)}/${y}`; };
 export const usToday = (d = new Date()) => isoToUs(isoToday(d));
 export const timeNow = (d = new Date()) => { const p = parts(d); const h = Number(p.hour); return `${h % 12 || 12}:${p.minute} ${h < 12 ? "AM" : "PM"}`; };
+
+export const usToIso = (us: string) => { const [m, d, y] = us.split("/"); return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`; };
+// Whole days between a stored M/D/YYYY date and today (Miami).
+export const daysSince = (us: string) => Math.round((Date.parse(`${isoToday()}T00:00Z`) - Date.parse(`${usToIso(us)}T00:00Z`)) / 86400000);

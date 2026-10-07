@@ -7,21 +7,23 @@ import { COMPANY, HAITI, ORIGIN, DESTINATION, AIRLINE } from "./company";
 export type Ship = "Air" | "Ocean";
 export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string };
 export type Piece = { no: number; type: string; l: number; w: number; h: number; lbs: number };
-export type Payment = { date: string; time?: string; amount: number; method: string; ref: string };
+export type Payment = { date: string; time?: string; amount: number; method: string; ref: string; batch?: string };
+// Money a customer paid beyond what they owed (positive) and credit used later (negative).
+export type CreditEntry = { date: string; time: string; amount: number; note: string; batch?: string; method?: string; ref?: string };
 export type Rep = { id: string; name: string; initials: string };
 // A customer ("Bill To"). `no` is the customer number printed on every label (1001, 1002, ...).
 // The consignee is the person who receives the cargo in the destination country; blank fields mean "same as the customer".
 export type Customer = {
   no: number; name: string; phone: string; email: string; billing: string;
   consignee: string; consigneePhone: string; consigneeAddress: string; consigneeCity: string; consigneeCountry: string;
-  rep: string; route: string;
+  rep: string; route: string; creditLog?: CreditEntry[];
 };
 // One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
 export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit" };
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; hereNotified?: boolean; ready?: boolean; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; hereNotified?: boolean; ready?: boolean; payments: Payment[]; pieces: Piece[];
 };
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string };
 export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string };
@@ -55,17 +57,17 @@ const today = () => usToday();
 type WhDb = {
   items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; customers: Customer[]; reps: Rep[];
   feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
-  n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number };
+  n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number };
 };
-const g = globalThis as unknown as { __wh6?: WhDb };
-export const db: WhDb = (g.__wh6 ??= {
+const g = globalThis as unknown as { __wh7?: WhDb };
+export const db: WhDb = (g.__wh7 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
   wrs: [], loads: [], shipments: [], bookings: [], customers: [], reps: [],
   feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
-  n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1 },
+  n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001 },
 });
 export const nowStr = today;
 export const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -92,6 +94,7 @@ export const newCustomer = (name: string, init: Partial<Customer> = {}): Custome
   db.customers.push(c);
   return c;
 };
+export const creditOf = (c: Customer | undefined) => r2((c?.creditLog ?? []).reduce((a, e) => a + e.amount, 0));
 export const custOf = (w: WR) => db.customers.find((c) => c.no === w.cust);
 export const repOf = (id: string) => db.reps.find((r) => r.id === id);
 export const repLabel = (id: string) => repOf(id)?.initials ?? "";

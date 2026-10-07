@@ -30,7 +30,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       </form>
       {rows.length === 0 ? <p className="mt-6 text-sm text-zinc-600">No invoices match.</p> : (
         <table className="mt-4 w-full text-left text-sm">
-          <thead><tr>{["Invoice", "Shipment", "Receipt", "Bill To", "Rep", "Amount", "Paid", "Balance", "", ""].map((h, i) => <th key={i} className={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Invoice", "Shipment", "Receipt", "Bill To", "Rep", "Amount", "Paid", "Balance", "Emailed", "", ""].map((h, i) => <th key={i} className={th}>{h}</th>)}</tr></thead>
           <tbody>{rows.map((w) => (
             <tr key={w.id} className="border-b border-zinc-100">
               <td className={`${td} font-semibold`}>{w.invoice}</td>
@@ -38,10 +38,11 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <td className={td}>{wrCode(w)}</td><td className={td}>{w.customer}</td><td className={td}>{repLabel(w.rep) || "–"}</td>
               <td className={td}>{money(total(w))}</td><td className={td}>{money(paidAmt(w))}</td>
               <td className={`${td} font-medium ${balance(w) > 0 ? "text-red-700" : "text-green-700"}`}>{money(balance(w))}</td>
+              <td className={td}>{w.invoiceSent ? "Yes" : "No"}</td>
               <td className={td}><Link href={`/warehouse/invoices/${w.invoice}`} className="text-brand underline">Invoice</Link></td>
               <td className={`${td} space-x-3`}><Link href={`/warehouse/receipts/${w.id}`} className="text-brand underline">Pay</Link><Link href={`/warehouse/receipts/${w.id}/report`} className="text-brand underline">Receipt</Link></td>
             </tr>))}</tbody>
-          <tfoot><tr className="font-semibold"><td className={td} colSpan={5}>{rows.length} invoice{rows.length > 1 ? "s" : ""}</td><td className={td}>{money(sum(total))}</td><td className={td}>{money(sum(paidAmt))}</td><td className={td}>{money(sum(balance))}</td><td colSpan={2} /></tr></tfoot>
+          <tfoot><tr className="font-semibold"><td className={td} colSpan={5}>{rows.length} invoice{rows.length > 1 ? "s" : ""}</td><td className={td}>{money(sum(total))}</td><td className={td}>{money(sum(paidAmt))}</td><td className={td}>{money(sum(balance))}</td><td colSpan={3} /></tr></tfoot>
         </table>
       )}
     </main>

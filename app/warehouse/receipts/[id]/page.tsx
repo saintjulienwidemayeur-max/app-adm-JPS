@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf } from "@/lib/wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, creditOf } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
-import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, addFee, saveFees, deleteFee } from "@/lib/wh-actions";
+import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -177,6 +177,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           </table>
         )}
         <p className="mt-2 text-sm">Total <b>{money(total(w))}</b> · paid <b>{money(paidAmt(w))}</b> · balance <b>{money(balance(w))}</b></p>
+        {balance(w) > 0 && creditOf(cust) > 0 && (
+          <form className="mt-2 flex items-center gap-2 text-sm">Customer credit on file: <b>{money(creditOf(cust))}</b><button formAction={applyCredit.bind(null, w.id)} className="rounded-md border border-zinc-300 bg-white px-3 py-1 font-medium hover:bg-zinc-100">Apply to this balance</button></form>
+        )}
+        <p className="mt-1 text-xs"><Link href={`/warehouse/payments?c=${w.cust}`} className="text-brand underline">Receive one payment for several receipts</Link></p>
         {balance(w) > 0 && (
           <form action={addPayment} className="mt-3 grid gap-2 sm:grid-cols-[8rem_11rem_1fr_auto]">
             <input type="hidden" name="wr" value={w.id} />
