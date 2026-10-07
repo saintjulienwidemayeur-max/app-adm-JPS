@@ -2,8 +2,16 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
+import { ensureLoaded, flush } from "./persist";
+import { isoToUs } from "./clock";
+
+// Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
+const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
+  await ensureLoaded();
+  try { await fn(...a); } finally { await flush(); }
+};
 
 type F = FormData;
 const s = (f: F, k: string) => String(f.get(k) ?? "").trim();
@@ -21,22 +29,23 @@ type Sess = { batch: string; date: string; carrier: string; receiver: string };
 const readSess = async (): Promise<Sess | null> => { try { return JSON.parse((await cookies()).get("rcv")?.value ?? "null"); } catch { return null; } };
 const cleanTracking = (v: string) => v.toUpperCase().replace(/\s+/g, "");
 
-export async function startDelivery(f: F) {
+export const startDelivery = act(async (f: F) => {
   const carrier = s(f, "carrier").toUpperCase(), receiver = s(f, "receiver");
   const d = new Date(s(f, "date") + "T00:00");
   if (!carrier || !receiver || isNaN(d.getTime())) back(RX, { err: "Choose the date, the carrier and who is receiving." });
+  rememberName(db.carriers, carrier);
   const jar = await cookies();
-  jar.set("rcv", JSON.stringify({ batch: String(db.n.batch++), date: d.toLocaleDateString("en-US"), carrier, receiver }), { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 16 });
+  jar.set("rcv", JSON.stringify({ batch: String(db.n.batch++), date: isoToUs(s(f, "date")), carrier, receiver }), { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 16 });
   jar.set("rcv_name", receiver, { path: "/", maxAge: 60 * 60 * 24 * 365 });
   back(RX);
-}
-export async function endDelivery() {
+});
+export const endDelivery = act(async () => {
   const sess = await readSess();
   (await cookies()).delete("rcv");
   const n = sess ? db.items.filter((i) => i.batch === sess.batch).length : 0;
   back(RX, sess ? { ok: `Delivery closed: ${n} parcel${n === 1 ? "" : "s"} from ${sess.carrier}.` } : {});
-}
-export async function receiveItem(f: F) {
+});
+export const receiveItem = act(async (f: F) => {
   const sess = await readSess();
   if (!sess) back(RX, { err: "Start a delivery first." });
   const tracking = cleanTracking(s(f, "tracking"));
@@ -45,8 +54,8 @@ export async function receiveItem(f: F) {
   if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, received by ${dup.receiver}). Not counted.` });
   db.items.push({ id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking });
   back(RX, { ok: tracking });
-}
-export async function updateItem(f: F) {
+});
+export const updateItem = act(async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));
   if (!it) return;
   if (tracking.length < 6) back(RX, { err: "The tracking number is too short." });
@@ -54,13 +63,13 @@ export async function updateItem(f: F) {
   it.tracking = tracking;
   it.carrier = s(f, "carrier").toUpperCase() || it.carrier;
   back(RX, { ok: tracking });
-}
-export async function deleteItem(f: F) {
+});
+export const deleteItem = act(async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id"));
   if (it?.piece) back(RX, { err: `${it.tracking} is part of piece ${it.piece}. Delete that piece first.` });
   db.items = db.items.filter((i) => i.id !== num(f, "id"));
   revalidatePath(RX);
-}
+});
 
 // ---------- Consolidation: parcels -> JP's pieces ----------
 const CO = "/warehouse/consolidate";
@@ -99,20 +108,20 @@ async function assign(ids: number[], f: F) {
   const note = created ? ` New customer ${c.no}: add the phone and address on the Customers page.` : "";
   return back(CO, { ok: `Piece ${no} created for ${c.name} (customer ${c.no}, ${wrCode(w)}${addToOpen ? "" : ", new receipt"}) from ${items.length} parcel${items.length > 1 ? "s" : ""}.${note}`, wr: w.id, piece: String(no), ...(warn && { warn }) });
 }
-export async function singlePiece(f: F) { return assign([num(f, "id")], f); }
-export async function combinePieces(f: F) { return assign(f.getAll("id").map(Number), f); }
+export const singlePiece = act(async (f: F) => { await assign([num(f, "id")], f); });
+export const combinePieces = act(async (f: F) => { await assign(f.getAll("id").map(Number), f); });
 
 // ---------- Warehouse receipts ----------
 const emailOk = (e: string) => !e || /^\S+@\S+\.\S+$/.test(e);
-export async function createWR(f: F) {
+export const createWR = act(async (f: F) => {
   const name = s(f, "customer");
   if (!name) back("/warehouse/receipts", { err: "Choose or enter the customer." });
   const c = findCustomer(name) ?? newCustomer(name);
   const route = s(f, "route").toUpperCase();
   const w = openWR(c, shipOf(s(f, "ship")), { comments: s(f, "comments"), ...(route && { route }) });
   back(wrPath(w.id));
-}
-export async function updateWR(f: F) {
+});
+export const updateWR = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const declared = num(f, "declared") || 0;
@@ -126,7 +135,7 @@ export async function updateWR(f: F) {
     contents: s(f, "contents"), comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email"),
   });
   back(wrPath(w.id), { ok: "Receipt saved." });
-}
+});
 
 // ---------- Fees and credits on a receipt ----------
 const feeKind = (v: string): Fee["kind"] => (v === "credit" ? "credit" : "charge");
@@ -144,7 +153,7 @@ const feeProblem = (label: string, amount: number) => {
   if (amount > 100000) return "That amount is too large.";
   return "";
 };
-export async function addFee(f: F) {
+export const addFee = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const label = s(f, "label"), amount = num(f, "amount"), kind = feeKind(s(f, "kind"));
@@ -155,8 +164,8 @@ export async function addFee(f: F) {
   w.fees.push(fee);
   remember(kind, label);
   back(wrPath(w.id), { ok: `${kind === "credit" ? "Credit" : "Fee"} "${label}" added.` });
-}
-export async function saveFees(f: F) {
+});
+export const saveFees = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const next: Fee[] = [];
@@ -170,16 +179,16 @@ export async function saveFees(f: F) {
   w.fees = next;
   next.forEach((x) => remember(x.kind, x.label));
   back(wrPath(w.id), { ok: "Fees saved." });
-}
+});
 // Bound from the page as deleteFee.bind(null, receiptId, feeId): a submit button with a function formAction can't carry a name/value.
-export async function deleteFee(wr: string, fee: number) {
+export const deleteFee = act(async (wr: string, fee: number) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w) return;
   const next = w.fees.filter((x) => x.id !== fee);
   if (tooMuchCredit(w, next)) back(wrPath(w.id), { err: "Remove the credit first: it would be more than the remaining charges." });
   w.fees = next;
   back(wrPath(w.id), { ok: "Fee removed." });
-}
+});
 
 // ---------- Customers ----------
 const CU = "/warehouse/customers";
@@ -190,7 +199,7 @@ const custFields = (f: F) => ({
   rep: repOf(s(f, "rep")) ? s(f, "rep") : "", route: s(f, "route").toUpperCase(),
 });
 const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-export async function createCustomer(f: F) {
+export const createCustomer = act(async (f: F) => {
   const d = custFields(f);
   if (!d.name) back(CU, { err: "Enter the customer's full name." });
   if (!emailOk(d.email)) back(CU, { err: "That email address isn't valid." });
@@ -198,8 +207,8 @@ export async function createCustomer(f: F) {
   if (dup) back(`${CU}/${dup.no}`, { err: `${dup.name} already exists (customer ${dup.no}).` });
   const c = newCustomer(d.name, d);
   back(`${CU}/${c.no}`, { ok: `Customer ${c.no} created.` });
-}
-export async function saveCustomer(f: F) {
+});
+export const saveCustomer = act(async (f: F) => {
   const c = db.customers.find((x) => x.no === num(f, "no"));
   if (!c) return;
   const d = custFields(f), here = `${CU}/${c.no}`;
@@ -214,21 +223,21 @@ export async function saveCustomer(f: F) {
   for (const w of db.wrs) if (w.cust === c.no) { mine.add(w.id); w.customer = c.name; if (!w.email || w.email === oldEmail) w.email = c.email; }
   db.items.forEach((i) => { if (i.wr && mine.has(i.wr)) i.customer = c.name; });
   back(here, { ok: "Customer saved." });
-}
+});
 
 // ---------- Representatives ----------
 const RP = "/warehouse/reps";
 const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 3).toUpperCase();
 const repInput = (f: F) => { const name = s(f, "name"); return { name, initials: (s(f, "initials") || initialsOf(name)).toUpperCase().slice(0, 4) }; };
-export async function addRep(f: F) {
+export const addRep = act(async (f: F) => {
   const { name, initials } = repInput(f);
   if (!name) back(RP, { err: "Enter the representative's name." });
   if (!initials) back(RP, { err: "Enter the initials." });
   if (db.reps.some((r) => r.initials === initials)) back(RP, { err: `The initials ${initials} are already used by another representative.` });
   db.reps.push({ id: String(db.n.rep++), name, initials });
   back(RP, { ok: `${name} (${initials}) added.` });
-}
-export async function saveRep(f: F) {
+});
+export const saveRep = act(async (f: F) => {
   const r = db.reps.find((x) => x.id === s(f, "id"));
   if (!r) return;
   const { name, initials } = repInput(f);
@@ -236,14 +245,14 @@ export async function saveRep(f: F) {
   if (db.reps.some((x) => x !== r && x.initials === initials)) back(RP, { err: `The initials ${initials} are already used by another representative.` });
   Object.assign(r, { name, initials });
   back(RP, { ok: `${name} saved.` });
-}
-export async function deleteRep(f: F) {
+});
+export const deleteRep = act(async (f: F) => {
   const r = db.reps.find((x) => x.id === s(f, "id"));
   if (!r) return;
   if (db.customers.some((c) => c.rep === r.id) || db.wrs.some((w) => w.rep === r.id)) back(RP, { err: `${r.name} still has customers or receipts. Give them to another representative first.` });
   db.reps = db.reps.filter((x) => x !== r);
   back(RP, { ok: `${r.name} removed.` });
-}
+});
 
 function pieceInput(f: F) {
   const [l, w, h, lbs] = [num(f, "l"), num(f, "w"), num(f, "h"), num(f, "lbs")];
@@ -252,15 +261,15 @@ function pieceInput(f: F) {
   if (lbs > 2000) return "Weight can't be more than 2000 lb.";
   return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs };
 }
-export async function addPiece(f: F) {
+export const addPiece = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const p = pieceInput(f);
   if (typeof p === "string") back(wrPath(w.id), { err: p });
   else w.pieces.push({ no: db.n.piece++, ...p });
   back(wrPath(w.id));
-}
-export async function updatePiece(f: F) {
+});
+export const updatePiece = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
   const piece = w?.pieces.find((x) => x.no === no);
   if (!w || !piece) return;
@@ -269,34 +278,94 @@ export async function updatePiece(f: F) {
   if (typeof p === "string") back(wrPath(w.id), { err: p });
   else Object.assign(piece, p);
   back(wrPath(w.id), { ok: `Piece ${no} updated.` });
-}
-export async function deletePiece(f: F) {
+});
+export const deletePiece = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
   if (!w) return;
   if (db.loads.some((l) => l.no === no)) back(wrPath(w.id), { err: `Piece ${no} is already loaded. Remove it from the pallet first.` });
   db.items.forEach((i) => { if (i.piece === no) Object.assign(i, { piece: undefined, wr: undefined, customer: undefined, clientId: undefined }); });
   w.pieces = w.pieces.filter((x) => x.no !== no);
   back(wrPath(w.id), { ok: `Piece ${no} deleted.` });
-}
-export async function createInvoice(f: F) {
+});
+export const createInvoice = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   if (!w.pieces.length) back(wrPath(w.id), { err: "Add at least one piece before invoicing." });
-  if (!w.invoice) w.invoice = `INV-${db.n.inv++}`;
+  if (!w.invoice) { w.invoice = `INV-${db.n.inv++}`; w.invoiceDate = nowStr(); }
   back(wrPath(w.id), { ok: `Invoice ${w.invoice} created.` });
-}
-export async function addPayment(f: F) {
+});
+export const addPayment = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const amount = num(f, "amount");
   if (!Number.isFinite(amount) || amount <= 0) back(wrPath(w.id), { err: "Enter a payment amount more than 0." });
   if (amount > balance(w) + 0.001) back(wrPath(w.id), { err: `That's more than the balance of ${money(balance(w))}.` });
-  w.payments.push({ date: nowStr(), amount, method: s(f, "method") || "Cash", ref: s(f, "ref") });
-  back(wrPath(w.id), { ok: `Payment of ${money(amount)} added.` });
-}
+  const method = s(f, "method");
+  if (!method || method.length > 30) back(wrPath(w.id), { err: "Choose how the customer paid (or type a new payment method)." });
+  const paid = r2(amount);
+  w.payments.push({ date: nowStr(), time: timeNow(), amount: paid, method, ref: s(f, "ref") });
+  rememberName(db.payMethods, method);
+  back(wrPath(w.id), { ok: `Payment of ${money(paid)} by ${method} added. ${balance(w) > 0 ? `Balance left: ${money(balance(w))}.` : "Paid in full."}` });
+});
+// Bound from the page: voidPayment.bind(null, receiptId, paymentIndex).
+export const voidPayment = act(async (wr: string, i: number) => {
+  const w = db.wrs.find((x) => x.id === wr);
+  if (!w || !w.payments[i]) return;
+  const [p] = w.payments.splice(i, 1);
+  back(wrPath(w.id), { ok: `Payment of ${money(p.amount)} (${p.method}) voided.` });
+});
+
+// Scan a parcel on Consolidate: it is selected for consolidation, and if it was never received it is received right now.
+export const scanForConsolidate = act(async (f: F) => {
+  const tracking = cleanTracking(s(f, "tracking")), picks = s(f, "picks").split(",").filter(Boolean);
+  const go = (q: Record<string, string>): never => back(CO, { ...(picks.length && { pick: picks.join(",") }), ...q });
+  if (tracking.length < 6) go({ err: "That doesn't look like a tracking number. Scan it again." });
+  let it = db.items.find((i) => i.tracking === tracking), added = false;
+  if (!it) {
+    const sess = await readSess();
+    it = { id: db.n.item++, date: sess?.date ?? nowStr(), carrier: sess?.carrier ?? "UNKNOWN", tracking, receiver: sess?.receiver ?? (await cookies()).get("rcv_name")?.value ?? "Consolidate", batch: sess?.batch ?? "0" };
+    db.items.push(it);
+    added = true;
+  } else if (it.piece) go({ err: `${tracking} already belongs to ${it.customer} (piece ${it.piece}).` });
+  const id = String(it!.id);
+  back(CO, { pick: (picks.includes(id) ? picks : [...picks, id]).join(","), ok: added ? `${tracking} was not in the system: it is received now. Fill in the customer below.` : `${tracking} selected. Fill in the customer below.` });
+});
+
+// ---------- Shipments and their booking info ----------
+const shipPath = (name: string) => `/warehouse/shipments/${encodeURIComponent(name)}`;
+const SH = "/warehouse/shipments";
+const yn = (v: string): "YES" | "NO" => (v === "YES" ? "YES" : "NO");
+export const createShipment = act(async (f: F) => {
+  const name = s(f, "name").replace(/\s+/g, " ");
+  if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(name)) back(SH, { err: "Name the shipment with letters, numbers, spaces, dots, dashes or underscores (40 characters max), for example PL-AIR-10-06-2026." });
+  if (db.shipments.some((x) => x.name.toLowerCase() === name.toLowerCase())) back(SH, { err: `${name} already exists.` });
+  const sh = { name, ship: shipOf(s(f, "ship")), cargoId: String(db.n.cargo++), date: nowStr() };
+  db.shipments.push(sh);
+  openBooking(sh);
+  back(shipPath(name), { ok: `Shipment ${name} created (Cargo ID ${sh.cargoId}).` });
+});
+export const saveBooking = act(async (f: F) => {
+  const name = s(f, "shipment"), sh = db.shipments.find((x) => x.name === name);
+  if (!sh) return;
+  const b = openBooking(sh), here = shipPath(name);
+  const blCost = num(f, "blCost") || 0, declared = num(f, "declared") || 0;
+  const contents = [0, 1, 2].map((i) => ({ label: s(f, `cl_${i}`), value: num(f, `cv_${i}`) || 0 }));
+  if ([blCost, declared, ...contents.map((c) => c.value)].some((v) => v < 0)) back(here, { err: "Amounts can't be negative." });
+  const pallets: typeof b.pallets = {};
+  cargoOf(name).pallets.forEach((_, i) => {
+    const pn = s(f, `pn_${i}`);
+    if (pn) pallets[pn] = { type: s(f, `pt_${i}`).toUpperCase() || "PALLET", l: Math.max(0, num(f, `pl_${i}`) || 0), w: Math.max(0, num(f, `pw_${i}`) || 0), h: Math.max(0, num(f, `ph_${i}`) || 0) };
+  });
+  const keys = ["line", "awb", "bol", "sailDate", "origin", "destination", "vessel", "freightPayableAt", "shipperName", "shipperAddress", "shipperCity", "shipperContact",
+    "consigneeName", "consigneeAddress", "consigneeCity", "consigneeContact", "receiver", "notify", "notifyContact", "pieceType", "commodity",
+    "containerSize", "spotDate", "spotTime", "containerId", "seal", "tag", "arrivalDate", "notes", "signer"] as const;
+  for (const k of keys) b[k] = s(f, k);
+  Object.assign(b, { blCost, declared, contents, pallets, sed: yn(s(f, "sed")), refrigeration: yn(s(f, "refrigeration")), hazmat: yn(s(f, "hazmat")) });
+  back(here, { ok: "Booking saved." });
+});
 
 // ---------- Pallets / containers / cargo ----------
-export async function loadPiece(f: F) {
+export const loadPiece = act(async (f: F) => {
   const shipment = s(f, "shipment"), pallet = s(f, "pallet"), ship = shipOf(s(f, "ship"));
   const q = { shipment, pallet, ship };
   const no = Number(s(f, "code").split("|").pop());
@@ -310,13 +379,13 @@ export async function loadPiece(f: F) {
   if (hit!.w.ship !== sh.ship) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} is ${hit!.w.ship} but ${shipment} is ${sh.ship}.` });
   db.loads.push({ shipment, pallet, wr: hit!.w.id, no, date: nowStr() });
   back(PL, { ...q, ship: sh.ship, ok: String(no) });
-}
-export async function unloadPiece(f: F) {
+});
+export const unloadPiece = act(async (f: F) => {
   const l = db.loads.find((x) => x.no === num(f, "no"));
   if (l && !db.shipments.find((x) => x.name === l.shipment)?.shipped) db.loads = db.loads.filter((x) => x !== l);
   revalidatePath(PL);
-}
-export async function shipCargo(f: F) {
+});
+export const shipCargo = act(async (f: F) => {
   const sh = db.shipments.find((x) => x.name === s(f, "shipment"));
   const q = { shipment: s(f, "shipment"), pallet: s(f, "pallet"), ship: s(f, "ship") };
   if (!sh || sh.shipped) return;
@@ -330,7 +399,7 @@ export async function shipCargo(f: F) {
   let failed = 0;
   for (const i of mine) if (i.clientId && await pushStatus({ tracking: i.tracking, status: 1, clientId: i.clientId })) failed++;
   back(PL, { ...q, ok: `${sh.name} shipped (Cargo ID ${sh.cargoId}).`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
-}
+});
 
 // ---------- Arrivals in Pétion-Ville ----------
 const AR = "/warehouse/arrivals";
@@ -344,7 +413,7 @@ async function syncArrived(wrIds: string[]) {
   }
   return failed;
 }
-export async function receiveHere(f: F) {
+export const receiveHere = act(async (f: F) => {
   const raw = s(f, "code"), no = Number(raw.split("|").pop());
   const l = db.loads.find((x) => x.no === no);
   if (!l) back(AR, { err: `Piece "${raw}" was never loaded on a shipment. Check the label.` });
@@ -353,28 +422,28 @@ export async function receiveHere(f: F) {
   l!.here = nowStr();
   const failed = await syncArrived([l!.wr]);
   back(AR, { ok: `Piece ${no} received.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
-}
-export async function arriveShipment(f: F) {
+});
+export const arriveShipment = act(async (f: F) => {
   const name = s(f, "shipment");
   if (!db.shipments.find((x) => x.name === name)?.shipped) return;
   const touched = new Set<string>();
   db.loads.forEach((l) => { if (l.shipment === name && !l.here) { l.here = nowStr(); touched.add(l.wr); } });
   const failed = await syncArrived([...touched]);
   back(AR, { ok: `All pieces of ${name} are marked as here.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
-}
-export async function markHereNotified(f: F) {
+});
+export const markHereNotified = act(async (f: F) => {
   // Email sending is not wired yet: this only records that the customer was told.
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (w) w.hereNotified = true;
   revalidatePath(AR);
-}
+});
 
 // Website status 3 "ready for pickup".
-export async function markReady(f: F) {
+export const markReady = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   w.ready = true;
   let failed = 0;
   for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId })) failed++;
   back(AR, { ok: `${wrCode(w)} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
-}
+});

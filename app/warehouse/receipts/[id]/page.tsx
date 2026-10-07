@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, PAY_METHODS } from "@/lib/wh-store";
-import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, addFee, saveFees, deleteFee } from "@/lib/wh-actions";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf } from "@/lib/wh-store";
+import { cardFees } from "@/lib/pricing";
+import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, addFee, saveFees, deleteFee } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -24,6 +25,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const mail = `mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics – Warehouse receipt ${code}`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nYour warehouse receipt ${code} has ${w.pieces.length} piece(s). Total: ${money(total(w))}.\n\nJP's Logistics & More`)}`;
   const lbs = r2(w.pieces.reduce((a, p) => a + p.lbs, 0));
   const ins = quote(w);
+  const card = cardFees(balance(w));
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/receipts" className="text-sm text-brand underline">All receipts</Link>
@@ -125,6 +127,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <dt>Balance</dt><dd className="text-right">{money(balance(w))}</dd>
           <dt>Payment status</dt><dd className="text-right font-semibold">{payStatus(w)}</dd>
         </dl>
+        {balance(w) > 0 && (
+          <p className="mt-2 text-xs text-zinc-600">
+            Paying the balance ({money(balance(w))}) by credit card: Square invoice <b>{money(card.invoice.total)}</b> · card present <b>{money(card.present.total)}</b> · manual entry <b>{money(card.manual.total)}</b>.
+          </p>
+        )}
       </section>
 
       <section className="mt-5 rounded-lg border p-3">
@@ -156,16 +163,28 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
       <section className="mt-5 rounded-lg border p-3">
         <div className="flex items-center justify-between"><h2 className="font-bold">Invoice and payments</h2>
-          {w.invoice ? <span className="text-sm font-semibold">{w.invoice}</span> : <form action={createInvoice}><input type="hidden" name="wr" value={w.id} /><Button type="submit" variant="outline">Create invoice</Button></form>}
+          {w.invoice ? <Link href={`/warehouse/invoices/${w.invoice}`} className="text-sm font-semibold text-brand underline">{w.invoice} · view invoice</Link> : <form action={createInvoice}><input type="hidden" name="wr" value={w.id} /><Button type="submit" variant="outline">Create invoice</Button></form>}
         </div>
-        {w.payments.length > 0 && <ul className="mt-2 text-sm">{w.payments.map((p, i) => <li key={i}>{p.date} · {money(p.amount)} · {p.method}{p.ref && ` · ${p.ref}`}</li>)}</ul>}
+        {w.payments.length > 0 && (
+          <table className="mt-2 w-full text-left text-sm">
+            <thead><tr>{["Date", "Method", "Reference", "Amount", "", ""].map((h, i) => <th key={i} className={th}>{h}</th>)}</tr></thead>
+            <tbody>{w.payments.map((p, i) => (
+              <tr key={i} className="border-b border-zinc-100">
+                <td className={td}>{p.date}{p.time && ` ${p.time}`}</td><td className={td}>{p.method}</td><td className={td}>{p.ref || "–"}</td><td className={td}>{money(p.amount)}</td>
+                <td className={td}><Link href={`/warehouse/receipts/${w.id}/payments/${i}`} className="text-brand underline">Payment receipt</Link></td>
+                <td className={td}><form><button formAction={voidPayment.bind(null, w.id, i)} className="text-red-700 underline" aria-label={`Void payment ${i + 1}`}>Void</button></form></td>
+              </tr>))}</tbody>
+          </table>
+        )}
+        <p className="mt-2 text-sm">Total <b>{money(total(w))}</b> · paid <b>{money(paidAmt(w))}</b> · balance <b>{money(balance(w))}</b></p>
         {balance(w) > 0 && (
-          <form action={addPayment} className="mt-3 grid gap-2 sm:grid-cols-[8rem_10rem_1fr_auto]">
+          <form action={addPayment} className="mt-3 grid gap-2 sm:grid-cols-[8rem_11rem_1fr_auto]">
             <input type="hidden" name="wr" value={w.id} />
-            <Input name="amount" type="number" step="0.01" min="0" placeholder="Amount ($)" aria-label="Amount" required />
-            <select name="method" className={sel} aria-label="Payment type">{PAY_METHODS.map((m) => <option key={m}>{m}</option>)}</select>
+            <Input name="amount" type="number" step="0.01" min="0.01" max={balance(w)} placeholder="Amount ($)" aria-label="Amount" required />
+            <Input name="method" list="payMethods" placeholder="Paid by (pick or type a new method)" aria-label="Payment type" maxLength={30} required />
             <Input name="ref" placeholder="Check # or confirmation" />
             <Button type="submit">Add payment</Button>
+            <datalist id="payMethods">{db.payMethods.map((m) => <option key={m} value={m} />)}</datalist>
           </form>
         )}
       </section>
