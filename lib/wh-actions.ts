@@ -2,10 +2,10 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
 import { ensureLoaded, flush } from "./persist";
-import { isoToUs } from "./clock";
+import { isoToUs, usToIso } from "./clock";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
 const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
@@ -312,7 +312,54 @@ export const voidPayment = act(async (wr: string, i: number) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w || !w.payments[i]) return;
   const [p] = w.payments.splice(i, 1);
+  const c = custOf(w);
+  if (p.method === "Customer credit" && c) (c.creditLog ??= []).push({ date: nowStr(), time: timeNow(), amount: p.amount, note: `Returned: payment on ${wrCode(w)} voided` });
   back(wrPath(w.id), { ok: `Payment of ${money(p.amount)} (${p.method}) voided.` });
+});
+
+// ---------- Billing: customer payments, credit, invoice follow-up ----------
+const PY = "/warehouse/payments";
+// A payment from a customer is spread over their receipts with a balance, oldest first; what is left stays as the customer's credit.
+export const receivePayment = act(async (f: F) => {
+  const c = db.customers.find((x) => x.no === num(f, "cust"));
+  if (!c) back(PY, { err: "Choose the customer." });
+  const here = `${PY}?c=${c!.no}`, amount = num(f, "amount"), method = s(f, "method"), ref = s(f, "ref");
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) back(here, { err: "Enter the amount received (more than 0)." });
+  if (!method || method.length > 30) back(here, { err: "Choose how the customer paid (or type a new payment method)." });
+  const batch = `PAY-${db.n.pay++}`, date = nowStr(), time = timeNow();
+  let left = r2(amount);
+  const open = db.wrs.filter((w) => w.cust === c!.no && w.fees.length > 0 && balance(w) > 0)
+    .sort((a, b) => usToIso(a.date).localeCompare(usToIso(b.date)) || Number(a.id) - Number(b.id));
+  for (const w of open) {
+    const take = Math.min(left, balance(w));
+    if (take <= 0) break;
+    w.payments.push({ date, time, amount: r2(take), method, ref, batch });
+    left = r2(left - take);
+  }
+  if (left > 0) (c!.creditLog ??= []).push({ date, time, amount: left, note: `Paid more than owed (${method})`, batch, method, ref });
+  rememberName(db.payMethods, method);
+  back(`${PY}/${batch}`);
+});
+export const applyCredit = act(async (wr: string) => {
+  const w = db.wrs.find((x) => x.id === wr), c = w && custOf(w);
+  if (!w || !c) return;
+  const take = Math.min(creditOf(c), balance(w));
+  if (take <= 0) back(wrPath(w.id), { err: "The customer has no credit, or this receipt has no balance." });
+  w.payments.push({ date: nowStr(), time: timeNow(), amount: r2(take), method: "Customer credit", ref: "" });
+  (c.creditLog ??= []).push({ date: nowStr(), time: timeNow(), amount: -r2(take), note: `Applied to ${wrCode(w)}` });
+  back(wrPath(w.id), { ok: `${money(take)} of the customer's credit applied.` });
+});
+export const markInvoiceSent = act(async (wr: string) => {
+  const w = db.wrs.find((x) => x.id === wr);
+  if (w?.invoice) { w.invoiceSent = nowStr(); back(`/warehouse/invoices/${w.invoice}`, { ok: "Marked as emailed." }); }
+});
+export const cancelInvoice = act(async (wr: string) => {
+  const w = db.wrs.find((x) => x.id === wr);
+  if (!w?.invoice) return;
+  if (w.payments.length) back(`/warehouse/invoices/${w.invoice}`, { err: "This invoice has payments. Void them first." });
+  const no = w.invoice;
+  w.invoice = undefined; w.invoiceDate = undefined; w.invoiceSent = undefined;
+  back(wrPath(w.id), { ok: `Invoice ${no} cancelled.` });
 });
 
 // Scan a parcel on Consolidate: it is selected for consolidation, and if it was never received it is received right now.

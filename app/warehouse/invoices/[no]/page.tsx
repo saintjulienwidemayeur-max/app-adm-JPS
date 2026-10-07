@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { markInvoiceSent, cancelInvoice } from "@/lib/wh-actions";
 import { db, custOf, repOf, wrCode, total, paidAmt, balance, payStatus, money, insuranceFee, quote, r2 } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
 import { shortDate } from "@/lib/fmt";
@@ -6,7 +7,8 @@ import { PrintButton } from "@/components/print-button";
 
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 
-export default async function Page({ params }: { params: Promise<{ no: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ no: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
+  const q = await searchParams;
   const no = decodeURIComponent((await params).no);
   const w = db.wrs.find((x) => x.invoice === no);
   if (!w) notFound();
@@ -26,6 +28,14 @@ export default async function Page({ params }: { params: Promise<{ no: string }>
         <img src="/logo.png" alt="JP's Logistics & More" className="h-16 w-auto" />
         <div className="text-right"><h1 className="!text-2xl">Invoice {w.invoice}</h1><div className="no-print mt-2"><PrintButton /></div></div>
       </div>
+      {q.err && <p role="alert" className="no-print mt-2 font-medium text-red-700">{q.err}</p>}
+      {q.ok && <p className="no-print mt-2 font-medium text-green-700">{q.ok}</p>}
+      <form className="no-print mt-3 flex flex-wrap items-center gap-2">
+        {w.email ? <a href={`mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics invoice ${w.invoice}`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nInvoice ${w.invoice} for ${wrCode(w)}: total ${money(total(w))}, balance ${money(balance(w))}.\n\nJP's Logistics & More`)}`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 font-medium">Email invoice</a> : <span className="text-xs text-zinc-500">Add an email on the receipt to send it.</span>}
+        <button formAction={markInvoiceSent.bind(null, w.id)} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 font-medium">{w.invoiceSent ? `Emailed ${w.invoiceSent} · mark again` : "Mark as emailed"}</button>
+        <a href={`/warehouse/receipts/${w.id}`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 font-medium">Add payment</a>
+        <button formAction={cancelInvoice.bind(null, w.id)} className="ml-auto text-red-700 underline">Cancel invoice</button>
+      </form>
       <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
         <div><dt className="text-xs text-zinc-500">Invoice date</dt><dd className="font-medium">{shortDate(w.invoiceDate ?? w.date)}</dd></div>
         <div><dt className="text-xs text-zinc-500">Shipment ID</dt><dd className="font-medium">{shipment || "–"}</dd></div>

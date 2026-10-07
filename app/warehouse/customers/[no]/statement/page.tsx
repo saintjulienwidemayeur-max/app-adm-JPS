@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, wrCode, total, paidAmt, balance, money, r2 } from "@/lib/wh-store";
-import { usToday } from "@/lib/clock";
+import { db, wrCode, total, paidAmt, balance, money, r2, creditOf } from "@/lib/wh-store";
+import { usToday, daysSince } from "@/lib/clock";
 import { PrintButton } from "@/components/print-button";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </table>
       )}
       <p className="mt-4 text-right text-lg font-bold">Balance due: {money(r2(billed - paid))}</p>
+      {creditOf(c) > 0 && <p className="text-right">Credit on file: <b>{money(creditOf(c))}</b></p>}
+      <table className="mt-4 ml-auto text-xs"><thead><tr>{["0-30 days", "31-60", "61-90", "Over 90"].map((h) => <th key={h} className="px-3 py-1 text-right font-semibold text-zinc-600">{h}</th>)}</tr></thead>
+        <tbody><tr>{([[0, 30], [31, 60], [61, 90], [91, 99999]] as const).map(([lo, hi]) => <td key={lo} className="px-3 py-1 text-right">{money(r2(rows.filter((w) => { const d = daysSince(w.date); return d >= lo && d <= hi && balance(w) > 0; }).reduce((a, w) => a + balance(w), 0)))}</td>)}</tr></tbody></table>
     </main>
   );
 }
