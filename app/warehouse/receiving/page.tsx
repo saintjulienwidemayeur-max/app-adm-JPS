@@ -38,14 +38,14 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
         <form action={startDelivery} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
           <Input name="date" type="date" defaultValue={isoToday()} aria-label="Date received" required />
           <Input name="carrier" list="carriers" placeholder="Carrier: pick one or type a new one (it is saved)" required />
-          <Input name="receiver" placeholder="Received by" defaultValue={jar.get("rcv_name")?.value} required />
+          <Input name="receiver" placeholder="Received by (optional)" defaultValue={jar.get("rcv_name")?.value} />
           <Button type="submit">Start scanning</Button>
           <datalist id="carriers">{carriers.map((c) => <option key={c} value={c} />)}</datalist>
         </form>
       ) : (
         <section className="mt-4 rounded-lg border p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-zinc-700"><b>{sess.carrier}</b> · {sess.date} · received by <b>{sess.receiver}</b></div>
+            <div className="text-sm text-zinc-700"><b>{sess.carrier}</b> · {sess.date} · {sess.receiver && <>received by <b>{sess.receiver}</b></>}</div>
             <form action={endDelivery}><Button type="submit" variant="outline">Finish delivery</Button></form>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -77,7 +77,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           <thead><tr>{["Date", "Received by", "Carrier", "Tracking", "Customer", "JP's piece", "Shipped", ""].map((h, i) => <th key={i} className={th}>{h}</th>)}</tr></thead>
           <tbody>{rows.map((i) => (
             <tr key={i.id} className="border-b border-zinc-100">
-              <td className={td}>{i.date}</td><td className={td}>{i.receiver}</td><td className={td}>{i.carrier}</td>
+              <td className={td}>{i.date}</td><td className={td}>{i.receiver || "–"}</td><td className={td}>{i.carrier}</td>
               <td className={`${td} font-mono text-xs`}>{i.tracking}</td>
               <td className={td}>{i.customer ?? <span className="text-zinc-400">–</span>}{i.customer && !i.clientId && <span className="ml-1 text-xs text-amber-700">· not on website</span>}</td>
               <td className={td}>{i.piece ?? <span className="text-zinc-400">–</span>}</td><td className={td}>{i.shipped ? "Yes" : "No"}</td>
