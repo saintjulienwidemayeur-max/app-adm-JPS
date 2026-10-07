@@ -32,7 +32,7 @@ const cleanTracking = (v: string) => v.toUpperCase().replace(/\s+/g, "");
 export const startDelivery = act(async (f: F) => {
   const carrier = s(f, "carrier").toUpperCase(), receiver = s(f, "receiver");
   const d = new Date(s(f, "date") + "T00:00");
-  if (!carrier || !receiver || isNaN(d.getTime())) back(RX, { err: "Choose the date, the carrier and who is receiving." });
+  if (!carrier || isNaN(d.getTime())) back(RX, { err: "Choose the date and the carrier." });
   rememberName(db.carriers, carrier);
   const jar = await cookies();
   jar.set("rcv", JSON.stringify({ batch: String(db.n.batch++), date: isoToUs(s(f, "date")), carrier, receiver }), { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 16 });
@@ -51,7 +51,7 @@ export const receiveItem = act(async (f: F) => {
   const tracking = cleanTracking(s(f, "tracking"));
   if (tracking.length < 6) back(RX, { err: "That doesn't look like a tracking number. Scan it again." });
   const dup = db.items.find((i) => i.tracking === tracking);
-  if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, received by ${dup.receiver}). Not counted.` });
+  if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` });
   db.items.push({ id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking });
   back(RX, { ok: tracking });
 });
@@ -323,7 +323,7 @@ export const scanForConsolidate = act(async (f: F) => {
   let it = db.items.find((i) => i.tracking === tracking), added = false;
   if (!it) {
     const sess = await readSess();
-    it = { id: db.n.item++, date: sess?.date ?? nowStr(), carrier: sess?.carrier ?? "UNKNOWN", tracking, receiver: sess?.receiver ?? (await cookies()).get("rcv_name")?.value ?? "Consolidate", batch: sess?.batch ?? "0" };
+    it = { id: db.n.item++, date: sess?.date ?? nowStr(), carrier: sess?.carrier ?? "UNKNOWN", tracking, receiver: sess?.receiver ?? (await cookies()).get("rcv_name")?.value ?? "", batch: sess?.batch ?? "0" };
     db.items.push(it);
     added = true;
   } else if (it.piece) go({ err: `${tracking} already belongs to ${it.customer} (piece ${it.piece}).` });
