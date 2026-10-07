@@ -1,6 +1,7 @@
 "use server";
 
 import { calcPricing } from "@/lib/pricing";
+import { usToday } from "@/lib/clock";
 import { parcels } from "@/lib/store";
 
 export type ScanResult =
@@ -63,7 +64,7 @@ export async function activateParcel(
       receiverName: input.receiverName, receiverPhone: input.receiverPhone, destination: input.destination,
       weightLbs: input.weightLbs, volumetric: price.volumetric, chargeable: price.chargeable, total: price.total,
       dims: `${input.length}x${input.width}x${input.height} in`, shelf: input.shelf,
-      date: new Date().toLocaleDateString("en-US"),
+      date: usToday(),
     },
   };
 }

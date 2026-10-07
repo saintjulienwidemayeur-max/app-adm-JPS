@@ -2,9 +2,10 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
 import { ensureLoaded, flush } from "./persist";
+import { isoToUs } from "./clock";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
 const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
@@ -32,8 +33,9 @@ export const startDelivery = act(async (f: F) => {
   const carrier = s(f, "carrier").toUpperCase(), receiver = s(f, "receiver");
   const d = new Date(s(f, "date") + "T00:00");
   if (!carrier || !receiver || isNaN(d.getTime())) back(RX, { err: "Choose the date, the carrier and who is receiving." });
+  rememberName(db.carriers, carrier);
   const jar = await cookies();
-  jar.set("rcv", JSON.stringify({ batch: String(db.n.batch++), date: d.toLocaleDateString("en-US"), carrier, receiver }), { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 16 });
+  jar.set("rcv", JSON.stringify({ batch: String(db.n.batch++), date: isoToUs(s(f, "date")), carrier, receiver }), { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 16 });
   jar.set("rcv_name", receiver, { path: "/", maxAge: 60 * 60 * 24 * 365 });
   back(RX);
 });
@@ -298,8 +300,35 @@ export const addPayment = act(async (f: F) => {
   const amount = num(f, "amount");
   if (!Number.isFinite(amount) || amount <= 0) back(wrPath(w.id), { err: "Enter a payment amount more than 0." });
   if (amount > balance(w) + 0.001) back(wrPath(w.id), { err: `That's more than the balance of ${money(balance(w))}.` });
-  w.payments.push({ date: nowStr(), amount, method: s(f, "method") || "Cash", ref: s(f, "ref") });
-  back(wrPath(w.id), { ok: `Payment of ${money(amount)} added.` });
+  const method = s(f, "method");
+  if (!method || method.length > 30) back(wrPath(w.id), { err: "Choose how the customer paid (or type a new payment method)." });
+  const paid = r2(amount);
+  w.payments.push({ date: nowStr(), time: timeNow(), amount: paid, method, ref: s(f, "ref") });
+  rememberName(db.payMethods, method);
+  back(wrPath(w.id), { ok: `Payment of ${money(paid)} by ${method} added. ${balance(w) > 0 ? `Balance left: ${money(balance(w))}.` : "Paid in full."}` });
+});
+// Bound from the page: voidPayment.bind(null, receiptId, paymentIndex).
+export const voidPayment = act(async (wr: string, i: number) => {
+  const w = db.wrs.find((x) => x.id === wr);
+  if (!w || !w.payments[i]) return;
+  const [p] = w.payments.splice(i, 1);
+  back(wrPath(w.id), { ok: `Payment of ${money(p.amount)} (${p.method}) voided.` });
+});
+
+// Scan a parcel on Consolidate: it is selected for consolidation, and if it was never received it is received right now.
+export const scanForConsolidate = act(async (f: F) => {
+  const tracking = cleanTracking(s(f, "tracking")), picks = s(f, "picks").split(",").filter(Boolean);
+  const go = (q: Record<string, string>): never => back(CO, { ...(picks.length && { pick: picks.join(",") }), ...q });
+  if (tracking.length < 6) go({ err: "That doesn't look like a tracking number. Scan it again." });
+  let it = db.items.find((i) => i.tracking === tracking), added = false;
+  if (!it) {
+    const sess = await readSess();
+    it = { id: db.n.item++, date: sess?.date ?? nowStr(), carrier: sess?.carrier ?? "UNKNOWN", tracking, receiver: sess?.receiver ?? (await cookies()).get("rcv_name")?.value ?? "Consolidate", batch: sess?.batch ?? "0" };
+    db.items.push(it);
+    added = true;
+  } else if (it.piece) go({ err: `${tracking} already belongs to ${it.customer} (piece ${it.piece}).` });
+  const id = String(it!.id);
+  back(CO, { pick: (picks.includes(id) ? picks : [...picks, id]).join(","), ok: added ? `${tracking} was not in the system: it is received now. Fill in the customer below.` : `${tracking} selected. Fill in the customer below.` });
 });
 
 // ---------- Shipments and their booking info ----------

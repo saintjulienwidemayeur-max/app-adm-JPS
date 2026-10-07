@@ -17,7 +17,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/customers" className="text-sm text-brand underline">All customers</Link>
-      <h1 className="mt-1">Customer {c.no} · {c.name}</h1>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2"><h1>Customer {c.no} · {c.name}</h1><Link href={`/warehouse/customers/${c.no}/statement`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium hover:bg-zinc-100">Statement</Link></div>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
       {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
 

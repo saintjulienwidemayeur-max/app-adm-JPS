@@ -1,11 +1,13 @@
 // In-memory warehouse data (frontend mode). Resets when the dev server restarts.
 import { calcInsurance } from "./pricing";
+import { usToday, isoToday, timeNow } from "./clock";
+export { timeNow };
 import { COMPANY, HAITI, ORIGIN, DESTINATION, AIRLINE } from "./company";
 
 export type Ship = "Air" | "Ocean";
 export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string };
 export type Piece = { no: number; type: string; l: number; w: number; h: number; lbs: number };
-export type Payment = { date: string; amount: number; method: string; ref: string };
+export type Payment = { date: string; time?: string; amount: number; method: string; ref: string };
 export type Rep = { id: string; name: string; initials: string };
 // A customer ("Bill To"). `no` is the customer number printed on every label (1001, 1002, ...).
 // The consignee is the person who receives the cargo in the destination country; blank fields mean "same as the customer".
@@ -44,24 +46,25 @@ export const FEE_PRESETS = [
   "Import Conatel fees", "DG paperwork", "Pickup fee", "Repacking and consolidation", "Storage fee", "TCA",
 ];
 export const CREDIT_PRESETS = ["Credit", "Discount", "Auth Discount", "Credit memo"];
-export const PAY_METHODS = ["Cash", "CashApp", "Check", "Credit Card", "Zelle", "Wire", "WISE", "Virement", "MonCash", "Voucher", "Credit Memo", "Auth Discount", "Depot", "NO CHARGE", "Other"];
+export const PAY_METHODS = ["Zelle", "Credit Card", "CashApp", "Cash", "Check", "Wire", "WISE", "Virement", "MonCash", "Voucher", "Credit Memo", "Auth Discount", "Depot", "NO CHARGE", "Other"];
+export const CARRIERS = ["AMAZON", "FEDEX", "UPS", "DHL", "USPS", "GOFO", "ONTRAC", "LASERSHIP", "UNIUNI", "SHEIN", "TEMU", "WALMART", "TARGET", "BEST BUY", "EBAY", "HOME DEPOT", "COSTCO", "DRIVER", "OTHER"];
 export const COUNTRIES = ["Haiti", "Dominican Republic", "United States", "Jamaica", "Bahamas", "Turks and Caicos", "Cuba", "Canada"];
 export const DEFAULT_CONTENTS = "Personal Web orders(eBay, Amazon, Shein, Temu, etc.)";
 
-const today = () => new Date().toLocaleDateString("en-US");
+const today = () => usToday();
 type WhDb = {
   items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; customers: Customer[]; reps: Rep[];
-  feeNames: { charge: string[]; credit: string[] };
+  feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
   n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number };
 };
-const g = globalThis as unknown as { __wh5?: WhDb };
-export const db: WhDb = (g.__wh5 ??= {
+const g = globalThis as unknown as { __wh6?: WhDb };
+export const db: WhDb = (g.__wh6 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
   wrs: [], loads: [], shipments: [], bookings: [], customers: [], reps: [],
-  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] },
+  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
   n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1 },
 });
 export const nowStr = today;
@@ -105,7 +108,7 @@ export const openWR = (c: Customer, ship: Ship, init: Partial<WR> = {}): WR => {
 
 // ---------- Shipments and bookings ----------
 export const bookingOf = (name: string) => db.bookings.find((b) => b.shipment === name);
-export const isoToday = () => new Date().toLocaleDateString("en-CA");
+export { isoToday };
 // The booking of a shipment, created with the usual defaults the first time it is opened.
 export const openBooking = (sh: Shipment): Booking => {
   const ex = bookingOf(sh.name);
@@ -157,3 +160,6 @@ export const paidAmt = (w: WR) => r2(w.payments.reduce((a, p) => a + p.amount, 0
 export const balance = (w: WR) => r2(total(w) - paidAmt(w));
 export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && w.fees.length ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
 export const money = (n: number) => `$${n.toFixed(2)}`;
+
+// Lists that grow as staff type new values (fee names, payment methods, carriers).
+export const remember = (list: string[], v: string) => { if (v && !list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v); };

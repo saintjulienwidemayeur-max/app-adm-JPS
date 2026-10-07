@@ -33,7 +33,7 @@ const TABLES: Table[] = [
 ];
 // Counters and the fee-name lists are two small rows of a "meta" table.
 const META = "wh_meta";
-const metaRows = () => ({ n: db.n, feeNames: db.feeNames });
+const metaRows = () => ({ n: db.n, feeNames: db.feeNames, payMethods: db.payMethods, carriers: db.carriers });
 
 const rowsOf = (t: Table) => new Map(t.rows().map((r) => [t.key(r as never), JSON.stringify(r)]));
 const metaMap = () => new Map(Object.entries(metaRows()).map(([k, v]) => [k, JSON.stringify(v)]));
@@ -73,6 +73,8 @@ async function load() {
       metaSeen.set(row.k, JSON.stringify(row.data));
       if (row.k === "n") Object.assign(db.n, row.data);
       if (row.k === "feeNames") Object.assign(db.feeNames, row.data);
+      if (row.k === "payMethods" && Array.isArray(row.data)) db.payMethods = row.data as unknown as string[];
+      if (row.k === "carriers" && Array.isArray(row.data)) db.carriers = row.data as unknown as string[];
     }
     // Make sure the counters are ahead of every number already used (defence against a lost counter row).
     db.n.wr = Math.max(db.n.wr, ...db.wrs.map((w) => Number(w.id) + 1));

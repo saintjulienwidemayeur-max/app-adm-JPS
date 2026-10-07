@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { db, openBooking, cargoOf, money, r2 } from "@/lib/wh-store";
 import { BOL_TERMS, COMPANY } from "@/lib/company";
+import { isoToday } from "@/lib/clock";
 import { longDate, shortDate } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
 
@@ -64,7 +65,7 @@ export default async function Page({ params }: { params: Promise<{ name: string 
       <p className="border border-zinc-700 p-1.5 text-[10px] leading-snug text-zinc-700">{BOL_TERMS}</p>
       <div className="grid grid-cols-2">
         <Box title="Signed for the carrier / agent" className="h-24"> </Box>
-        <Box title="For JP's Logistics and More LLC">By: ______________________<br />{b.signer}<br />Date: {longDate(new Date().toISOString().slice(0, 10))}</Box>
+        <Box title="For JP's Logistics and More LLC">By: ______________________<br />{b.signer}<br />Date: {longDate(isoToday())}</Box>
       </div>
       <p className="mt-1 text-right text-xs font-bold">{sh.name}</p>
     </main>

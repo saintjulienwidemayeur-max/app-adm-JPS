@@ -50,6 +50,11 @@ export default async function Page({ params }: { params: Promise<{ no: string }>
         <dt>Paid</dt><dd className="text-right">{money(paidAmt(w))}</dd>
         <dt>Balance</dt><dd className="text-right">{money(balance(w))}</dd>
       </dl>
+      {w.payments.length > 0 && (
+        <div className="mt-4 text-xs"><div className="font-semibold">Payments received</div>
+          {w.payments.map((p, i) => <div key={i} className="flex justify-between border-b border-zinc-200 py-0.5"><span>{p.date} · {p.method}{p.ref && ` · ${p.ref}`}</span><span>{money(p.amount)}</span></div>)}
+        </div>
+      )}
       {balance(w) > 0 && (
         <div className="mt-4 max-w-sm border border-zinc-400 p-2 text-xs">
           <div className="font-semibold">If paying the balance ({money(balance(w))}) by credit card</div>

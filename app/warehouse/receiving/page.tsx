@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { db } from "@/lib/wh-store";
+import { isoToUs, isoToday } from "@/lib/clock";
 import { receiveItem, startDelivery, endDelivery, updateItem, deleteItem } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,10 +17,10 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const jar = await cookies();
   let sess: { batch: string; date: string; carrier: string; receiver: string } | null = null;
   try { sess = JSON.parse(jar.get("rcv")?.value ?? "null"); } catch { sess = null; }
-  const carriers = [...new Set(["AMAZON", "FEDEX", "UPS", "DHL", "USPS", "GOFO", ...db.items.map((i) => i.carrier)])];
+  const carriers = [...new Set([...db.carriers, ...db.items.map((i) => i.carrier)])].sort();
   const count = sess ? db.items.filter((i) => i.batch === sess.batch).length : 0;
 
-  const date = q.date ? new Date(q.date + "T00:00").toLocaleDateString("en-US") : "";
+  const date = q.date ? isoToUs(q.date) : "";
   const needle = (q.find ?? "").toLowerCase();
   const all = [...db.items].reverse().filter((i) =>
     (!needle || i.tracking.toLowerCase().includes(needle) || (i.customer ?? "").toLowerCase().includes(needle) || i.receiver.toLowerCase().includes(needle)) &&
@@ -35,8 +36,8 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
 
       {!sess ? (
         <form action={startDelivery} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
-          <Input name="date" type="date" defaultValue={new Date().toLocaleDateString("en-CA")} aria-label="Date received" required />
-          <Input name="carrier" list="carriers" placeholder="Carrier (company or driver)" required />
+          <Input name="date" type="date" defaultValue={isoToday()} aria-label="Date received" required />
+          <Input name="carrier" list="carriers" placeholder="Carrier: pick one or type a new one (it is saved)" required />
           <Input name="receiver" placeholder="Received by" defaultValue={jar.get("rcv_name")?.value} required />
           <Button type="submit">Start scanning</Button>
           <datalist id="carriers">{carriers.map((c) => <option key={c} value={c} />)}</datalist>

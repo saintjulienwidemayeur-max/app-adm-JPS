@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db, openBooking, cargoOf, r2, money } from "@/lib/wh-store";
 import { COMPANY } from "@/lib/company";
+import { isoToday } from "@/lib/clock";
 import { longDate, shortDate, cm, r1 } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
 
@@ -62,7 +63,7 @@ export default async function Page({ params }: { params: Promise<{ name: string 
         <div className="border-t border-black pt-1 text-xs text-zinc-600">Signature</div>
         <div className="border-t border-black pt-1 text-xs text-zinc-600">Print name: <b className="text-sm text-black">{b.signer}</b></div>
       </div>
-      <p className="mt-4 text-right">Date: <b>{longDate(new Date().toISOString().slice(0, 10))}</b></p>
+      <p className="mt-4 text-right">Date: <b>{longDate(isoToday())}</b></p>
     </main>
   );
 }

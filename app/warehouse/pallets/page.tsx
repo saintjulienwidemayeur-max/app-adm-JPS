@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isoToday } from "@/lib/clock";
 import { db, findPiece, chargeable, r2, wrCode } from "@/lib/wh-store";
 import { loadPiece, unloadPiece, shipCargo } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,7 @@ const wrOf = (id: string) => { const w = db.wrs.find((x) => x.id === id); return
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
-  const d = new Date(), ship = q.ship === "Ocean" ? "Ocean" : "Air";
+  const d = new Date(`${isoToday()}T12:00`), ship = q.ship === "Ocean" ? "Ocean" : "Air";
   const stamp = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}-${d.getFullYear()}`;
   const shipment = q.shipment || (ship === "Air" ? `PL-AIR-${stamp}` : `CT-OCEAN-${stamp}`);
   const pallet = q.pallet || (ship === "Air" ? "Pallet 1" : "Container 1");
