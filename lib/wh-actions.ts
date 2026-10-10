@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, type Pickup, type PickupStatus, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
 import { ensureLoaded, flush } from "./persist";
 import { isoToUs, usToIso } from "./clock";
@@ -450,6 +450,83 @@ export const scanForConsolidate = act(async (f: F) => {
   } else if (it.piece) go({ err: `${tracking} already belongs to ${it.customer} (piece ${it.piece}).` });
   const id = String(it!.id);
   back(CO, { pick: (picks.includes(id) ? picks : [...picks, id]).join(","), ok: added ? `${tracking} was not in the system: it is received now. Fill in the customer below.` : `${tracking} selected. Fill in the customer below.` });
+});
+
+// ---------- Pickups: collect the parcel at the customer's address ----------
+// The price is a "Pickup fee" line on the customer's warehouse receipt, so it is already there when the invoice is made.
+const PK = "/warehouse/pickups";
+const pickupPath = (id: string) => `${PK}/${id}`;
+const isoOk = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(v + "T00:00").getTime());
+// Puts the price on the receipt (adds, changes or removes the fee line). Returns a message when it can't.
+function syncPickupFee(p: Pickup, price: number): string {
+  const w = db.wrs.find((x) => x.id === p.wr);
+  if (!w) return "The receipt of this pickup no longer exists.";
+  const line = pickupFeeLine(p);
+  if (w.invoice && r2(line?.amount ?? 0) !== r2(price)) return `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change the pickup fee.`;
+  if (price > 0) {
+    if (line) line.amount = r2(price);
+    else { const fee: Fee = { id: db.n.fee++, label: PICKUP_FEE, amount: r2(price), kind: "charge" }; w.fees.push(fee); p.feeId = fee.id; }
+  } else if (line) {
+    const next = w.fees.filter((x) => x.id !== line.id);
+    if (tooMuchCredit(w, next)) return "Remove the credit on the receipt first: it would be more than the remaining charges.";
+    w.fees = next; p.feeId = undefined;
+  }
+  p.price = r2(price);
+  return "";
+}
+const priceOf = (f: F) => { const v = s(f, "price"); return v === "" ? 0 : num(f, "price"); };
+const pickupProblem = (f: F, price: number) => {
+  if (!s(f, "address")) return "Enter the pickup address.";
+  if (!isoOk(s(f, "date"))) return "Choose the pickup date.";
+  if (!Number.isFinite(price) || price < 0 || price > 100000) return "Enter a pickup price of 0 or more.";
+  return "";
+};
+export const createPickup = act(async (f: F) => {
+  const name = s(f, "customer");
+  if (!name) back(PK, { err: "Choose or enter the customer." });
+  const price = priceOf(f), bad = pickupProblem(f, price);
+  if (bad) back(PK, { err: bad });
+  const c = findCustomer(name) ?? newCustomer(name);
+  const ship = shipOf(s(f, "ship"));
+  // The fee goes on the customer's open receipt (same ship type, not invoiced, nothing loaded yet), or on a new one.
+  const w = db.wrs.find((x) => x.cust === c.no && x.ship === ship && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) ?? openWR(c, ship);
+  const p: Pickup = {
+    id: `PU-${String(db.n.pickup++).padStart(4, "0")}`, created: nowStr(), cust: c.no, customer: c.name,
+    contact: s(f, "contact") || c.name, phone: s(f, "phone") || c.phone, address: s(f, "address"), city: s(f, "city"),
+    date: s(f, "date"), time: s(f, "time"), what: s(f, "what"), notes: s(f, "notes"), driver: s(f, "driver"), price: 0, wr: w.id, status: "Scheduled",
+  };
+  const err = syncPickupFee(p, price);
+  if (err) back(PK, { err });
+  db.pickups.unshift(p);
+  back(pickupPath(p.id), { ok: `Pickup ${p.id} scheduled.${price > 0 ? ` ${money(price)} added to receipt ${wrCode(w)}.` : ""}` });
+});
+export const savePickup = act(async (f: F) => {
+  const p = db.pickups.find((x) => x.id === s(f, "pickup"));
+  if (!p) return;
+  const price = priceOf(f), bad = pickupProblem(f, price);
+  if (bad) back(pickupPath(p.id), { err: bad });
+  if (p.status !== "Cancelled") { const err = syncPickupFee(p, price); if (err) back(pickupPath(p.id), { err }); } else p.price = r2(price);
+  Object.assign(p, {
+    contact: s(f, "contact"), phone: s(f, "phone"), address: s(f, "address"), city: s(f, "city"), date: s(f, "date"), time: s(f, "time"),
+    what: s(f, "what"), notes: s(f, "notes"), driver: s(f, "driver"),
+  });
+  back(pickupPath(p.id), { ok: "Pickup saved." });
+});
+// Bound from the page as setPickupStatus.bind(null, id, status).
+export const setPickupStatus = act(async (id: string, status: string) => {
+  const p = db.pickups.find((x) => x.id === id);
+  if (!p || !PICKUP_STATUSES.includes(status as PickupStatus) || p.status === status) return;
+  if (status === "Cancelled") {
+    const keep = p.price;
+    const err = syncPickupFee(p, 0);
+    if (err) back(pickupPath(p.id), { err });
+    p.price = keep; // remembered, in case the pickup is scheduled again
+  } else if (p.status === "Cancelled") {
+    const err = syncPickupFee(p, p.price);
+    if (err) back(pickupPath(p.id), { err });
+  }
+  p.status = status as PickupStatus;
+  back(pickupPath(p.id), { ok: `Pickup ${status === "Picked up" ? "marked as picked up" : status === "Cancelled" ? "cancelled (the fee was removed from the receipt)" : "scheduled again"}.` });
 });
 
 // ---------- Shipments and their booking info ----------

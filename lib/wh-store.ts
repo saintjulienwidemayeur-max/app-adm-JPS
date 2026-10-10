@@ -33,6 +33,15 @@ export type Order = {
   id: string; date: string; cust: number; customer: string; rep: string; items: OrderItem[]; feePct: number; notes: string;
   status: OrderStatus; tracking: string; payments: Payment[];
 };
+// A pickup: JP's driver goes to the customer's address to collect the parcel. The pickup price is a "Pickup fee" line on the
+// customer's warehouse receipt (`wr`, `feeId`), so it is already there when the invoice is made.
+export type PickupStatus = "Scheduled" | "Picked up" | "Cancelled";
+export const PICKUP_STATUSES: PickupStatus[] = ["Scheduled", "Picked up", "Cancelled"];
+export const PICKUP_FEE = "Pickup fee";
+export type Pickup = {
+  id: string; created: string; cust: number; customer: string; contact: string; phone: string; address: string; city: string;
+  date: string; time: string; what: string; notes: string; driver: string; price: number; wr: string; feeId?: number; status: PickupStatus;
+};
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string };
 export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string };
 
@@ -63,19 +72,19 @@ export const DEFAULT_CONTENTS = "Personal Web orders(eBay, Amazon, Shein, Temu, 
 
 const today = () => usToday();
 type WhDb = {
-  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; customers: Customer[]; reps: Rep[];
+  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; customers: Customer[]; reps: Rep[];
   feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
-  n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number };
+  n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number; pickup: number };
 };
-const g = globalThis as unknown as { __wh8?: WhDb };
-export const db: WhDb = (g.__wh8 ??= {
+const g = globalThis as unknown as { __wh9?: WhDb };
+export const db: WhDb = (g.__wh9 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
-  wrs: [], loads: [], shipments: [], bookings: [], orders: [], customers: [], reps: [],
+  wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], customers: [], reps: [],
   feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
-  n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001 },
+  n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001, pickup: 1 },
 });
 export const nowStr = today;
 export const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -174,6 +183,11 @@ export const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleS
 
 // Lists that grow as staff type new values (fee names, payment methods, carriers).
 export const remember = (list: string[], v: string) => { if (v && !list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v); };
+
+// ---------- Pickups ----------
+export const pickupFeeLine = (p: Pickup) => db.wrs.find((w) => w.id === p.wr)?.fees.find((f) => f.id === p.feeId);
+// What the customer is charged now: the live fee line on the receipt (staff may have edited it there).
+export const pickupPrice = (p: Pickup) => (p.status === "Cancelled" ? 0 : pickupFeeLine(p)?.amount ?? p.price);
 
 // ---------- Purchase orders ----------
 export const ORDER_FEE_PCT = 15;
