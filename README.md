@@ -8,16 +8,19 @@ By default the data lives in memory and resets when the server restarts. Set `DA
 ## Saving the data (Postgres / Supabase)
 1. Get a connection string. With Supabase: Project Settings > Database > Connection string > **Transaction pooler** (fill in your database password).
 2. Put it in `DATABASE_URL` (Render: Environment). Restart the app.
-3. That is all: on start the app creates its tables (`wh_customers`, `wh_receipts`, `wh_items`, `wh_loads`, `wh_shipments`, `wh_bookings`, `wh_reps`, `wh_meta`), loads them, and saves every change. Each table has one row per record; the record is in the `data` column (jsonb), so you can browse it in the Supabase table editor.
+3. That is all: on start the app creates its tables (`wh_customers`, `wh_receipts`, `wh_items`, `wh_loads`, `wh_shipments`, `wh_bookings`, `wh_pickups`, `wh_reps`, `wh_meta`), loads them, and saves every change. Each table has one row per record; the record is in the `data` column (jsonb), so you can browse it in the Supabase table editor.
 - The tables have Row Level Security switched on with no policy, so the website's public (anon) key cannot read them. Only the server's own connection can.
 - If the database is down, a red banner appears and changes are refused (or kept and retried if it goes down while the app runs). Nothing is ever saved over data the app could not load.
 - Run a single copy of the app. Two copies writing at the same time are not supported.
 - The Intake page (activate parcel, 4x6 label) is the older stand-alone flow: it still keeps its own data in memory.
 
+## Pickups
+The Pickups page schedules a driver to collect a parcel at the customer's address (address, contact, date and time, driver, notes). The pickup price becomes a "Pickup fee" line on the customer's open warehouse receipt (same ship type, not invoiced yet; a new receipt is opened if there is none), so it is already there when the invoice is made. Changing the price updates that line; cancelling the pickup removes it. Once the receipt is invoiced the price is locked (cancel the invoice first). After the pickup, mark it as picked up and add the pieces to the receipt.
+
 ## Password
 Set `APP_PASSWORD` and every page asks for it (cookie for 30 days, Sign out in the menu). Without it the app is open to anyone who knows the address, so set it before real customers are in the database.
 
-Pages: Intake, Received items, Consolidate, Warehouse receipts (+ detail, report, labels), Load pallet (+ pallet labels), Shipments (+ booking, Bill of Lading, Letter of Instruction, cargo list), Loading sheet, Arrivals PV, Invoices (+ printable invoice), Customers, Reps.
+Pages: Intake, Received items, Consolidate, Warehouse receipts (+ detail, report, labels), Load pallet (+ pallet labels), Shipments (+ booking, Bill of Lading, Letter of Instruction, cargo list), Loading sheet, Arrivals PV, Invoices (+ printable invoice), Pickups, Customers, Reps.
 
 ## How receipts, customers and fees work
 - **Customer number**: every customer gets a number (1001, 1002, ...). It is the first part of every label: `1001|JPF-11018|20032` = customer | receipt | piece.

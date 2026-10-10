@@ -30,6 +30,7 @@ const TABLES: Table[] = [
   { name: "wh_loads", key: (l: { no: number }) => String(l.no), rows: () => db.loads, set: (r) => { db.loads = r; } },
   { name: "wh_shipments", key: (s: { name: string }) => s.name, rows: () => db.shipments, set: (r) => { db.shipments = r; } },
   { name: "wh_orders", key: (o: { id: string }) => o.id, rows: () => db.orders, set: (r) => { db.orders = (r as { id: string }[]).sort((a, b) => b.id.slice(4, 6).localeCompare(a.id.slice(4, 6)) || b.id.localeCompare(a.id)) as never; } },
+  { name: "wh_pickups", key: (p: { id: string }) => p.id, rows: () => db.pickups, set: (r) => { db.pickups = r; } },
   { name: "wh_bookings", key: (b: { shipment: string }) => b.shipment, rows: () => db.bookings, set: (r) => { db.bookings = r; } },
 ];
 // Counters and the fee-name lists are two small rows of a "meta" table.
@@ -81,6 +82,7 @@ async function load() {
     db.n.wr = Math.max(db.n.wr, ...db.wrs.map((w) => Number(w.id) + 1));
     db.n.piece = Math.max(db.n.piece, ...db.wrs.flatMap((w) => w.pieces.map((p) => p.no + 1)));
     db.n.item = Math.max(db.n.item, ...db.items.map((i) => i.id + 1));
+    db.n.pickup = Math.max(db.n.pickup, ...db.pickups.map((p) => Number(p.id.replace(/\D/g, "")) + 1));
     db.n.cust = Math.max(db.n.cust, ...db.customers.map((x) => x.no + 1));
     seen.set(META, metaSeen);
     st.seen = seen;
