@@ -55,7 +55,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
                 <td className={td}>{money(pickupPrice(p))}</td>
                 <td className={td}>{w ? <Link href={`/warehouse/receipts/${w.id}`} className="text-brand underline">{wrCode(w)}</Link> : "–"}</td>
                 <td className={`${td} font-medium ${tone(p.status)}`}>{p.status}</td>
-                <td className={td}><Link href={`/warehouse/pickups/${p.id}`} className="text-brand underline">Open</Link></td>
+                <td className={td}><Link href={`/warehouse/pickups/${p.id}`} className="text-brand underline">Open</Link> <Link href={`/warehouse/pickups/${p.id}/sheet`} className="ml-2 text-brand underline">Sheet</Link></td>
               </tr>);
           })}</tbody>
         </table>

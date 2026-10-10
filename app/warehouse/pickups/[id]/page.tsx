@@ -24,6 +24,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <h1 className="mt-1">Pickup {p.id} · {p.customer} <span className="text-base font-normal text-zinc-600">· {p.status} · {isoToUs(p.date)}{p.time && ` · ${p.time}`}</span></h1>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
       {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
+      <div className="mt-2"><Link href={`/warehouse/pickups/${p.id}/sheet`} className="inline-flex h-9 items-center rounded-md bg-brand px-4 text-sm font-medium text-white">Print driver sheet</Link></div>
       <p className="mt-1 text-sm text-zinc-600">Customer {p.cust} · <Link href={`/warehouse/customers/${p.cust}`} className="text-brand underline">details</Link></p>
 
       <section className="mt-4 rounded-lg border p-3">
