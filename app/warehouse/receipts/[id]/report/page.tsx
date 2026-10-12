@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf } from "@/lib/wh-store";
-import { DISCLAIMER } from "@/lib/disclaimer";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, freightFee, freightQty, freightDesc, contentsOf } from "@/lib/wh-store";
+import { DISCLAIMER, ESTIMATE_NOTE } from "@/lib/disclaimer";
 import { cardFees } from "@/lib/pricing";
 import { PrintButton } from "@/components/print-button";
 
@@ -22,6 +23,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const card = cardFees(balance(w));
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 text-sm">
+      <div className="no-print mb-3 flex gap-4"><Link href={`/warehouse/receipts/${w.id}`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 font-medium hover:bg-zinc-100">← Back to the receipt</Link><Link href="/warehouse/receipts" className="inline-flex h-9 items-center text-brand underline">All receipts</Link></div>
       <div className="flex items-start justify-between gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="JP's Logistics & More" className="h-16 w-auto" />
@@ -53,7 +55,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
             <td className={td}>{p.no}</td>
             <td className={td}>{p.type} - (in) L{p.l} X W{p.w} X H{p.h} - {vol(p)} lbs*</td>
             <td className={`${td} text-right`}>{p.lbs}</td><td className={`${td} text-right`}>{cuft(p)}</td>
-            <td className={td}>{i === 0 ? w.contents : ""}</td>
+            <td className={td}>{p.contents ?? (i === 0 ? w.contents : "")}</td>
           </tr>))}</tbody>
       </table>
 
@@ -66,7 +68,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         </dl>
         <div className="mt-3 grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1">
           <b>Declared Contents</b><b>Declared Value <span className="ml-3">{money(w.declared)}</span></b>
-          <div className="border border-zinc-300 px-2 py-1">{w.contents || "\u00a0"}</div>
+          <div className="border border-zinc-300 px-2 py-1">{contentsOf(w) || "\u00a0"}</div>
         </div>
       </div>
 
@@ -75,9 +77,13 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       </p>
       {w.comments && <p className="mt-1 text-center"><b>Comments:</b> {w.comments}</p>}
 
-      {(w.fees.length > 0 || insuranceFee(w) > 0) && (
+      {w.estimate ? (
+        <section className="mt-4">
+          <h2 className="text-center text-lg font-bold">Estimate</h2>
+      {(w.fees.length > 0 || insuranceFee(w) > 0 || freightFee(w) > 0) && (
         <table className="ml-auto mt-4 w-full max-w-sm">
           <tbody>
+            {freightFee(w) > 0 && <tr><td className="px-2 py-0.5">{freightDesc(w)} <span className="text-xs text-zinc-500">({freightQty(w)} × {money(w.rate ?? 0)})</span></td><td className="px-2 py-0.5 text-right">{money(freightFee(w))}</td></tr>}
             {w.fees.map((f) => <tr key={f.id}><td className="px-2 py-0.5">{f.label}</td><td className="px-2 py-0.5 text-right">{f.kind === "credit" ? "−" : ""}{money(f.amount)}</td></tr>)}
             {insuranceFee(w) > 0 && <tr><td className="px-2 py-0.5">Certificate of insurance</td><td className="px-2 py-0.5 text-right">{money(ins.customer)}</td></tr>}
           </tbody>
@@ -98,6 +104,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <div className="flex justify-between"><span>Pay Online</span><b>{money(card.invoice.total)}</b></div>
         </div>
       )}
+
+          <p className="mt-3 border border-zinc-400 p-2 text-xs font-medium">{ESTIMATE_NOTE}</p>
+        </section>
+      ) : <p className="mt-4 text-center text-xs text-zinc-600">This receipt confirms what JP&apos;s received. The final invoice is issued when the shipment has cleared customs and been delivered to our destination office.</p>}
 
       <p className="mt-8 text-center text-xl font-bold text-zinc-700">THANK YOU FOR YOUR BUSINESS</p>
       <h2 className="mt-3 text-center text-lg font-bold text-zinc-700">***** Disclaimer *****</h2>

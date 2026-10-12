@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { markInvoiceSent, cancelInvoice } from "@/lib/wh-actions";
-import { db, custOf, repOf, wrCode, total, paidAmt, balance, payStatus, money, insuranceFee, quote, r2 } from "@/lib/wh-store";
+import { db, custOf, repOf, wrCode, total, paidAmt, balance, payStatus, money, insuranceFee, quote, r2, freightFee, freightQty, freightDesc } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
 import { shortDate } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
@@ -16,7 +16,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const shipment = db.loads.find((l) => l.wr === w.id)?.shipment ?? "";
   // Freight lines say which receipt, weight and pieces they are for, like the old invoice.
   const ref = ` - Ref. WR: ${w.id} - (${lbs} lbs) - Number Of Pieces: ${w.pieces.length}`;
-  const lines = [
+  type Line = { desc: string; amount: number; qty?: number; rate?: number };
+  const lines: Line[] = [
+    // The freight line is automatic: Air = chargeable lbs x rate, Ocean = cubic feet x rate.
+    ...(freightFee(w) > 0 ? [{ desc: freightDesc(w), amount: freightFee(w), qty: freightQty(w), rate: w.rate }] : []),
     ...w.fees.map((f) => ({ desc: f.label + (/freight/i.test(f.label) ? ref : ""), amount: f.kind === "credit" ? -f.amount : f.amount })),
     ...(insuranceFee(w) > 0 ? [{ desc: `Certificate of insurance - Ref. WR: ${w.id} - declared value ${money(w.declared)}`, amount: quote(w).customer }] : []),
   ];
@@ -53,7 +56,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <table className="mt-4 w-full text-left">
         <thead className="border-b-2 border-black"><tr><th className={th}>Description</th><th className={`${th} text-right`}>Qty</th><th className={`${th} text-right`}>Rate</th><th className={`${th} text-right`}>Amount</th></tr></thead>
         <tbody>{lines.length === 0 ? <tr><td className={`${td} text-zinc-500`} colSpan={4}>No fees on this receipt yet.</td></tr> : lines.map((l, i) => (
-          <tr key={i} className="border-b border-zinc-300"><td className={td}>{l.desc}</td><td className={`${td} text-right`}>1.00</td><td className={`${td} text-right`}>{l.amount < 0 ? "−" : ""}{money(Math.abs(l.amount))}</td><td className={`${td} text-right`}>{l.amount < 0 ? "−" : ""}{money(Math.abs(l.amount))}</td></tr>))}</tbody>
+          <tr key={i} className="border-b border-zinc-300"><td className={td}>{l.desc}</td><td className={`${td} text-right`}>{l.qty ?? "1.00"}</td><td className={`${td} text-right`}>{l.rate !== undefined ? money(l.rate) : `${l.amount < 0 ? "−" : ""}${money(Math.abs(l.amount))}`}</td><td className={`${td} text-right`}>{l.amount < 0 ? "−" : ""}{money(Math.abs(l.amount))}</td></tr>))}</tbody>
       </table>
       <dl className="ml-auto mt-3 grid max-w-xs grid-cols-[1fr_auto] gap-x-6 gap-y-1 border-t-2 border-black pt-2">
         <dt className="font-bold">Total</dt><dd className="text-right font-bold">{money(total(w))}</dd>
