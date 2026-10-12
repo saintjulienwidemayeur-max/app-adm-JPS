@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { db, effectiveShip, money } from "@/lib/wh-store";
-import { importSitePrealerts, cancelPrealert } from "@/lib/wh-actions";
+import { cancelPrealert } from "@/lib/wh-actions";
+import { syncSitePrealerts } from "@/lib/prealert-sync";
+import { ensureLoaded, flush } from "@/lib/persist";
 import { itemsTotal } from "@/lib/compliance";
 import { nextDeparture, MAX_HOLD_DEPARTURES, departures } from "@/lib/schedule";
 import { isoToUs } from "@/lib/clock";
@@ -13,6 +15,9 @@ const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 const tone = (s: string) => (s === "Received" ? "text-green-700" : s === "Cancelled" ? "text-zinc-500" : "text-amber-700");
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
+  await ensureLoaded();
+  const siteErr = await syncSitePrealerts();
+  await flush();
   const q = await searchParams, needle = (q.q ?? "").trim().toLowerCase();
   const rows = db.prealerts.filter((p) => (!q.status || p.status === q.status) && (!needle || [p.id, p.customer, p.tracking, p.carrier, p.vendor].some((v) => v.toLowerCase().includes(needle))));
   const queue = db.items.filter((i) => !i.piece && !i.customer);
@@ -39,11 +44,8 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
         )}
       </section>
 
-      <section className="mt-4 rounded-lg border p-3">
-        <h2 className="font-bold">Announced by customers on the website</h2>
-        <p className="mt-1 text-xs text-zinc-600">The pre-alert form is on the customer website, in the customer&apos;s own area (carrier, final tracking number, store, contents, value, Air or Ocean). Nothing is entered here. When a tracking number is scanned on Received items, the website is checked too. Press the button to bring in everything announced so far.</p>
-        <form action={importSitePrealerts} className="mt-2"><Button type="submit" variant="outline">Check the website now</Button></form>
-      </section>
+      <p className="mt-3 text-xs text-zinc-600">The pre-alert form is on the customer website, in the customer&apos;s own area. It is the same database: what customers announce appears here by itself, and a scan on Received items finds the pre-alert and matches the parcel to the customer.</p>
+      {siteErr && <p role="alert" className="mt-1 text-xs font-medium text-amber-700">Could not read the website pre-alerts ({siteErr}). Run section 13 of the website&apos;s schema in Supabase.</p>}
 
       <form method="get" className="mt-4 flex flex-wrap gap-2">
         <Input name="q" defaultValue={q.q} placeholder="Search customer, tracking or seller" className="w-72" aria-label="Search pre-alerts" />
