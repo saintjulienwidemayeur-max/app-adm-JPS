@@ -2,10 +2,12 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, type Pickup, type PickupStatus, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, effectiveShip, type Pickup, type PickupStatus, type Prealert, defaultRate, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
 import { ensureLoaded, flush } from "./persist";
-import { isoToUs, usToIso } from "./clock";
+import { isoToUs, usToIso, isoToday } from "./clock";
+import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
+import { nextDeparture } from "./schedule";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
 const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
@@ -52,8 +54,15 @@ export const receiveItem = act(async (f: F) => {
   if (tracking.length < 6) back(RX, { err: "That doesn't look like a tracking number. Scan it again." });
   const dup = db.items.find((i) => i.tracking === tracking);
   if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` });
-  db.items.push({ id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking });
-  back(RX, { ok: tracking });
+  const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
+  db.items.push(item);
+  // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
+  const pa = db.prealerts.find((x) => x.status === "Expected" && cleanTrackingNo(x.tracking) === cleanTrackingNo(tracking));
+  if (!pa) back(RX, { ok: tracking, warn: "Not announced by any customer: it waits in the review queue until it is identified." });
+  const ship = effectiveShip(pa!);
+  Object.assign(item, { customer: pa!.customer, ship, prealert: pa!.id });
+  Object.assign(pa!, { status: "Received", itemId: item.id });
+  back(RX, { ok: tracking, info: `Matched: ${pa!.customer} (customer ${pa!.cust}) · ${pa!.choice ? ship : "no answer yet, Air by default"}${pa!.wait ? " · waiting for other orders" : ""}.` });
 });
 export const updateItem = act(async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));
@@ -121,6 +130,33 @@ export const createWR = act(async (f: F) => {
   const w = openWR(c, shipOf(s(f, "ship")), { comments: s(f, "comments"), ...(route && { route }) });
   back(wrPath(w.id));
 });
+// Changes the ship type of a receipt (JPF <-> JPL). Ocean gets its standard handling fee automatically; going back to Air removes it
+// (only the automatic line: a fee staff edited stays) and the standard rate of the new method applies.
+function applyShip(w: WR, ship: Ship): string {
+  if (ship === w.ship) return "";
+  if (w.pieces.some((p) => db.loads.some((l) => l.no === p.no))) return "Some pieces are already loaded on a shipment, so the ship type can't change.";
+  if (w.invoice) return `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change the ship type.`;
+  db.items.forEach((i) => { if (i.wr === w.id) i.ship = ship; });
+  w.ship = ship;
+  w.rate = defaultRate(ship);
+  if (ship === "Ocean") { if (!w.fees.some((x) => x.label.toLowerCase() === HANDLING_LABEL.toLowerCase())) w.fees.push({ id: db.n.fee++, label: HANDLING_LABEL, amount: OCEAN_HANDLING, kind: "charge", auto: "handling" }); }
+  else w.fees = w.fees.filter((x) => x.auto !== "handling");
+  return "";
+}
+export const switchShip = act(async (wr: string) => {
+  const w = db.wrs.find((x) => x.id === wr);
+  if (!w) return;
+  const to: Ship = w.ship === "Air" ? "Ocean" : "Air", bad = applyShip(w, to);
+  if (bad) back(wrPath(w.id), { err: bad });
+  back(wrPath(w.id), { ok: `Changed to ${to === "Ocean" ? "Ocean" : "Air"}: the receipt is now ${wrCode(w)}${to === "Ocean" ? ` and the ${money(OCEAN_HANDLING)} handling fee was added` : ""}.` });
+});
+// "Client was told" log: the customer was notified of the receipt by email or WhatsApp. Later changes show as "update not sent".
+export const markNotified = act(async (wr: string, channel: string) => {
+  const w = db.wrs.find((x) => x.id === wr);
+  if (!w) return;
+  (w.notices ??= []).push({ date: nowStr(), time: timeNow(), channel: channel === "WhatsApp" ? "WhatsApp" : "Email", sig: wrSig(w) });
+  back(wrPath(w.id), { ok: `Recorded: the customer was notified by ${channel === "WhatsApp" ? "WhatsApp" : "email"}.` });
+});
 export const updateWR = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
@@ -128,11 +164,13 @@ export const updateWR = act(async (f: F) => {
   if (declared < 0) back(wrPath(w.id), { err: "Declared value can't be negative." });
   if (!emailOk(s(f, "email"))) back(wrPath(w.id), { err: "That email address isn't valid." });
   const ship = shipOf(s(f, "ship") || w.ship);
-  if (ship !== w.ship && w.pieces.some((p) => db.loads.some((l) => l.no === p.no))) back(wrPath(w.id), { err: "Some pieces are already loaded on a shipment, so the ship type can't change." });
-  if (ship !== w.ship) db.items.forEach((i) => { if (i.wr === w.id) i.ship = ship; });
+  const rate = s(f, "rate") === "" ? defaultRate(ship) : num(f, "rate");
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1000) back(wrPath(w.id), { err: "Enter a rate of 0 or more." });
+  const bad = applyShip(w, ship);
+  if (bad) back(wrPath(w.id), { err: bad });
   Object.assign(w, {
-    declared, ship, rep: repOf(s(f, "rep")) ? s(f, "rep") : "", insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined",
-    contents: s(f, "contents"), comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email"),
+    declared, rate: r2(rate), rep: repOf(s(f, "rep")) ? s(f, "rep") : "", insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined",
+    estimate: s(f, "estimate") === "yes", comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email"),
   });
   back(wrPath(w.id), { ok: "Receipt saved." });
 });
@@ -140,7 +178,7 @@ export const updateWR = act(async (f: F) => {
 // ---------- Fees and credits on a receipt ----------
 const feeKind = (v: string): Fee["kind"] => (v === "credit" ? "credit" : "charge");
 const feeSum = (fees: Fee[], k: Fee["kind"]) => fees.filter((x) => x.kind === k).reduce((a, x) => a + x.amount, 0);
-const tooMuchCredit = (w: WR, fees: Fee[]) => r2(feeSum(fees, "charge") + insuranceFee(w) - feeSum(fees, "credit")) < 0;
+const tooMuchCredit = (w: WR, fees: Fee[]) => r2(freightFee(w) + feeSum(fees, "charge") + insuranceFee(w) - feeSum(fees, "credit")) < 0;
 // New fee names are remembered so they show up in the list next time.
 const remember = (kind: Fee["kind"], label: string) => {
   const list = db.feeNames[kind];
@@ -159,6 +197,7 @@ export const addFee = act(async (f: F) => {
   const label = s(f, "label"), amount = num(f, "amount"), kind = feeKind(s(f, "kind"));
   const bad = feeProblem(label, amount);
   if (bad) back(wrPath(w.id), { err: bad });
+  if (kind === "charge" && (w.rate ?? 0) > 0 && /^freight/i.test(label)) back(wrPath(w.id), { err: "Freight charges are added automatically from the weight (or cubic feet) and the rate. Change the rate in Receipt details." });
   const fee: Fee = { id: db.n.fee++, label, amount: r2(amount), kind };
   if (tooMuchCredit(w, [...w.fees, fee])) back(wrPath(w.id), { err: "That credit is more than the charges on this receipt." });
   w.fees.push(fee);
@@ -259,7 +298,10 @@ function pieceInput(f: F) {
   if (![l, w, h, lbs].every((v) => Number.isFinite(v) && v > 0)) return "Enter the weight and all three dimensions (more than 0).";
   if (Math.max(l, w, h) > 200) return "A dimension can't be more than 200 in.";
   if (lbs > 2000) return "Weight can't be more than 2000 lb.";
-  return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs };
+  const contents = s(f, "contents");
+  if (!contents) return "Enter what is inside this piece (declared contents).";
+  if (contents.length > 120) return "The contents are too long (120 characters max).";
+  return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs, contents };
 }
 export const addPiece = act(async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
@@ -529,6 +571,56 @@ export const setPickupStatus = act(async (id: string, status: string) => {
   back(pickupPath(p.id), { ok: `Pickup ${status === "Picked up" ? "marked as picked up" : status === "Cancelled" ? "cancelled (the fee was removed from the receipt)" : "scheduled again"}.` });
 });
 
+// ---------- Pre-alerts: the customer announces an online order before it arrives ----------
+const PA = "/warehouse/prealerts";
+const paPath = (id: string) => `${PA}/${id}`;
+const hazardsOf = (f: F): HazardKey[] => f.getAll("hz").map(String).filter((v): v is HazardKey => HAZARD_FLAGS.some(([k]) => k === v));
+export const createPrealert = act(async (f: F) => {
+  const name = s(f, "customer"), carrier = s(f, "carrier").toUpperCase(), tracking = cleanTrackingNo(s(f, "tracking"));
+  if (!name) back(PA, { err: "Choose or enter the customer." });
+  if (!carrier) back(PA, { err: "Enter the carrier (USPS, UPS, FedEx, DHL, Amazon, SPEEDX, SWIFTX, UNIUNI...)." });
+  if (!trackingOk(tracking)) back(PA, { err: "Enter the carrier's final tracking number (letters and digits, at least 8). An order number is not a tracking number: orders without a final tracking number are not stored." });
+  if (db.prealerts.some((x) => x.status !== "Cancelled" && cleanTrackingNo(x.tracking) === tracking)) back(PA, { err: `${tracking} was already announced.` });
+  const items: PrealertItem[] = [];
+  for (let i = 0; i < 6; i++) {
+    const desc = s(f, `d_${i}`), qty = num(f, `q_${i}`), unit = num(f, `u_${i}`);
+    if (!desc && !s(f, `q_${i}`) && !s(f, `u_${i}`)) continue;
+    if (!desc || !(qty > 0) || !(unit > 0) || qty > 10000 || unit > 1_000_000) back(PA, { err: `Line ${i + 1}: enter the item, the quantity and the unit value (more than 0).` });
+    items.push({ desc, qty, unit });
+  }
+  if (!items.length) back(PA, { err: "Enter at least one item with its quantity and value." });
+  const signedBy = s(f, "signedBy");
+  if (!signedBy || s(f, "affirm") !== "yes") back(PA, { err: "The customer must type their full name and affirm the quantities and values (electronic signature)." });
+  const c = findCustomer(name) ?? newCustomer(name);
+  const choice = s(f, "choice") === "Air" || s(f, "choice") === "Ocean" ? (s(f, "choice") as Ship) : undefined;
+  const pa: Prealert = {
+    id: `PA-${String(db.n.prealert++).padStart(4, "0")}`, created: nowStr(), cust: c.no, customer: c.name, carrier, tracking, vendor: s(f, "vendor"),
+    items, invoiceRef: s(f, "invoiceRef"), hazards: hazardsOf(f), consigneeName: s(f, "consigneeName") || c.consignee, consigneePhone: s(f, "consigneePhone") || c.consigneePhone,
+    choice, wait: s(f, "wait") === "yes", signedBy, signedAt: `${nowStr()} ${timeNow()}`, notes: s(f, "notes"), status: "Expected",
+  };
+  // The parcel may already be in the warehouse, unidentified: match it now.
+  const have = db.items.find((i) => cleanTrackingNo(i.tracking) === tracking);
+  if (have && !have.piece && !have.customer) { Object.assign(have, { customer: c.name, ship: effectiveShip(pa), prealert: pa.id }); Object.assign(pa, { status: "Received", itemId: have.id }); }
+  else if (have) back(PA, { err: `${tracking} is already in the warehouse for ${have.customer ?? "another customer"}.` });
+  db.prealerts.unshift(pa);
+  back(paPath(pa.id), { ok: `Pre-alert ${pa.id} saved.${pa.status === "Received" ? " The parcel was already in the warehouse: it is matched to this customer now." : ""}` });
+});
+export const savePrealert = act(async (f: F) => {
+  const pa = db.prealerts.find((x) => x.id === s(f, "id"));
+  if (!pa) return;
+  const choice = s(f, "choice") === "Air" || s(f, "choice") === "Ocean" ? (s(f, "choice") as Ship) : undefined;
+  Object.assign(pa, { choice, wait: s(f, "wait") === "yes", notes: s(f, "notes"), invoiceRef: s(f, "invoiceRef") });
+  const it = db.items.find((i) => i.id === pa.itemId);
+  if (it && !it.piece) it.ship = effectiveShip(pa);
+  back(paPath(pa.id), { ok: "Saved." });
+});
+export const cancelPrealert = act(async (id: string) => {
+  const pa = db.prealerts.find((x) => x.id === id);
+  if (!pa || pa.status !== "Expected") return;
+  pa.status = "Cancelled";
+  back(PA, { ok: `${pa.id} cancelled.` });
+});
+
 // ---------- Shipments and their booking info ----------
 const shipPath = (name: string) => `/warehouse/shipments/${encodeURIComponent(name)}`;
 const SH = "/warehouse/shipments";
@@ -558,6 +650,11 @@ export const saveBooking = act(async (f: F) => {
     "consigneeName", "consigneeAddress", "consigneeCity", "consigneeContact", "receiver", "notify", "notifyContact", "pieceType", "commodity",
     "containerSize", "spotDate", "spotTime", "containerId", "seal", "tag", "arrivalDate", "notes", "signer"] as const;
   for (const k of keys) b[k] = s(f, k);
+  for (const k of ["shipperAccount", "shipperEmail", "consigneeAccount", "consigneeEmail", "airportDep", "airportArr", "payment", "emergencyName", "emergencyPhone", "special"] as const) b[k] = s(f, k);
+  const insureAmount = num(f, "insureAmount") || 0;
+  if (insureAmount < 0) back(here, { err: "Amounts can't be negative." });
+  const yesNo = (v: string) => (v === "Yes" || v === "No" ? v : "");
+  Object.assign(b, { services: f.getAll("services").map(String).filter((v) => SLI_SERVICES.includes(v)), insure: yesNo(s(f, "insure")), insureAmount, hasQuote: yesNo(s(f, "hasQuote")), commercialInvoice: yn(s(f, "commercialInvoice")), pharma: yn(s(f, "pharma")) });
   Object.assign(b, { blCost, declared, contents, pallets, sed: yn(s(f, "sed")), refrigeration: yn(s(f, "refrigeration")), hazmat: yn(s(f, "hazmat")) });
   back(here, { ok: "Booking saved." });
 });

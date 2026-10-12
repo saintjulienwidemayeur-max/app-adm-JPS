@@ -32,7 +32,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>Received items</h1>
-      <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once, then scan each parcel. The customer is added later, when you consolidate.</p>
+      <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once, then scan each parcel. A tracking number the customer announced (Pre-alerts) is matched to the customer right away; any other parcel waits in the review queue until it is identified.</p>
 
       {!sess ? (
         <form action={startDelivery} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
@@ -58,6 +58,8 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           </div>
           {q.err && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{q.err}</p>}
           {q.ok && <p className="mt-2 font-mono text-xs text-green-700">{q.ok} accepted</p>}
+          {q.info && <p className="mt-1 text-sm font-semibold text-green-700">{q.info}</p>}
+          {q.warn && <p role="alert" className="mt-1 text-sm font-semibold text-amber-700">{q.warn} <Link href="/warehouse/prealerts" className="underline">Review queue</Link></p>}
         </section>
       )}
       {!sess && q.err && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{q.err}</p>}

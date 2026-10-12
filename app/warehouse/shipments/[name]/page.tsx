@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { db, openBooking, cargoOf } from "@/lib/wh-store";
+import { db, openBooking, cargoOf, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
 import { saveBooking } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -130,6 +130,30 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <F label="Container tag"><Input name="tag" defaultValue={b.tag} /></F>
             <F label="Actual arrival date"><Input name="arrivalDate" type="date" defaultValue={b.arrivalDate} /></F>
             <div className="sm:col-span-4"><F label="Destination notes"><Input name="notes" defaultValue={b.notes} /></F></div>
+          </div>
+        </section>
+        <section className="rounded-lg border p-3">
+          <h2 className="font-bold">Shipper&apos;s Letter of Instruction (form SLI)</h2>
+          <p className="text-xs text-zinc-600">What the printed Letter of Instruction needs besides the shipper, consignee and cargo above.</p>
+          <fieldset className="mt-2"><legend className="text-xs font-medium text-zinc-600">Freight service</legend>
+            <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-sm">{SLI_SERVICES.map((s) => <label key={s} className="flex items-center gap-1.5"><input type="checkbox" name="services" value={s} defaultChecked={b.services?.includes(s)} /> {s}</label>)}</div>
+          </fieldset>
+          <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            <F label="Shipper account"><Input name="shipperAccount" defaultValue={b.shipperAccount} /></F>
+            <F label="Shipper email" span="sm:col-span-2"><Input name="shipperEmail" type="email" defaultValue={b.shipperEmail} /></F>
+            <F label="Airport of departure"><Input name="airportDep" defaultValue={b.airportDep} placeholder="MIA" /></F>
+            <F label="Consignee account"><Input name="consigneeAccount" defaultValue={b.consigneeAccount} /></F>
+            <F label="Consignee email" span="sm:col-span-2"><Input name="consigneeEmail" type="email" defaultValue={b.consigneeEmail} /></F>
+            <F label="Airport of arrival"><Input name="airportArr" defaultValue={b.airportArr} placeholder="PAP" /></F>
+            <F label="Payment (freight charges)"><select name="payment" defaultValue={b.payment ?? ""} className={sel}><option value="">Not set</option>{SLI_PAYMENTS.map((p) => <option key={p}>{p}</option>)}</select></F>
+            <F label="Insure this shipment?"><select name="insure" defaultValue={b.insure ?? ""} className={sel}><option value="">Not set</option><option>Yes</option><option>No</option></select></F>
+            <F label="Insured amount ($)"><Input name="insureAmount" type="number" step="0.01" min="0" defaultValue={b.insureAmount ?? 0} className="text-right" /></F>
+            <F label="Quote number or Air Waybill number?"><select name="hasQuote" defaultValue={b.hasQuote ?? ""} className={sel}><option value="">Not set</option><option>Yes</option><option>No</option></select></F>
+            <F label="24 hour emergency contact"><Input name="emergencyName" defaultValue={b.emergencyName} /></F>
+            <F label="Emergency phone"><Input name="emergencyPhone" type="tel" defaultValue={b.emergencyPhone} /></F>
+            <F label="Commercial invoice"><YN name="commercialInvoice" v={b.commercialInvoice ?? "NO"} /></F>
+            <F label="Pharmaceuticals"><YN name="pharma" v={b.pharma ?? "NO"} /></F>
+            <div className="sm:col-span-4"><F label="Special instructions"><Input name="special" defaultValue={b.special} /></F></div>
           </div>
         </section>
         <Button type="submit" className="w-40">Save booking</Button>
