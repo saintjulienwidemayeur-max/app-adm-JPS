@@ -21,6 +21,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   if (!w) notFound();
   const cust = custOf(w);
   const loaded = new Set(db.loads.map((l) => l.no));
+  const loadedOn = db.loads.find((l) => w.pieces.some((p) => p.no === l.no))?.shipment;
   const anyLoaded = w.pieces.some((p) => loaded.has(p.no));
   const code = wrCode(w);
   const mail = `mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics – Warehouse receipt ${code}`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nYour warehouse receipt ${code} has ${w.pieces.length} piece(s). Total: ${money(total(w))}.\n\nJP's Logistics & More`)}`;
@@ -37,6 +38,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <Link href={`/warehouse/receipts/${w.id}/report`} className={lnk}>View receipt</Link>
           {w.email ? <a href={mail} className={lnk}>Email receipt</a> : <span className="inline-flex h-9 items-center text-xs text-zinc-500">Add an email to send the receipt</span>}
           {w.pieces.length > 0 && !w.invoice && <CompareShip current={estimateFor(w, w.ship)} other={estimateFor(w, otherShip(w))} wr={wrCode(w)} locked={anyLoaded} switchAction={switchShip.bind(null, w.id)} />}
+          {loadedOn && <Link href={`/warehouse/shipments/${encodeURIComponent(loadedOn)}/poe/${w.cust}`} className={lnk}>Proof of export</Link>}
           {w.pieces.length > 0 && <Link href={`/warehouse/receipts/${w.id}/labels`} className={`${lnk} !border-brand !bg-brand !text-white`}>Print labels</Link>}
         </div>
       </div>
