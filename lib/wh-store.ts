@@ -52,6 +52,7 @@ export type Prealert = {
   id: string; created: string; cust: number; customer: string; carrier: string; tracking: string; vendor: string;
   items: PrealertItem[]; invoiceRef: string; hazards: HazardKey[]; consigneeName: string; consigneePhone: string;
   choice?: Ship; wait: boolean; signedBy: string; signedAt: string; notes: string; status: PrealertStatus; itemId?: number;
+  siteId?: string; clientId?: string; // set when the customer announced it on the website
 };
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string };
 export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string };

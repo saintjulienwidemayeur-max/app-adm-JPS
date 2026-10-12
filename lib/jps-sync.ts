@@ -48,3 +48,29 @@ export async function pushStatus(a: { tracking: string; status: Status; clientId
   const i = await c.from("shipments").insert({ client_id: a.clientId, tracking_number: a.tracking, type: a.type === "Ocean" ? "Mer" : "Air", description: a.description ?? null, status: a.status });
   return i.error?.message ?? null;
 }
+
+// ---------- Pre-alerts announced by customers on the website ----------
+// The customer fills the pre-alert form on the website (table `prealerts`, SQL section 13 of the website's schema).
+// The warehouse app only reads them (service role) and marks them received.
+export type SitePrealert = {
+  id: string; client_id: string; carrier: string; tracking_number: string; store: string; contents: string; declared_value: number;
+  ship_choice: "Air" | "Ocean" | null; wait: boolean; restricted: boolean; created_at: string;
+  clients: { name: string; email: string; phone: string | null } | null;
+};
+const COLS = "id,client_id,carrier,tracking_number,store,contents,declared_value,ship_choice,wait,restricted,created_at,clients(name,email,phone)";
+// All expected pre-alerts, or the one with this tracking number.
+export async function sitePrealerts(tracking?: string): Promise<{ rows: SitePrealert[]; error?: string }> {
+  const c = client();
+  if (!c) return { rows: [] };
+  let q = c.from("prealerts").select(COLS).eq("status", "expected").order("created_at", { ascending: true }).limit(500);
+  if (tracking) q = q.eq("tracking_number", tracking);
+  const r = await q;
+  if (r.error) return { rows: [], error: r.error.message };
+  return { rows: (r.data ?? []) as unknown as SitePrealert[] };
+}
+export async function markSitePrealertReceived(id: string): Promise<string | null> {
+  const c = client();
+  if (!c) return null;
+  const r = await c.from("prealerts").update({ status: "received", updated_at: new Date().toISOString() }).eq("id", id);
+  return r.error?.message ?? null;
+}

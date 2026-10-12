@@ -12,6 +12,7 @@ export const HAZARD_FLAGS = [
   ["pharma", "Medicine or pharmaceuticals"],
   ["food", "Food, plants or animal products"],
   ["other", "Other restricted item (weapon, ammunition, cash, ...)"],
+  ["restricted", "Customer says: battery, liquid, aerosol or perfume"],
 ] as const;
 export type HazardKey = (typeof HAZARD_FLAGS)[number][0];
 
@@ -28,7 +29,7 @@ export function reviewFlags(p: { items: PrealertItem[]; hazards: HazardKey[]; in
   const out: string[] = [];
   const big = p.items.filter((i) => lineTotal(i) > EEI_LINE_LIMIT);
   if (big.length) out.push(`A line is over $${EEI_LINE_LIMIT.toLocaleString("en-US")} (${big.map((i) => i.desc).join(", ")}): check whether an EEI / AES filing is required (15 CFR Part 30). The limit applies to each Schedule B commodity line.`);
-  if (p.hazards.includes("battery") || p.hazards.includes("liquid")) out.push("Batteries, liquids or aerosols: ask for the product details, check the IATA dangerous goods rules before this goes by Air, and keep it off the shipment until cleared.");
+  if (p.hazards.includes("battery") || p.hazards.includes("liquid") || p.hazards.includes("restricted")) out.push("Batteries, liquids or aerosols: ask for the product details, check the IATA dangerous goods rules before this goes by Air, and keep it off the shipment until cleared.");
   if (p.hazards.includes("pharma")) out.push("Pharmaceuticals: ask for the prescription or permit, and tick it on the Letter of Instruction.");
   if (p.hazards.includes("food")) out.push("Food, plants or animal products can need permits: confirm with the destination office.");
   if (p.hazards.includes("other")) out.push("Restricted item declared: do not accept until a manager has reviewed it.");
