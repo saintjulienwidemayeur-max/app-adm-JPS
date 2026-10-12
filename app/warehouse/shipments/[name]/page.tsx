@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { db, openBooking, cargoOf, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
+import { db, openBooking, cargoOf, wrCode, r2, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
 import { saveBooking } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const sh = db.shipments.find((x) => x.name === name);
   if (!sh) notFound();
   const b = openBooking(sh), c = cargoOf(name), air = sh.ship === "Air", base = `/warehouse/shipments/${encodeURIComponent(name)}`;
+  const byCust = new Map<number, { no: number; name: string; wrs: Set<string>; pieces: number; lbs: number }>();
+  for (const { w, p } of c.rows) { const e = byCust.get(w.cust) ?? { no: w.cust, name: w.customer, wrs: new Set<string>(), pieces: 0, lbs: 0 }; e.wrs.add(wrCode(w)); e.pieces++; e.lbs = r2(e.lbs + p.lbs); byCust.set(w.cust, e); }
+  const poe = [...byCust.values()].map((e) => ({ ...e, wrs: [...e.wrs] })).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/shipments" className="text-sm text-brand underline">All shipments</Link>
@@ -32,6 +35,21 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
       {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
       <p className="mt-1 text-sm text-zinc-600">{c.rows.length} piece{c.rows.length === 1 ? "" : "s"} loaded on {c.pallets.length} pallet{c.pallets.length === 1 ? "" : "s"} · {c.lbs} lb ({c.kg} kg) · {c.cuft} cuft. Save the booking, then open a document: it prints what is saved here.</p>
+
+      <section className="mt-4 rounded-lg border p-3">
+        <h2 className="font-bold">Proof of export</h2>
+        <p className="text-xs text-zinc-600">One document per customer: their own Long Form Bill of Lading with only their receipts and pieces on this {air ? "flight" : "vessel"}. Give it to a customer who needs to prove that everything delivered to JP&apos;s for them was exported. Fill in the booking below first (AWB / booking number, carrier, flight or sailing date).</p>
+        {poe.length === 0 ? <p className="mt-2 text-sm text-zinc-600">Nothing is loaded on this shipment yet.</p> : (
+          <table className="mt-2 w-full text-left text-sm">
+            <thead><tr>{["Customer", "Receipts", "Pieces", "Weight (lb)", ""].map((h) => <th key={h} className="px-2 py-1 font-semibold">{h}</th>)}</tr></thead>
+            <tbody>{poe.map((x) => (
+              <tr key={x.no} className="border-b border-zinc-100">
+                <td className="px-2 py-1">{x.name} <span className="text-xs text-zinc-500">#{x.no}</span></td><td className="px-2 py-1">{x.wrs.join(", ")}</td><td className="px-2 py-1">{x.pieces}</td><td className="px-2 py-1">{x.lbs}</td>
+                <td className="px-2 py-1"><Link href={`${base}/poe/${x.no}`} className="text-brand underline">Proof of export</Link></td>
+              </tr>))}</tbody>
+          </table>
+        )}
+      </section>
 
       <form action={saveBooking} className="mt-4 grid gap-4">
         <input type="hidden" name="shipment" value={name} />
