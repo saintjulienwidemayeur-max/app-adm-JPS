@@ -3,9 +3,9 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, effectiveShip, type Pickup, type PickupStatus, type Prealert, defaultRate, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
-import { syncEnabled, findClientId, pushStatus } from "./jps-sync";
+import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, type SitePrealert } from "./jps-sync";
 import { ensureLoaded, flush } from "./persist";
-import { isoToUs, usToIso, isoToday } from "./clock";
+import { isoToUs, usToIso, usToday } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
 
@@ -57,11 +57,16 @@ export const receiveItem = act(async (f: F) => {
   const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
-  const pa = db.prealerts.find((x) => x.status === "Expected" && cleanTrackingNo(x.tracking) === cleanTrackingNo(tracking));
-  if (!pa) back(RX, { ok: tracking, warn: "Not announced by any customer: it waits in the review queue until it is identified." });
+  let pa = db.prealerts.find((x) => x.status === "Expected" && cleanTrackingNo(x.tracking) === cleanTrackingNo(tracking));
+  if (!pa && syncEnabled()) {
+    const r = await sitePrealerts(cleanTrackingNo(tracking)); // announced on the website but not imported yet
+    if (r.rows[0]) pa = await adoptSitePrealert(r.rows[0]);
+  }
+  if (!pa || pa.status !== "Expected") back(RX, { ok: tracking, warn: "Not announced by any customer: it waits in the review queue until it is identified." });
   const ship = effectiveShip(pa!);
-  Object.assign(item, { customer: pa!.customer, ship, prealert: pa!.id });
+  Object.assign(item, { customer: pa!.customer, ship, prealert: pa!.id, clientId: pa!.clientId });
   Object.assign(pa!, { status: "Received", itemId: item.id });
+  if (pa!.siteId) await markSitePrealertReceived(pa!.siteId);
   back(RX, { ok: tracking, info: `Matched: ${pa!.customer} (customer ${pa!.cust}) · ${pa!.choice ? ship : "no answer yet, Air by default"}${pa!.wait ? " · waiting for other orders" : ""}.` });
 });
 export const updateItem = act(async (f: F) => {
@@ -575,35 +580,35 @@ export const setPickupStatus = act(async (id: string, status: string) => {
 const PA = "/warehouse/prealerts";
 const paPath = (id: string) => `${PA}/${id}`;
 const hazardsOf = (f: F): HazardKey[] => f.getAll("hz").map(String).filter((v): v is HazardKey => HAZARD_FLAGS.some(([k]) => k === v));
-export const createPrealert = act(async (f: F) => {
-  const name = s(f, "customer"), carrier = s(f, "carrier").toUpperCase(), tracking = cleanTrackingNo(s(f, "tracking"));
-  if (!name) back(PA, { err: "Choose or enter the customer." });
-  if (!carrier) back(PA, { err: "Enter the carrier (USPS, UPS, FedEx, DHL, Amazon, SPEEDX, SWIFTX, UNIUNI...)." });
-  if (!trackingOk(tracking)) back(PA, { err: "Enter the carrier's final tracking number (letters and digits, at least 8). An order number is not a tracking number: orders without a final tracking number are not stored." });
-  if (db.prealerts.some((x) => x.status !== "Cancelled" && cleanTrackingNo(x.tracking) === tracking)) back(PA, { err: `${tracking} was already announced.` });
-  const items: PrealertItem[] = [];
-  for (let i = 0; i < 6; i++) {
-    const desc = s(f, `d_${i}`), qty = num(f, `q_${i}`), unit = num(f, `u_${i}`);
-    if (!desc && !s(f, `q_${i}`) && !s(f, `u_${i}`)) continue;
-    if (!desc || !(qty > 0) || !(unit > 0) || qty > 10000 || unit > 1_000_000) back(PA, { err: `Line ${i + 1}: enter the item, the quantity and the unit value (more than 0).` });
-    items.push({ desc, qty, unit });
-  }
-  if (!items.length) back(PA, { err: "Enter at least one item with its quantity and value." });
-  const signedBy = s(f, "signedBy");
-  if (!signedBy || s(f, "affirm") !== "yes") back(PA, { err: "The customer must type their full name and affirm the quantities and values (electronic signature)." });
-  const c = findCustomer(name) ?? newCustomer(name);
-  const choice = s(f, "choice") === "Air" || s(f, "choice") === "Ocean" ? (s(f, "choice") as Ship) : undefined;
+// The pre-alert form lives on the customer website (not here). A website pre-alert becomes a local record the first time it is
+// needed: when its tracking number is scanned on Received items, or when staff press "Check the website".
+async function adoptSitePrealert(row: SitePrealert): Promise<Prealert> {
+  const tracking = cleanTrackingNo(row.tracking_number);
+  const have = db.prealerts.find((x) => x.siteId === row.id || (x.status !== "Cancelled" && cleanTrackingNo(x.tracking) === tracking));
+  if (have) return have;
+  const who = row.clients;
+  const c = (who?.email ? findCustomer(who.email) : undefined) ?? (who?.name ? findCustomer(who.name) : undefined)
+    ?? newCustomer(who?.name || "Website customer", { email: who?.email ?? "", phone: who?.phone ?? "" });
   const pa: Prealert = {
-    id: `PA-${String(db.n.prealert++).padStart(4, "0")}`, created: nowStr(), cust: c.no, customer: c.name, carrier, tracking, vendor: s(f, "vendor"),
-    items, invoiceRef: s(f, "invoiceRef"), hazards: hazardsOf(f), consigneeName: s(f, "consigneeName") || c.consignee, consigneePhone: s(f, "consigneePhone") || c.consigneePhone,
-    choice, wait: s(f, "wait") === "yes", signedBy, signedAt: `${nowStr()} ${timeNow()}`, notes: s(f, "notes"), status: "Expected",
+    id: `PA-${String(db.n.prealert++).padStart(4, "0")}`, created: usToday(new Date(row.created_at)), cust: c.no, customer: c.name, carrier: row.carrier.toUpperCase(), tracking,
+    vendor: row.store, items: [{ desc: row.contents, qty: 1, unit: Number(row.declared_value) }], invoiceRef: "", hazards: row.restricted ? ["restricted"] : [],
+    consigneeName: c.consignee, consigneePhone: c.consigneePhone, choice: row.ship_choice ?? undefined, wait: row.wait,
+    signedBy: `${who?.name ?? c.name} (website)`, signedAt: `${usToday(new Date(row.created_at))} (confirmed on the website)`, notes: "", status: "Expected", siteId: row.id, clientId: row.client_id,
   };
-  // The parcel may already be in the warehouse, unidentified: match it now.
-  const have = db.items.find((i) => cleanTrackingNo(i.tracking) === tracking);
-  if (have && !have.piece && !have.customer) { Object.assign(have, { customer: c.name, ship: effectiveShip(pa), prealert: pa.id }); Object.assign(pa, { status: "Received", itemId: have.id }); }
-  else if (have) back(PA, { err: `${tracking} is already in the warehouse for ${have.customer ?? "another customer"}.` });
   db.prealerts.unshift(pa);
-  back(paPath(pa.id), { ok: `Pre-alert ${pa.id} saved.${pa.status === "Received" ? " The parcel was already in the warehouse: it is matched to this customer now." : ""}` });
+  // The parcel may already be in the warehouse, unidentified: match it now.
+  const it = db.items.find((i) => cleanTrackingNo(i.tracking) === tracking);
+  if (it && !it.piece && !it.customer) { Object.assign(it, { customer: c.name, ship: effectiveShip(pa), prealert: pa.id, clientId: row.client_id }); Object.assign(pa, { status: "Received", itemId: it.id }); await markSitePrealertReceived(row.id); }
+  return pa;
+}
+export const importSitePrealerts = act(async () => {
+  if (!syncEnabled()) back(PA, { err: "The website is not connected (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)." });
+  const r = await sitePrealerts();
+  if (r.error) back(PA, { err: `Could not read the website pre-alerts: ${r.error}. Run section 13 of the website's schema in Supabase.` });
+  const before = db.prealerts.length;
+  for (const row of r.rows) await adoptSitePrealert(row);
+  const n = db.prealerts.length - before;
+  back(PA, { ok: n ? `${n} new pre-alert${n > 1 ? "s" : ""} from the website.` : "No new pre-alert on the website." });
 });
 export const savePrealert = act(async (f: F) => {
   const pa = db.prealerts.find((x) => x.id === s(f, "id"));
