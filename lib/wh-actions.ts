@@ -9,6 +9,7 @@ import { ensureLoaded, flush } from "./persist";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
+import { parseEstimate, estimate } from "./estimate";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
 const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
@@ -595,6 +596,32 @@ export const cancelPrealert = act(async (id: string) => {
   if (!pa || pa.status !== "Expected") return;
   pa.status = "Cancelled";
   back(PA, { ok: `${pa.id} cancelled.` });
+});
+
+// ---------- Estimate -> warehouse receipt ----------
+export const estimateToReceipt = act(async (f: F) => {
+  const query: Record<string, string> = {};
+  f.forEach((v, k) => { if (k !== "ship" && String(v).trim()) query[k] = String(v); });
+  const fail = (err: string): never => back("/warehouse/estimate", { ...query, err });
+  const inp = parseEstimate((k) => s(f, k) || undefined), ship = shipOf(s(f, "ship"));
+  if (!inp.customer) fail("Enter the customer to make a receipt.");
+  if (!inp.rows.length) fail("Enter at least one box.");
+  if (inp.rows.some((r) => !r.contents)) fail("Enter the contents of every box (it is required on the receipt).");
+  if (inp.rows.reduce((a, r) => a + r.qty, 0) > 200) fail("That is more than 200 boxes. Split it in several receipts.");
+  const est = estimate(inp), opt = ship === "Ocean" ? est.ocean : est.air;
+  const charge = opt.lines.filter((l) => l.kind !== "credit").reduce((a, l) => a + l.amount, 0);
+  if (inp.credit > charge) fail("The credit is more than the charges.");
+  const c = findCustomer(inp.customer) ?? newCustomer(inp.customer);
+  const w = openWR(c, ship, { estimate: true, rate: opt.rate, declared: inp.declared, insurance: inp.insure && inp.declared > 0 ? "Accepted" : "Declined" });
+  for (const r of inp.rows) for (let k = 0; k < r.qty; k++) w.pieces.push({ no: db.n.piece++, type: "BOX - OTHER", l: r.l, w: r.w, h: r.h, lbs: r.lbs, contents: r.contents });
+  // Handling: Ocean already got its automatic line; use the amount of the estimate. Air gets one only when the estimate has it.
+  const handling = ship === "Ocean" ? inp.handlingOcean : inp.handlingAir;
+  const auto = w.fees.find((x) => x.auto === "handling");
+  if (auto) { if (handling > 0) auto.amount = r2(handling); else w.fees = w.fees.filter((x) => x !== auto); }
+  else if (handling > 0) w.fees.push({ id: db.n.fee++, label: HANDLING_LABEL, amount: r2(handling), kind: "charge" });
+  const add = (label: string, amount: number, kind: Fee["kind"] = "charge") => { if (amount > 0) w.fees.push({ id: db.n.fee++, label, amount: r2(amount), kind }); };
+  add(PICKUP_FEE, inp.pickup); add("Repacking and consolidation", inp.repack); add(inp.otherLabel || "Other", inp.other); add("Discount", inp.credit, "credit");
+  back(wrPath(w.id), { ok: `Receipt ${wrCode(w)} created from the estimate: ${w.pieces.length} piece${w.pieces.length === 1 ? "" : "s"}, estimated total ${money(opt.total)}. Add the customer's phone and details if needed.` });
 });
 
 // ---------- Shipments and their booking info ----------

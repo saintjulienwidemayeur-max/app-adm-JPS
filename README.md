@@ -21,13 +21,16 @@ By default the data lives in memory and resets when the server restarts. Set `DA
 - **Receipt**: freight is an automatic line (Air = larger of gross and volumetric lb x rate, Ocean = cubic feet x rate; standard rates `AIR_RATE`, `OCEAN_RATE` in `lib/wh-store.ts`), Ocean adds the $45 handling fee, **Compare Air/Ocean** shows the other method's estimate and can switch the receipt, a **notification log** (Email / WhatsApp) shows whether the customer was told and whether an update is still unsent. The printed receipt shows prices only when the customer asked for an estimate.
 - **Letter of Instruction** follows form SLI (revision 09/09/2024); the extra fields are on the shipment's booking page.
 
+## Estimate
+`/warehouse/estimate` prices a customer's boxes before they ship, Air and Ocean side by side (`lib/estimate.ts`). Enter the boxes (number, L x W x H in inches, weight in lb, contents) and the rates and extras; the result updates by itself and the values live in the URL (shareable, survives a refresh). Air = larger of gross and volumetric weight (L x W x H / 139) x rate per lb; Ocean = cubic feet x rate, with the Ocean handling fee ($45; Air $35 is the disclaimer's minimum, editable); insurance (3.5%, minimum $50), pickup, repacking, another fee and a discount; credit-card totals for staff. **Print the estimate** gives the customer's copy with the "estimate, contingent to final invoicing" note. **Create the receipt** turns it into a warehouse receipt marked as an estimate (pieces, handling, insurance and fees included, the same total).
+
 ## Pickups
 The Pickups page schedules a driver to collect a parcel at the customer's address (address, contact, date and time, driver, notes). The pickup price becomes a "Pickup fee" line on the customer's open warehouse receipt (same ship type, not invoiced yet; a new receipt is opened if there is none), so it is already there when the invoice is made. Changing the price updates that line; cancelling the pickup removes it. Once the receipt is invoiced the price is locked (cancel the invoice first). After the pickup, mark it as picked up and add the pieces to the receipt.
 
 ## Password
 Set `APP_PASSWORD` and every page asks for it (cookie for 30 days, Sign out in the menu). Without it the app is open to anyone who knows the address, so set it before real customers are in the database.
 
-Pages: Pre-alerts, Intake, Received items, Consolidate, Warehouse receipts (+ detail, report, labels), Load pallet (+ pallet labels), Shipments (+ booking, Bill of Lading, Letter of Instruction, cargo list), Loading sheet, Arrivals PV, Invoices (+ printable invoice), Pickups, Customers, Reps.
+Pages: Estimate, Pre-alerts, Intake, Received items, Consolidate, Warehouse receipts (+ detail, report, labels), Load pallet (+ pallet labels), Shipments (+ booking, Bill of Lading, Letter of Instruction, cargo list), Loading sheet, Arrivals PV, Invoices (+ printable invoice), Pickups, Customers, Reps.
 
 ## How receipts, customers and fees work
 - **Customer number**: every customer gets a number (1001, 1002, ...). It is the first part of every label: `1001|JPF-11018|20032` = customer | receipt | piece.
