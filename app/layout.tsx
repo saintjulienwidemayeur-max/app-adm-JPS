@@ -2,6 +2,8 @@ import "./globals.css";
 import type { ReactNode } from "react";
 import { connection } from "next/server";
 import { Nav } from "@/components/nav";
+import { Crumbs } from "@/components/crumbs";
+import { menuBadges } from "@/lib/badges";
 import { persistState, initStore } from "@/lib/persist";
 
 export const metadata = { title: "JP's Logistics & More" };
@@ -23,7 +25,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             {mode === "down" ? "The database is not reachable: nothing can be saved right now." : "The last save to the database failed. It will be retried with the next change."}
           </div>
         )}
-        <div className="flex min-h-screen"><div className="min-w-0 flex-1">{children}</div><Nav mode={mode} auth={!!process.env.APP_PASSWORD} /></div>
+        <div className="flex min-h-screen"><Nav mode={mode} auth={!!process.env.APP_PASSWORD} badges={menuBadges()} /><div className="min-w-0 flex-1"><Crumbs />{children}</div></div>
       </body>
     </html>
   );

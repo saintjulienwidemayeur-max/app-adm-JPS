@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { AUTH_COOKIE, authToken } from "./auth-token";
 
 // Only paths inside this app: never an address on another site.
-const safeNext = (n: string) => (n.startsWith("/") && !n.startsWith("//") && !n.startsWith("/\\") ? n : "/warehouse/receiving");
+const safeNext = (n: string) => (n.startsWith("/") && !n.startsWith("//") && !n.startsWith("/\\") ? n : "/");
 const same = (a: string, b: string) => timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
 
 export async function login(f: FormData) {
