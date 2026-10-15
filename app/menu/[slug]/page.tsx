@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight } from "lucide-react";
-import { SECTIONS } from "@/lib/menu";
+import { SECTIONS, visibleSections } from "@/lib/menu";
+import { requireUser } from "@/lib/users";
 import { menuBadges } from "@/lib/badges";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 // One section of the menu: each tool as a card, with what is waiting in it.
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params, s = SECTIONS.find((x) => x.slug === slug);
+  const { slug } = await params, me = await requireUser(), s = visibleSections(me).find((x) => x.slug === slug);
   if (!s) notFound();
   const b = menuBadges();
   return (

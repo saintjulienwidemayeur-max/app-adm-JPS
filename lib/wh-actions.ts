@@ -6,6 +6,7 @@ import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCus
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { ensureLoaded, flush } from "./persist";
+import { requireUser } from "./users";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
@@ -14,6 +15,7 @@ import { parseEstimate, estimate } from "./estimate";
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
 const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
   await ensureLoaded();
+  await requireUser(); // an action can only be called by someone who is signed in
   try { await fn(...a); } finally { await flush(); }
 };
 

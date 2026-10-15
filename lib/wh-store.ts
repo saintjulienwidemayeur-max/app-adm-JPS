@@ -18,6 +18,8 @@ export type Customer = {
   no: number; name: string; phone: string; email: string; billing: string;
   consignee: string; consigneePhone: string; consigneeAddress: string; consigneeCity: string; consigneeCountry: string;
   rep: string; route: string; creditLog?: CreditEntry[];
+  // Set when the customer created an account on the website (same Supabase database): the website client id, the box number, the language.
+  clientId?: string; box?: string; lang?: string;
 };
 // One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
 export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" };
@@ -92,19 +94,19 @@ export const defaultRate = (ship: Ship) => (ship === "Ocean" ? OCEAN_RATE : AIR_
 
 const today = () => usToday();
 type WhDb = {
-  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; customers: Customer[]; reps: Rep[];
+  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; users: User[]; maillog: MailLog[]; customers: Customer[]; reps: Rep[];
   feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
-  n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number; pickup: number; prealert: number };
+  n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number; pickup: number; prealert: number; mail: number; user: number };
 };
-const g = globalThis as unknown as { __wh10?: WhDb };
-export const db: WhDb = (g.__wh10 ??= {
+const g = globalThis as unknown as { __wh11?: WhDb };
+export const db: WhDb = (g.__wh11 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
-  wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], customers: [], reps: [],
+  wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], users: [], maillog: [], customers: [], reps: [],
   feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
-  n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001, pickup: 1, prealert: 1 },
+  n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001, pickup: 1, prealert: 1, mail: 1, user: 1 },
 });
 export const nowStr = today;
 export const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -224,6 +226,12 @@ export const contentsOf = (w: WR) => [...new Set(w.pieces.map((p) => p.contents?
 
 // Lists that grow as staff type new values (fee names, payment methods, carriers).
 export const remember = (list: string[], v: string) => { if (v && !list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v); };
+
+// ---------- Users and mail ----------
+// Someone who signs in to this app. `perms` are the page links (see lib/menu.ts) they may open; an administrator may open everything.
+export type User = { id: string; name: string; salt: string; hash: string; admin: boolean; perms: string[]; active: boolean; created: string; lastLogin?: string; defaultCode?: boolean };
+// One e-mail sent from the app through the website (what, to how many, by whom).
+export type MailLog = { id: number; date: string; time: string; by: string; subject: string; to: string; sent: number; total: number; failed: string[] };
 
 // ---------- Pre-alerts ----------
 // No answer from the customer = Air.

@@ -1,23 +1,25 @@
 "use server";
-import { createHash, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { AUTH_COOKIE, authToken } from "./auth-token";
+import { SESSION_COOKIE } from "./session";
+import { ensureLoaded, flush } from "./persist";
+import { ensureAdmin, checkLogin, lockedFor, startSession } from "./users";
 
 // After signing in, the app always opens on the main menu (whatever page was asked for before the sign-in).
-const HOME = "/";
-const same = (a: string, b: string) => timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
-
 export async function login(f: FormData) {
-  const pw = process.env.APP_PASSWORD;
-  if (!pw) redirect(HOME);
-  await new Promise((r) => setTimeout(r, 800)); // slows down password guessing
-  if (!same(String(f.get("password") ?? ""), pw)) redirect("/login?err=1");
-  (await cookies()).set(AUTH_COOKIE, await authToken(pw), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 30 });
-  redirect(HOME);
+  const name = String(f.get("name") ?? "").trim(), code = String(f.get("code") ?? "");
+  await ensureLoaded();
+  ensureAdmin();
+  if (lockedFor(name)) redirect(`/login?err=locked&mins=${lockedFor(name)}`);
+  await new Promise((r) => setTimeout(r, 800)); // slows down guessing
+  const u = checkLogin(name, code);
+  await flush(); // the first administrator, and the last sign-in time
+  if (!u) redirect(lockedFor(name) ? `/login?err=locked&mins=${lockedFor(name)}` : "/login?err=1");
+  await startSession(u!);
+  redirect("/");
 }
 
 export async function logout() {
-  (await cookies()).delete(AUTH_COOKIE);
+  (await cookies()).delete(SESSION_COOKIE);
   redirect("/login");
 }

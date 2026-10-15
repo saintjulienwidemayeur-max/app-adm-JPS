@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { ArrowRight, PackageOpen, Calculator, ReceiptText, Wallet, Zap } from "lucide-react";
-import { SECTIONS } from "@/lib/menu";
+import { visibleSections } from "@/lib/menu";
+import { requireUser } from "@/lib/users";
+import { allowed } from "@/lib/access";
+import { syncSiteClients } from "@/lib/site-clients";
+import { ensureLoaded, flush } from "@/lib/persist";
 import { menuBadges, owed } from "@/lib/badges";
 import { money } from "@/lib/wh-store";
 import { usToday } from "@/lib/clock";
@@ -9,15 +13,21 @@ export const metadata = { title: "Main menu · JP's Logistics" };
 export const dynamic = "force-dynamic";
 
 const card = "rounded-xl border border-[#dfe4f0] bg-white shadow-sm";
-const QUICK = [
+const ALL_QUICK = [
   { href: "/warehouse/receiving", label: "Scan a received parcel", icon: PackageOpen },
   { href: "/warehouse/estimate", label: "Price boxes (estimate)", icon: Calculator },
   { href: "/warehouse/receipts", label: "New warehouse receipt", icon: ReceiptText },
   { href: "/warehouse/billing", label: "Receive a payment", icon: Wallet },
 ];
 
-export default function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
+  await ensureLoaded();
+  const me = await requireUser();
+  await syncSiteClients(); // new website accounts become customers
+  await flush();
+  const SECTIONS = visibleSections(me), denied = (await searchParams).denied;
   const b = menuBadges();
+  const QUICK = ALL_QUICK.filter((q) => allowed(me, q.href));
   const stats = [
     { href: "/warehouse/prealerts", n: String(b["/warehouse/prealerts"]), label: "Pre-alerts expected" },
     { href: "/warehouse/consolidate", n: String(b["/warehouse/consolidate"]), label: "Parcels to consolidate" },
@@ -31,8 +41,9 @@ export default function Home() {
         <p className="text-sm text-zinc-500">{usToday()}</p>
       </div>
 
+      {denied && <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">You do not have access to that page. Ask the administrator.</p>}
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {stats.map((s) => (
+        {stats.filter((s) => allowed(me, s.href)).map((s) => (
           <Link key={s.label} href={s.href} className={`${card} px-4 py-3 transition hover:border-brand hover:shadow-md`}>
             <div className="text-2xl font-extrabold text-brand">{s.n}</div>
             <div className="mt-0.5 text-xs text-zinc-600">{s.label}</div>
