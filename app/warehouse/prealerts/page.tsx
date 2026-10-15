@@ -2,7 +2,7 @@ import Link from "next/link";
 import { db, effectiveShip, money } from "@/lib/wh-store";
 import { cancelPrealert } from "@/lib/wh-actions";
 import { syncSitePrealerts } from "@/lib/prealert-sync";
-import { ensureLoaded, flush } from "@/lib/persist";
+import { tryLoaded, flush } from "@/lib/persist";
 import { itemsTotal } from "@/lib/compliance";
 import { nextDeparture, MAX_HOLD_DEPARTURES, departures } from "@/lib/schedule";
 import { isoToUs } from "@/lib/clock";
@@ -15,8 +15,7 @@ const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 const tone = (s: string) => (s === "Received" ? "text-green-700" : s === "Cancelled" ? "text-zinc-500" : "text-amber-700");
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
-  await ensureLoaded();
-  const siteErr = await syncSitePrealerts();
+  const siteErr = (await tryLoaded()) ? await syncSitePrealerts() : "";
   await flush();
   const q = await searchParams, needle = (q.q ?? "").trim().toLowerCase();
   const rows = db.prealerts.filter((p) => (!q.status || p.status === q.status) && (!needle || [p.id, p.customer, p.tracking, p.carrier, p.vendor].some((v) => v.toLowerCase().includes(needle))));

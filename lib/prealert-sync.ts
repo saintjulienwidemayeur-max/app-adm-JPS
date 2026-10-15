@@ -31,6 +31,9 @@ export async function adoptSitePrealert(row: SitePrealert): Promise<Prealert> {
 // Returns an error message when the website could not be read (the page still shows what it already has).
 let last = 0;
 export async function syncSitePrealerts(): Promise<string> {
+  try { return await run(); } catch (e) { return e instanceof Error ? e.message : String(e); } // a website problem must never break a page
+}
+async function run(): Promise<string> {
   if (!syncEnabled() || Date.now() - last < 5000) return "";
   last = Date.now();
   const r = await sitePrealerts();

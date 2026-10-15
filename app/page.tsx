@@ -4,7 +4,7 @@ import { visibleSections } from "@/lib/menu";
 import { requireUser } from "@/lib/users";
 import { allowed } from "@/lib/access";
 import { syncSiteClients } from "@/lib/site-clients";
-import { ensureLoaded, flush } from "@/lib/persist";
+import { tryLoaded, flush } from "@/lib/persist";
 import { menuBadges, owed } from "@/lib/badges";
 import { money } from "@/lib/wh-store";
 import { usToday } from "@/lib/clock";
@@ -21,10 +21,8 @@ const ALL_QUICK = [
 ];
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
-  await ensureLoaded();
   const me = await requireUser();
-  await syncSiteClients(); // new website accounts become customers
-  await flush();
+  if (await tryLoaded()) { await syncSiteClients(); await flush(); } // new website accounts become customers
   const SECTIONS = visibleSections(me), denied = (await searchParams).denied;
   const b = menuBadges();
   const QUICK = ALL_QUICK.filter((q) => allowed(me, q.href));

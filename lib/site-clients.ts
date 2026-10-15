@@ -7,6 +7,9 @@ const COUNTRY: Record<string, string> = { "Haïti": "Haiti", "États-Unis": "Uni
 let last = 0;
 
 export async function syncSiteClients(force = false): Promise<{ added: number; error?: string }> {
+  try { return await run(force); } catch (e) { return { added: 0, error: e instanceof Error ? e.message : String(e) }; } // a website problem must never break a page
+}
+async function run(force: boolean): Promise<{ added: number; error?: string }> {
   if (!syncEnabled() || (!force && Date.now() - last < 15000)) return { added: 0 };
   last = Date.now();
   const r = await siteClients();
