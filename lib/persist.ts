@@ -120,6 +120,11 @@ export async function ensureLoaded() {
   if (!st.loaded) throw new Error(`The database is not reachable, so nothing was changed. ${st.error ?? ""}`.trim());
 }
 
+// Like ensureLoaded, for pages that only read: false instead of an error when the database is down (the page then shows what it has).
+export async function tryLoaded(): Promise<boolean> {
+  try { await ensureLoaded(); return true; } catch { return false; }
+}
+
 async function write() {
   const pool = st.pool;
   if (!pool || !st.loaded) return;

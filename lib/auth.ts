@@ -8,7 +8,7 @@ import { ensureAdmin, checkLogin, lockedFor, startSession } from "./users";
 // After signing in, the app always opens on the main menu (whatever page was asked for before the sign-in).
 export async function login(f: FormData) {
   const name = String(f.get("name") ?? "").trim(), code = String(f.get("code") ?? "");
-  await ensureLoaded();
+  try { await ensureLoaded(); } catch { redirect("/login?err=db"); } // the database is configured but not reachable
   ensureAdmin();
   if (lockedFor(name)) redirect(`/login?err=locked&mins=${lockedFor(name)}`);
   await new Promise((r) => setTimeout(r, 800)); // slows down guessing

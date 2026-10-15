@@ -11,7 +11,8 @@ let cli: SupabaseClient | null | undefined;
 const client = () => {
   if (cli !== undefined) return cli;
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return (cli = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null);
+  try { return (cli = url && key ? createClient(url.trim(), key.trim(), { auth: { persistSession: false } }) : null); }
+  catch (e) { console.error("[sync] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not valid:", e instanceof Error ? e.message : e); return (cli = null); }
 };
 export const syncEnabled = () => !!client();
 

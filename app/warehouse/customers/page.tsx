@@ -2,7 +2,7 @@ import Link from "next/link";
 import { db, repLabel } from "@/lib/wh-store";
 import { createCustomer } from "@/lib/wh-actions";
 import { syncSiteClients } from "@/lib/site-clients";
-import { ensureLoaded, flush } from "@/lib/persist";
+import { tryLoaded, flush } from "@/lib/persist";
 import { CustomerFields } from "@/components/customer-fields";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,7 @@ type SP = Promise<Record<string, string | undefined>>;
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
-  await ensureLoaded();
-  const site = await syncSiteClients(); // accounts created on the website appear here by themselves
+  const site = (await tryLoaded()) ? await syncSiteClients() : { added: 0, error: undefined }; // accounts created on the website appear here by themselves
   await flush();
   const q = await searchParams;
   const needle = (q.q ?? "").trim().toLowerCase();

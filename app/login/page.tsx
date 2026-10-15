@@ -17,7 +17,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
         <label className="grid gap-1 text-sm font-medium text-zinc-700">Code
           <Input name="code" type="password" inputMode="text" autoComplete="current-password" required />
         </label>
-        {q.err === "locked" ? <p role="alert" className="text-sm font-medium text-red-700">Too many wrong codes. Try again in {q.mins ?? "10"} minute(s).</p>
+        {q.err === "db" ? <p role="alert" className="text-sm font-medium text-red-700">The database is not reachable, so nobody can sign in right now. The administrator must check DATABASE_URL (the Supabase &quot;Transaction pooler&quot; address with the database password). The server log says why: &quot;[persist] cannot load the database&quot;.</p>
+          : q.err === "locked" ? <p role="alert" className="text-sm font-medium text-red-700">Too many wrong codes. Try again in {q.mins ?? "10"} minute(s).</p>
           : q.err && <p role="alert" className="text-sm font-medium text-red-700">Wrong name or code.</p>}
         <Button type="submit">Sign in</Button>
       </form>

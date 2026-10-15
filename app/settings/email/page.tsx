@@ -1,7 +1,7 @@
 import { db, cargoOf } from "@/lib/wh-store";
 import { mailEnabled } from "@/lib/jps-sync";
 import { syncSiteClients } from "@/lib/site-clients";
-import { ensureLoaded, flush } from "@/lib/persist";
+import { tryLoaded, flush } from "@/lib/persist";
 import { requireUser } from "@/lib/users";
 import { sendEmail } from "@/lib/mail-actions";
 import { RecipientPicker } from "@/components/recipient-picker";
@@ -15,11 +15,9 @@ const th = "px-2 py-1 font-semibold", td = "px-2 py-1 align-top";
 const radio = "flex items-start gap-2 rounded-lg border border-zinc-200 bg-white p-3 has-[:checked]:border-brand has-[:checked]:bg-[#f3f6ff]";
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
-  await ensureLoaded();
   await requireUser();
   const q = await searchParams;
-  await syncSiteClients();
-  await flush();
+  if (await tryLoaded()) { await syncSiteClients(); await flush(); }
   const enabled = mailEnabled();
   const people = db.customers.map((c) => ({ no: c.no, name: c.name, email: c.email, site: !!c.clientId || !!c.email })).sort((a, b) => a.name.localeCompare(b.name));
   const shipments = db.shipments.filter((s) => !s.shipped).map((s) => ({ name: s.name, ship: s.ship, n: new Set(cargoOf(s.name).rows.map((x) => x.w.cust)).size }));
