@@ -74,3 +74,42 @@ export async function markSitePrealertReceived(id: string): Promise<string | nul
   const r = await c.from("prealerts").update({ status: "received", updated_at: new Date().toISOString() }).eq("id", id);
   return r.error?.message ?? null;
 }
+
+// ---------- Customers who created an account on the website ----------
+export type SiteClient = { id: string; name: string; email: string; phone: string | null; address: string | null; city: string | null; country: string | null; box_number: string | null; lang: string | null; created_at: string };
+// All website accounts (read page by page: Supabase returns at most 1000 rows per request).
+export async function siteClients(): Promise<{ rows: SiteClient[]; error?: string }> {
+  const c = client();
+  if (!c) return { rows: [] };
+  const rows: SiteClient[] = [];
+  for (let from = 0; from < 20000; from += 1000) {
+    let r = await c.from("clients").select("id,name,email,phone,address,city,country,box_number,lang,created_at").order("created_at", { ascending: true }).range(from, from + 999);
+    if (r.error) r = await c.from("clients").select("id,name,email,phone,address,city,country,box_number,created_at").order("created_at", { ascending: true }).range(from, from + 999) as typeof r; // `lang` not created yet
+    if (r.error) return { rows, error: r.error.message };
+    rows.push(...((r.data ?? []) as unknown as SiteClient[]));
+    if ((r.data ?? []).length < 1000) break;
+  }
+  return { rows };
+}
+
+// ---------- E-mail through the website ----------
+// The website already sends e-mail (Edge Function `admin-mail`, through Brevo). The warehouse app calls it with the website staff account
+// (SITE_STAFF_EMAIL / SITE_STAFF_PASSWORD: an owner or agent of the website's admin panel), so every e-mail goes out from the website.
+const ANON = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6bHduaG1ib3F1bmZscXp2bGNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzMzc4NDMsImV4cCI6MjEwNTkxMzg0M30.tAffoPTs9CFT0KR_e6_uPPfjLjNM3Re4Kev2rcePIGk";
+export const mailEnabled = () => syncEnabled() && !!process.env.SITE_STAFF_EMAIL && !!process.env.SITE_STAFF_PASSWORD;
+const MAIL_ERRORS: Record<string, string> = {
+  NOT_AUTHORIZED: "The website refused the staff account (SITE_STAFF_EMAIL / SITE_STAFF_PASSWORD must be an owner or agent).",
+  CLIENT_NOT_FOUND: "This person has no account on the website.", SEND_FAILED: "The e-mail service (Brevo) refused the message.", BAD_REQUEST: "Subject or message missing or too long.",
+};
+async function mailCall(body: Record<string, unknown>): Promise<{ ok?: boolean; sent?: number; total?: number; error?: string }> {
+  try {
+    const r = await fetch(`${process.env.SUPABASE_URL}/functions/v1/admin-mail`, {
+      method: "POST", headers: { "content-type": "application/json", apikey: ANON, authorization: `Bearer ${ANON}` },
+      body: JSON.stringify({ ...body, staff_email: process.env.SITE_STAFF_EMAIL, staff_password: process.env.SITE_STAFF_PASSWORD }),
+    });
+    const j = (await r.json().catch(() => ({}))) as { ok?: boolean; sent?: number; total?: number; error?: string };
+    return r.ok ? j : { error: MAIL_ERRORS[j.error ?? ""] ?? j.error ?? `The website answered ${r.status}.` };
+  } catch (e) { return { error: `Could not reach the website: ${e instanceof Error ? e.message : e}` }; }
+}
+export const mailOne = async (clientId: string, subject: string, message: string) => (await mailCall({ action: "send", client_id: clientId, subject, message })).error ?? null;
+export const mailAll = (subject: string, message: string) => mailCall({ action: "broadcast", subject, message });

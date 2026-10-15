@@ -1,15 +1,18 @@
-// Optional password for the whole app. Set APP_PASSWORD (on Render: Environment) to turn it on; leave it empty to keep the app open.
+// Every page needs a sign-in, and a limited user can only open the pages they were given (the cookie carries them).
 import { NextResponse, type NextRequest } from "next/server";
-import { AUTH_COOKIE, authToken } from "@/lib/auth-token";
+import { SESSION_COOKIE, readSession } from "@/lib/session";
+import { allowed } from "@/lib/access";
 
 export async function middleware(req: NextRequest) {
-  const pw = process.env.APP_PASSWORD;
-  if (!pw || req.nextUrl.pathname === "/login") return NextResponse.next();
-  if (req.cookies.get(AUTH_COOKIE)?.value === (await authToken(pw))) return NextResponse.next();
+  const path = req.nextUrl.pathname;
+  const headers = new Headers(req.headers);
+  headers.set("x-pathname", path);
+  if (path === "/login") return NextResponse.next({ request: { headers } });
+  const me = await readSession(req.cookies.get(SESSION_COOKIE)?.value);
   const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = `?next=${encodeURIComponent(req.nextUrl.pathname + req.nextUrl.search)}`;
-  return NextResponse.redirect(url);
+  if (!me) { url.pathname = "/login"; url.search = ""; return NextResponse.redirect(url); }
+  if (!allowed(me, path)) { url.pathname = "/"; url.search = "?denied=1"; return NextResponse.redirect(url); }
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png|logo.png).*)"] };

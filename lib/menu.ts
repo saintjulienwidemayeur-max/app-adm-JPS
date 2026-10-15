@@ -1,8 +1,9 @@
 // The app's menu: five sections, like the old billing software's main menu. The sidebar, the main menu, each section's page and the
 // breadcrumb all read this list, so a page is added in one place.
-import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, ScanLine, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, type LucideIcon } from "lucide-react";
+import { allowed, isOn, type Claims } from "./access";
+import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, ScanLine, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, type LucideIcon } from "lucide-react";
 
-export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string };
+export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
 
 export const HOME = { href: "/", label: "Main menu", icon: Home };
@@ -50,9 +51,16 @@ export const SECTIONS: MenuSection[] = [
       { href: "/warehouse/orders", label: "Orders", icon: ShoppingCart, desc: "Purchase orders JP's buys for customers" },
     ],
   },
+  {
+    slug: "admin", title: "Administration", icon: ShieldCheck, blurb: "Users, access and e-mails to customers",
+    pages: [
+      { href: "/settings/users", label: "Users & access", icon: ShieldCheck, desc: "Create the people who sign in and choose the pages each may open", adminOnly: true },
+      { href: "/settings/email", label: "Email customers", icon: Mail, desc: "Send an e-mail through the website to all, to a shipment's customers or to chosen people" },
+    ],
+  },
 ];
 
-const on = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
+const on = isOn;
 // The section and page a path belongs to (the hub page /menu/<slug> belongs to its section, with no page).
 export function locate(path: string): { section?: MenuSection; page?: MenuPage } {
   const hub = path.match(/^\/menu\/([^/]+)/);
@@ -60,4 +68,10 @@ export function locate(path: string): { section?: MenuSection; page?: MenuPage }
   for (const section of SECTIONS) { const page = section.pages.find((p) => on(path, p.href)); if (page) return { section, page }; }
   return {};
 }
-export { on as isOn };
+export { isOn };
+// What this person sees in the menu: only the pages they may open, and no empty section.
+export const visibleSections = (c: Pick<Claims, "admin" | "perms">): MenuSection[] =>
+  SECTIONS.map((s) => ({ ...s, pages: s.pages.filter((p) => allowed(c, p.href)) })).filter((s) => s.pages.length > 0);
+// Every page a limited user can be given (grouped by section), for the access picker.
+export const grantable = (): { slug: string; title: string; pages: { href: string; label: string }[] }[] =>
+  SECTIONS.map((s) => ({ slug: s.slug, title: s.title, pages: s.pages.filter((p) => !p.adminOnly).map((p) => ({ href: p.href, label: p.label })) })).filter((s) => s.pages.length > 0);
