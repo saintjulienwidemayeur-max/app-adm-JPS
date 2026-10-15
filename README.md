@@ -30,6 +30,9 @@ The Pickups page schedules a driver to collect a parcel at the customer's addres
 ## Password
 Set `APP_PASSWORD` and every page asks for it (cookie for 30 days, Sign out in the menu). Without it the app is open to anyone who knows the address, so set it before real customers are in the database.
 
+## Menu
+The app is split in five sections, like the old billing software's main menu (`lib/menu.ts` is the one list that the sidebar, the main menu and each section page read): **Customers** (customers, estimate, pickups, reps), **Warehouse Receipts** (receipts, consolidate), **Receiving & Dispatching** (pre-alerts, received items, intake, arrivals PV), **Prepare Shipping** (shipments, load pallet, loading sheet) and **Billing** (billing, invoices, payments, orders). `/` is the main menu (what is waiting, the sections, quick start); `/menu/<section>` shows a section's tools; the sidebar opens only the current section; a breadcrumb shows where you are. The small numbers next to entries (`lib/badges.ts`) are what is waiting.
+
 Pages: Estimate, Pre-alerts, Intake, Received items, Consolidate, Warehouse receipts (+ detail, report, labels), Load pallet (+ pallet labels), Shipments (+ booking, Bill of Lading, Letter of Instruction, cargo list), Loading sheet, Arrivals PV, Invoices (+ printable invoice), Pickups, Customers, Reps.
 
 ## How receipts, customers and fees work

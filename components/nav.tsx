@@ -2,37 +2,64 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/auth";
-import { PackageOpen, ReceiptText, ScanLine, Truck, ClipboardList, MapPin, Layers, Users, UserCheck, FileText, Ship, Wallet, ShoppingCart, Car, BellRing, Calculator } from "lucide-react";
+import { ChevronRight, LogOut } from "lucide-react";
+import { HOME, SECTIONS, locate, isOn } from "@/lib/menu";
 
-const links = [
-  ["/warehouse/intake", "Intake", ScanLine], ["/warehouse/prealerts", "Pre-alerts", BellRing], ["/warehouse/receiving", "Received items", PackageOpen],
-  ["/warehouse/consolidate", "Consolidate", Layers], ["/warehouse/receipts", "Warehouse receipts", ReceiptText], ["/warehouse/pallets", "Load pallet", Truck], ["/warehouse/shipments", "Shipments", Ship],
-  ["/warehouse/loading-sheet", "Loading sheet", ClipboardList], ["/warehouse/arrivals", "Arrivals PV", MapPin],
-  ["/warehouse/invoices", "Invoices", FileText], ["/warehouse/billing", "Billing", Wallet], ["/warehouse/orders", "Orders", ShoppingCart], ["/warehouse/pickups", "Pickups", Car], ["/warehouse/estimate", "Estimate", Calculator], ["/warehouse/customers", "Customers", Users], ["/warehouse/reps", "Reps", UserCheck],
-] as const;
+const Pill = ({ n, active }: { n?: number; active?: boolean }) => (n ? <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${active ? "bg-white text-brand" : "bg-white/20 text-white"}`}>{n}</span> : null);
 
-export function Nav({ mode = "memory", auth = false }: { mode?: "memory" | "database" | "down"; auth?: boolean }) {
+export function Nav({ mode = "memory", auth = false, badges = {} }: { mode?: "memory" | "database" | "down"; auth?: boolean; badges?: Record<string, number> }) {
   const path = usePathname();
   if (path === "/login") return null;
+  const here = locate(path);
+  const total = (s: (typeof SECTIONS)[number]) => s.pages.reduce((a, p) => a + (badges[p.href] ?? 0), 0);
   return (
-    <nav className="no-print sticky top-0 flex h-screen w-60 shrink-0 flex-col gap-1 self-start border-l border-[#dfe4f0] bg-white p-4 text-sm">
-      <Link href="/warehouse/receiving" className="mb-5 block px-1">
+    <nav aria-label="Main" className="no-print sticky top-0 hidden h-screen w-72 shrink-0 flex-col overflow-y-auto bg-brand text-sm text-white md:flex">
+      <Link href="/" className="m-4 mb-3 block rounded-xl bg-white p-2.5 shadow-sm">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="JP's Logistics & More" className="w-full" />
       </Link>
-      {links.map(([href, label, Icon]) => {
-        const on = path.startsWith(href);
-        return (
-          <Link key={href} href={href} aria-current={on ? "page" : undefined}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition ${on ? "bg-brand text-white shadow-sm" : "text-zinc-700 hover:bg-[#eaeefb] hover:text-brand"}`}>
-            <Icon size={18} aria-hidden /> {label}
-          </Link>
-        );
-      })}
-      {auth && <form action={logout} className="mt-auto"><button className="w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-600 hover:bg-[#eaeefb] hover:text-brand">Sign out</button></form>}
-      <p className={`${auth ? "" : "mt-auto "}px-3 text-xs ${mode === "memory" ? "text-amber-700" : mode === "down" ? "text-red-700" : "text-zinc-500"}`}>
-        {mode === "memory" ? "Memory only: data is lost when the server restarts." : mode === "down" ? "Database not reachable." : "Saved in the database."}
-      </p>
+      <div className="flex flex-col gap-0.5 px-3">
+        <Link href={HOME.href} aria-current={path === "/" ? "page" : undefined}
+          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 font-semibold transition ${path === "/" ? "bg-white text-brand shadow-sm" : "text-white/85 hover:bg-white/10 hover:text-white"}`}>
+          <HOME.icon size={18} aria-hidden /> {HOME.label}
+        </Link>
+        <p className="mt-4 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-white/50">Sections</p>
+        {SECTIONS.map((s) => {
+          const open = here.section?.slug === s.slug;
+          return (
+            <div key={s.slug} className="mb-0.5">
+              <Link href={`/menu/${s.slug}`} aria-expanded={open}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 font-semibold transition ${open ? "bg-white/15 text-white" : "text-white/85 hover:bg-white/10 hover:text-white"}`}>
+                <s.icon size={18} aria-hidden /> <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                {!open && <Pill n={total(s)} />}
+                <ChevronRight size={15} aria-hidden className={`shrink-0 text-white/60 transition-transform ${open ? "rotate-90" : ""}`} />
+              </Link>
+              {open && (
+                <ul className="mb-2 ml-5 mt-1 flex flex-col gap-0.5 border-l border-white/20 pl-2">
+                  {s.pages.map((p) => {
+                    const active = isOn(path, p.href);
+                    return (
+                      <li key={p.href}>
+                        <Link href={p.href} aria-current={active ? "page" : undefined}
+                          className={`flex items-center gap-2.5 rounded-md px-2.5 py-2 transition ${active ? "bg-white font-semibold text-brand shadow-sm" : "text-white/85 hover:bg-white/10 hover:text-white"}`}>
+                          <p.icon size={16} aria-hidden /> <span className="min-w-0 flex-1 truncate">{p.label}</span>
+                          <Pill n={badges[p.href]} active={active} />
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-auto border-t border-white/15 p-3">
+        {auth && <form action={logout}><button className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-white/85 hover:bg-white/10 hover:text-white"><LogOut size={16} aria-hidden /> Sign out</button></form>}
+        <p className={`px-3 pt-2 text-xs ${mode === "memory" ? "text-amber-300" : mode === "down" ? "text-red-300" : "text-white/55"}`}>
+          {mode === "memory" ? "Memory only: data is lost when the server restarts." : mode === "down" ? "Database not reachable." : "Saved in the database."}
+        </p>
+      </div>
     </nav>
   );
 }
