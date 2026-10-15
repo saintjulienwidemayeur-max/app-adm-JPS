@@ -12,7 +12,7 @@ import { db } from "./wh-store";
 type Table = { name: string; key: (row: never) => string; rows: () => unknown[]; set: (rows: never[]) => void };
 type Store = {
   pool: Pool | null; loaded: boolean; error: string | null;
-  seen: Map<string, Map<string, string>>; queue: Promise<unknown>; starting: Promise<void> | null;
+  seen: Map<string, Map<string, string>>; queue: Promise<unknown>; starting: Promise<void> | null; retry?: boolean;
 };
 const g = globalThis as unknown as { __whStore?: Store };
 const st: Store = (g.__whStore ??= { pool: null, loaded: false, error: null, seen: new Map(), queue: Promise.resolve(), starting: null });
@@ -106,8 +106,12 @@ export function initStore(): Promise<void> {
       console.log("[persist] database ready");
     } catch (e) {
       st.error = e instanceof Error ? e.message : String(e);
-      console.error("[persist] cannot load the database:", st.error, "- retrying every 5 seconds");
-      setTimeout(() => { void initStore(); }, 5000).unref();
+      // One retry timer at a time (every page visit calls initStore too: without this the timers and the log lines pile up).
+      if (!st.retry) {
+        st.retry = true;
+        console.error("[persist] cannot load the database:", st.error, "- retrying every 5 seconds");
+        setTimeout(() => { st.retry = false; void initStore(); }, 5000).unref();
+      }
     } finally { st.starting = null; }
   })());
 }
