@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { money } from "@/lib/wh-store";
+import { money, findCustomer, rateFor } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
 import { ESTIMATE_NOTE } from "@/lib/disclaimer";
 import { estimate, parseEstimate, EST_MAX_ROWS, EST_AIR_RATE, EST_OCEAN_RATE, EST_AIR_HANDLING, EST_OCEAN_HANDLING } from "@/lib/estimate";
@@ -20,7 +20,8 @@ const KEYS = ["customer", "rateAir", "rateOcean", "handlingAir", "handlingOcean"
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
   const get = (k: string) => q[k];
-  const inp = parseEstimate(get);
+  const cust = q.customer ? findCustomer(q.customer) : undefined; // this customer's own rates, unless typed below
+  const inp = parseEstimate((k) => (k === "rateAir" && !q.rateAir && cust ? String(rateFor(cust, "Air")) : k === "rateOcean" && !q.rateOcean && cust ? String(rateFor(cust, "Ocean")) : q[k]));
   const est = estimate(inp);
   // Rows shown: at least 5, and always one empty row after the last one in use.
   let last = -1;
@@ -56,8 +57,8 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           <section className="rounded-lg border p-3">
             <h2 className="font-bold">Rates and extras</h2>
             <div className="mt-2 grid gap-2 sm:grid-cols-4">
-              <F label="Air rate per lb ($)"><Input name="rateAir" type="number" step="0.01" min="0" defaultValue={q.rateAir ?? EST_AIR_RATE} className="text-right" /></F>
-              <F label="Ocean rate per cubic foot ($)"><Input name="rateOcean" type="number" step="0.01" min="0" defaultValue={q.rateOcean ?? EST_OCEAN_RATE} className="text-right" /></F>
+              <F label="Air rate per lb ($)"><Input name="rateAir" type="number" step="0.01" min="0" defaultValue={q.rateAir ?? (cust ? rateFor(cust, "Air") : EST_AIR_RATE)} key={`air-${cust?.no ?? 0}`} className="text-right" /></F>
+              <F label="Ocean rate per cubic foot ($)"><Input name="rateOcean" type="number" step="0.01" min="0" defaultValue={q.rateOcean ?? (cust ? rateFor(cust, "Ocean") : EST_OCEAN_RATE)} key={`oce-${cust?.no ?? 0}`} className="text-right" /></F>
               <F label="Air handling ($, minimum 35)"><Input name="handlingAir" type="number" step="0.01" min="0" defaultValue={q.handlingAir ?? EST_AIR_HANDLING} className="text-right" /></F>
               <F label="Ocean handling ($, minimum 45)"><Input name="handlingOcean" type="number" step="0.01" min="0" defaultValue={q.handlingOcean ?? EST_OCEAN_HANDLING} className="text-right" /></F>
               <F label="Declared value ($)"><Input name="declared" type="number" step="0.01" min="0" defaultValue={q.declared} className="text-right" /></F>
@@ -105,6 +106,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
 
           <form action={estimateToReceipt} className="no-print mt-5 flex flex-wrap items-end gap-2 rounded-lg border p-3">
             {carry.map((k) => <input key={k} type="hidden" name={k} value={q[k]} />)}
+            {!q.rateAir && <input type="hidden" name="rateAir" value={inp.rateAir} />}{!q.rateOcean && <input type="hidden" name="rateOcean" value={inp.rateOcean} />}
             <div className="mr-2"><div className="font-bold">Make a warehouse receipt from this estimate</div><div className="text-xs text-zinc-600">Opens a new receipt for the customer above (pieces, fees and insurance included, marked as an estimate). Every box needs its contents.</div></div>
             <select name="ship" className="h-9 rounded-md border bg-white px-2 text-sm" aria-label="Ship type"><option value="Air">Air (JPF)</option><option value="Ocean">Ocean (JPL)</option></select>
             <Button type="submit">Create the receipt</Button>

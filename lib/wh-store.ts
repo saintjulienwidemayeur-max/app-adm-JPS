@@ -20,7 +20,12 @@ export type Customer = {
   rep: string; route: string; creditLog?: CreditEntry[];
   // Set when the customer created an account on the website (same Supabase database): the website client id, the box number, the language.
   clientId?: string; box?: string; lang?: string;
+  // From the old system (customer import): other contact details, this customer's own rates (per lb by Air, per cubic foot by Ocean, and the
+  // other routes), whether an ID is on file, the old rep code.
+  whatsapp?: string; altPhone?: string; emailMore?: string; idOnFile?: boolean; legacyRep?: string; since?: string;
+  rates?: CustomerRates;
 };
+export type CustomerRates = { ocean?: number; air?: number; capa?: number; capo?: number; sdq?: number; droc?: number };
 // One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
 export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" };
 // A notice sent to the customer about a receipt (email or WhatsApp). `sig` is the state of the receipt that was sent.
@@ -91,6 +96,8 @@ export const COUNTRIES = ["Haiti", "Dominican Republic", "United States", "Jamai
 // Standard rates per method (editable per receipt): Air is billed per lb (the larger of gross and volumetric weight), Ocean per cubic foot.
 export const AIR_RATE = 4.5, OCEAN_RATE = 16, OCEAN_HANDLING = 45, HANDLING_LABEL = "Handling fees";
 export const defaultRate = (ship: Ship) => (ship === "Ocean" ? OCEAN_RATE : AIR_RATE);
+// The rate of this customer (from the old system or typed on the customer page), else the standard one.
+export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : defaultRate(ship); };
 
 const today = () => usToday();
 type WhDb = {
@@ -122,7 +129,7 @@ export const findCustomer = (q: string) => {
   const t = q.trim().toLowerCase();
   if (!t) return undefined;
   if (/^\d+$/.test(t)) return db.customers.find((c) => c.no === Number(t));
-  if (t.includes("@")) return db.customers.find((c) => c.email.toLowerCase() === t);
+  if (t.includes("@")) return db.customers.find((c) => c.email.toLowerCase() === t) ?? db.customers.find((c) => c.emailMore && c.emailMore.toLowerCase().split(/[;,\s]+/).includes(t));
   return db.customers.find((c) => c.name.toLowerCase() === t);
 };
 export const newCustomer = (name: string, init: Partial<Customer> = {}): Customer => {
@@ -142,7 +149,7 @@ export const repLabel = (id: string) => repOf(id)?.initials ?? "";
 export const openWR = (c: Customer, ship: Ship, init: Partial<WR> = {}): WR => {
   const w: WR = {
     id: String(db.n.wr++), date: nowStr(), customer: c.name, cust: c.no, email: c.email, route: c.route, rep: c.rep, ship,
-    comments: "", contents: "", declared: 0, insurance: "Declined", fees: [], payments: [], pieces: [], rate: defaultRate(ship), ...init,
+    comments: "", contents: "", declared: 0, insurance: "Declined", fees: [], payments: [], pieces: [], rate: rateFor(c, ship), ...init,
   };
   if (ship === "Ocean") w.fees.push({ id: db.n.fee++, label: HANDLING_LABEL, amount: OCEAN_HANDLING, kind: "charge", auto: "handling" });
   db.wrs.unshift(w);
@@ -211,7 +218,7 @@ export const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleS
 // What the same goods would cost shipped the other way (same pieces, standard rate of that method, its automatic handling fee).
 export const otherShip = (w: WR): Ship => (w.ship === "Air" ? "Ocean" : "Air");
 export const estimateFor = (w: WR, ship: Ship) => {
-  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = defaultRate(ship);
+  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship);
   const freight = r2(qty * rate), handling = ship === "Ocean" ? OCEAN_HANDLING : 0;
   const extra = r2(w.fees.filter((f) => f.kind === "charge" && f.auto !== "handling").reduce((a, f) => a + f.amount, 0));
   const ins = insuranceFee(w), cr = credits(w);

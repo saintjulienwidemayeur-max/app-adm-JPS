@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, effectiveShip, type Pickup, type PickupStatus, type Prealert, defaultRate, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { ensureLoaded, flush } from "./persist";
@@ -147,7 +147,7 @@ function applyShip(w: WR, ship: Ship): string {
   if (w.invoice) return `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change the ship type.`;
   db.items.forEach((i) => { if (i.wr === w.id) i.ship = ship; });
   w.ship = ship;
-  w.rate = defaultRate(ship);
+  w.rate = rateFor(custOf(w), ship);
   if (ship === "Ocean") { if (!w.fees.some((x) => x.label.toLowerCase() === HANDLING_LABEL.toLowerCase())) w.fees.push({ id: db.n.fee++, label: HANDLING_LABEL, amount: OCEAN_HANDLING, kind: "charge", auto: "handling" }); }
   else w.fees = w.fees.filter((x) => x.auto !== "handling");
   return "";
@@ -173,7 +173,7 @@ export const updateWR = act(async (f: F) => {
   if (declared < 0) back(wrPath(w.id), { err: "Declared value can't be negative." });
   if (!emailOk(s(f, "email"))) back(wrPath(w.id), { err: "That email address isn't valid." });
   const ship = shipOf(s(f, "ship") || w.ship);
-  const rate = s(f, "rate") === "" ? defaultRate(ship) : num(f, "rate");
+  const rate = s(f, "rate") === "" ? rateFor(custOf(w), ship) : num(f, "rate");
   if (!Number.isFinite(rate) || rate < 0 || rate > 1000) back(wrPath(w.id), { err: "Enter a rate of 0 or more." });
   const bad = applyShip(w, ship);
   if (bad) back(wrPath(w.id), { err: bad });
@@ -271,6 +271,22 @@ export const saveCustomer = act(async (f: F) => {
   for (const w of db.wrs) if (w.cust === c.no) { mine.add(w.id); w.customer = c.name; if (!w.email || w.email === oldEmail) w.email = c.email; }
   db.items.forEach((i) => { if (i.wr && mine.has(i.wr)) i.customer = c.name; });
   back(here, { ok: "Customer saved." });
+});
+
+// The customer's own rates (from the old system, or typed here). Empty = the standard rate.
+export const saveCustomerRates = act(async (f: F) => {
+  const c = db.customers.find((x) => x.no === num(f, "no"));
+  if (!c) return;
+  const here = `${CU}/${c.no}`, rates: NonNullable<typeof c.rates> = {};
+  for (const k of ["ocean", "air", "capa", "capo", "sdq", "droc"] as const) {
+    const raw = s(f, `r_${k}`);
+    if (!raw) continue;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v <= 0 || v > 1000) back(here, { err: "A rate must be more than 0 (or empty)." });
+    rates[k] = r2(v);
+  }
+  c.rates = Object.keys(rates).length ? rates : undefined;
+  back(here, { ok: "Rates saved. They apply to the next receipts and estimates of this customer." });
 });
 
 // ---------- Representatives ----------

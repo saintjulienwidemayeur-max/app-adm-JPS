@@ -1,7 +1,7 @@
 // The app's menu: five sections, like the old billing software's main menu. The sidebar, the main menu, each section's page and the
 // breadcrumb all read this list, so a page is added in one place.
 import { allowed, isOn, type Claims } from "./access";
-import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, ScanLine, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, type LucideIcon } from "lucide-react";
+import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, ScanLine, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, type LucideIcon } from "lucide-react";
 
 export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
@@ -55,6 +55,7 @@ export const SECTIONS: MenuSection[] = [
     slug: "admin", title: "Administration", icon: ShieldCheck, blurb: "Users, access and e-mails to customers",
     pages: [
       { href: "/settings/users", label: "Users & access", icon: ShieldCheck, desc: "Create the people who sign in and choose the pages each may open", adminOnly: true },
+      { href: "/settings/import", label: "Import customers", icon: FileUp, desc: "Bring the customers of the old system in from a CSV file", adminOnly: true },
       { href: "/settings/email", label: "Email customers", icon: Mail, desc: "Send an e-mail through the website to all, to a shipment's customers or to chosen people" },
     ],
   },
