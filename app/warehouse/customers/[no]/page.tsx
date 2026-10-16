@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, wrCode, total, money, payStatus } from "@/lib/wh-store";
-import { saveCustomer } from "@/lib/wh-actions";
+import { db, wrCode, total, money, payStatus, rateFor } from "@/lib/wh-store";
+import { saveCustomer, saveCustomerRates } from "@/lib/wh-actions";
 import { CustomerFields } from "@/components/customer-fields";
 import { Button } from "@/components/ui/button";
 
@@ -26,6 +26,20 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <CustomerFields c={c} />
         <Button type="submit" className="mt-4">Save customer</Button>
       </form>
+
+      <section className="mt-6 rounded-lg border p-3">
+        <h2 className="font-bold">Rates</h2>
+        <p className="text-xs text-zinc-600">This customer&apos;s own rates. Air: per lb (the larger of gross and volumetric weight). Ocean: per cubic foot. They are used on this customer&apos;s new receipts and estimates (now: Air {money(rateFor(c, "Air"))} per lb, Ocean {money(rateFor(c, "Ocean"))} per cubic foot). Leave a box empty for the standard rate.</p>
+        <form action={saveCustomerRates} className="mt-2 grid gap-2 sm:grid-cols-6">
+          <input type="hidden" name="no" value={c.no} />
+          {([["air", "Air / lb"], ["ocean", "Ocean / cuft"], ["capa", "Cap-Air"], ["capo", "Cap-Ocean"], ["sdq", "SDQ"], ["droc", "DR Ocean"]] as const).map(([k, label]) => (
+            <label key={k} className="grid gap-1 text-xs font-medium text-zinc-600">{label}<input name={`r_${k}`} type="number" step="0.01" min="0" defaultValue={c.rates?.[k] ?? ""} className="h-9 w-full rounded-md border px-2 text-right text-sm" /></label>))}
+          <button type="submit" className="h-9 self-end rounded-md bg-brand px-4 text-sm font-medium text-white sm:col-span-6 sm:w-36">Save rates</button>
+        </form>
+        {(c.whatsapp || c.altPhone || c.emailMore || c.idOnFile || c.legacyRep || c.since) && (
+          <p className="mt-3 text-xs text-zinc-600">From the old system:{c.whatsapp && ` WhatsApp ${c.whatsapp}.`}{c.altPhone && ` Other phone ${c.altPhone}.`}{c.emailMore && ` Other e-mails: ${c.emailMore}.`}{c.idOnFile && " ID on file."}{c.legacyRep && ` Rep code ${c.legacyRep}.`}{c.since && ` Customer since ${c.since}.`}</p>
+        )}
+      </section>
 
       <h2 className="mt-6 font-bold">Warehouse receipts ({wrs.length})</h2>
       {wrs.length === 0 ? <p className="mt-1 text-sm text-zinc-600">No receipts yet.</p> : (
