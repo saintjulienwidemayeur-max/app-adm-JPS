@@ -1,4 +1,5 @@
 import { login } from "@/lib/auth";
+import { VERSION } from "@/lib/version";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +23,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ e
           : q.err && <p role="alert" className="text-sm font-medium text-red-700">Wrong name or code.</p>}
         <Button type="submit">Sign in</Button>
       </form>
+      <p className="text-center text-xs text-zinc-400">Version {VERSION}</p>
     </main>
   );
 }
