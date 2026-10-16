@@ -64,10 +64,11 @@ const T = {
 };
 
 // The warehouse receipt as a PDF. Not sent twice for the same state of the receipt.
-export async function emailReceipt(w: WR, why: string): Promise<void> {
-  if (!w.pieces.length) return;
+// `force` (the "Notify by e-mail" button) sends again even if the same state was already sent. Returns an error text, or "" when sent.
+export async function emailReceipt(w: WR, why: string, force = false): Promise<string> {
+  if (!w.pieces.length) return "The receipt has no pieces yet.";
   const sig = wrSig(w);
-  if (w.notices?.some((n) => n.auto && n.channel === "Email" && n.sig === sig)) return;
+  if (!force && w.notices?.some((n) => n.auto && n.channel === "Email" && n.sig === sig)) return "";
   const c = custOf(w), tx = T[langOf(c)], code = wrCode(w);
   const lbs = Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
   const pdf = await receiptPdf(w), name = `Receipt-${code}.pdf`;
@@ -75,9 +76,10 @@ export async function emailReceipt(w: WR, why: string): Promise<void> {
   const message = tx.rcpt(code, w.pieces.length, lbs, w.ship) + (w.estimate ? tx.est(`$${total(w).toFixed(2)}`) : tx.fin) + `\n\n${lines}\n\n${COMPANY.name} · ${COMPANY.phone}`;
   const r = await deliver(c, w.email, tx.rcptSubject(code), message, [{ name, content: Buffer.from(pdf).toString("base64") }]);
   log(tx.rcptSubject(code), r.to || w.customer, r.error || undefined);
-  if (r.error) return;
+  if (r.error) return r.error;
   const doc = await saveDoc({ kind: "receipt", ref: w.id, name, note: `${why} · sent to ${r.to}`, data: pdf });
   (w.notices ??= []).push({ date: nowStr(), time: timeNow(), channel: "Email", sig, auto: true, to: r.to, doc, why });
+  return "";
 }
 
 const hasAccount = (w: WR) => !!custOf(w)?.clientId || db.items.some((i) => i.wr === w.id && i.clientId);
@@ -90,6 +92,13 @@ export function emailParcelArrived(c: Customer | undefined, tracking: string) {
 export function emailHaiti(w: WR, kind: "shipped" | "arrived" | "ready") {
   const c = custOf(w);
   if (hasAccount(w) || !c || !usableEmail(c)) return;
+  queueMail(() => emailStatus(w, kind));
+}
+// The same e-mail on demand ("Notify by e-mail" button): sent even if the customer has a website account. Returns an error text, or "".
+export async function emailStatus(w: WR, kind: "shipped" | "arrived" | "ready"): Promise<string> {
+  const c = custOf(w);
   const tx = T[langOf(c)], code = wrCode(w), subject = kind === "ready" ? tx.readySubject(code) : kind === "shipped" ? tx.shippedSubject(code) : tx.haitiSubject(code), message = kind === "ready" ? tx.ready(code) : kind === "shipped" ? tx.shipped(code) : tx.haiti(code);
-  queueMail(async () => { const r = await deliver(c, "", subject, message, []); log(subject, r.to || c.name, r.error || undefined); });
+  const r = await deliver(c, w.email, subject, message, []);
+  log(subject, r.to || c?.name || w.customer, r.error || undefined);
+  return r.error;
 }

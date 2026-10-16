@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { db, openBooking, cargoOf, wrCode, r2, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
-import { saveBooking } from "@/lib/wh-actions";
+import { saveBooking, notifyShipmentEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -30,6 +30,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <Link href={`${base}/bol`} className={lnk}>Bill of Lading</Link>
           <Link href={`${base}/sli`} className={lnk}>Letter of Instruction</Link>
           <Link href={`${base}/cargo`} className={lnk}>Cargo list</Link>
+          {sh.shipped && <form><button formAction={notifyShipmentEmail.bind(null, name)} className={`${lnk} !border-brand !bg-brand !text-white`}>Notify by e-mail</button></form>}
         </div>
       </div>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}

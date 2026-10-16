@@ -6,7 +6,7 @@ import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCus
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
-import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti } from "./auto-mail";
+import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailStatus } from "./auto-mail";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
@@ -209,12 +209,25 @@ export const switchShip = act("switchShip", async (wr: string) => {
   if (bad) back(wrPath(w.id), { err: bad });
   back(wrPath(w.id), { ok: `Changed to ${to === "Ocean" ? "Ocean" : "Air"}: the receipt is now ${wrCode(w)}${to === "Ocean" ? ` and the ${money(OCEAN_HANDLING)} handling fee was added` : ""}.` });
 });
-// "Client was told" log: the customer was notified of the receipt by email or WhatsApp. Later changes show as "update not sent".
-export const markNotified = act("markNotified", async (wr: string, channel: string) => {
+// "Notify by e-mail" button: sends the e-mail now (the same ones that go out by themselves), even if it was already sent.
+export const notifyEmail = act("notifyEmail", async (wr: string, kind: string, ret?: string) => {
   const w = db.wrs.find((x) => x.id === wr);
+  const to = ret || (w ? wrPath(w.id) : "/warehouse/receipts");
   if (!w) return;
-  (w.notices ??= []).push({ date: nowStr(), time: timeNow(), channel: channel === "WhatsApp" ? "WhatsApp" : "Email", sig: wrSig(w) });
-  back(wrPath(w.id), { ok: `Recorded: the customer was notified by ${channel === "WhatsApp" ? "WhatsApp" : "email"}.` });
+  if (!mailEnabled()) back(to, { err: "E-mail is not set up on this server (SUPABASE_URL, SITE_STAFF_EMAIL, SITE_STAFF_PASSWORD)." });
+  const err = kind === "receipt" ? await emailReceipt(w, "sent by staff (button)", true) : await emailStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
+  if (err) back(to, { err: `Not sent: ${err}` });
+  back(to, { ok: "E-mail sent to the customer." });
+});
+// "Notify by e-mail" on a shipment: tells every customer on it that it left Miami.
+export const notifyShipmentEmail = act("notifyShipmentEmail", async (name: string) => {
+  const to = `/warehouse/shipments/${encodeURIComponent(name)}`;
+  if (!db.shipments.find((x) => x.name === name)?.shipped) back(to, { err: "This shipment has not left yet." });
+  if (!mailEnabled()) back(to, { err: "E-mail is not set up on this server (SUPABASE_URL, SITE_STAFF_EMAIL, SITE_STAFF_PASSWORD)." });
+  const ids = [...new Set(db.loads.filter((l) => l.shipment === name).map((l) => l.wr))];
+  let ok = 0, bad = 0;
+  for (const id of ids) { const w = db.wrs.find((x) => x.id === id); if (!w) continue; (await emailStatus(w, "shipped")) ? bad++ : ok++; }
+  back(to, bad ? { err: `${ok} e-mail(s) sent, ${bad} could not be sent (no usable e-mail or the mail service refused).` } : { ok: `${ok} e-mail(s) sent: the customers know the shipment left Miami.` });
 });
 export const updateWR = act("updateWR", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
