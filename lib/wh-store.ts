@@ -222,7 +222,8 @@ export const otherShip = (w: WR): Ship => (w.ship === "Air" ? "Ocean" : "Air");
 export const estimateFor = (w: WR, ship: Ship) => {
   const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship);
   const freight = r2(qty * rate), handling = ship === "Ocean" ? OCEAN_HANDLING : 0;
-  const extra = r2(w.fees.filter((f) => f.kind === "charge" && f.auto !== "handling").reduce((a, f) => a + f.amount, 0));
+  const isHandling = (f: Fee) => f.auto === "handling" || f.label.trim().toLowerCase() === HANDLING_LABEL.toLowerCase(); // a handling line typed by hand counts as handling too
+  const extra = r2(w.fees.filter((f) => f.kind === "charge" && !isHandling(f)).reduce((a, f) => a + f.amount, 0));
   const ins = insuranceFee(w), cr = credits(w);
   return { ship, unit: ship === "Ocean" ? "cuf" : "lbs", qty, rate, freight, handling, extra, insurance: ins, credits: cr, total: Math.max(0, r2(freight + handling + extra + ins - cr)) };
 };
