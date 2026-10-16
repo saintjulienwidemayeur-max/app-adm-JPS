@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db, repLabel } from "@/lib/wh-store";
 import { createCustomer } from "@/lib/wh-actions";
 import { syncSiteClients } from "@/lib/site-clients";
+import { currentUser } from "@/lib/users";
 import { tryLoaded, flush } from "@/lib/persist";
 import { CustomerFields } from "@/components/customer-fields";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const site = (await tryLoaded()) ? await syncSiteClients() : { added: 0, error: undefined }; // accounts created on the website appear here by themselves
   await flush();
+  const me = await currentUser();
   const q = await searchParams;
   const needle = (q.q ?? "").trim().toLowerCase();
   const rows = db.customers.filter((c) => !needle || [String(c.no), c.name, c.phone, c.email, c.consignee].some((v) => v.toLowerCase().includes(needle)));
@@ -21,6 +23,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>Customers</h1>
       <p className="text-sm text-zinc-600">The customer number (1001, 1002, ...) is printed on every label. A customer is also created automatically the first time you type a new name on Consolidate or on a receipt.</p>
+      {me?.admin && <p className="mt-2 text-sm"><Link href="/settings/import" className="font-semibold text-brand underline">Import the customers of the old system (CSV)</Link></p>}
       {site.error && <p role="alert" className="mt-2 text-xs font-medium text-amber-700">Could not read the website accounts ({site.error}).</p>}
       {site.added > 0 && <p className="mt-2 text-sm font-medium text-green-700">{site.added} new customer{site.added > 1 ? "s" : ""} from the website.</p>}
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
