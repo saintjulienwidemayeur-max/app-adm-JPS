@@ -8,6 +8,7 @@ function table(text: string, need: string[], name: string): { rows: Table; error
   const raw = parseCsv(text);
   if (raw.length < 2) return { rows: [], error: `${name}: the file is empty.` };
   const head = raw[0].map((h) => h.trim().toLowerCase());
+  if (head.includes("customer_no") && head.includes("name") && !head.includes("inv_no")) return { rows: [], error: `${name}: this looks like the customers file. Put the customers file in part 1 and the 4 old-billing files here.` };
   for (const n of need) if (!head.includes(n)) return { rows: [], error: `${name}: the column "${n}" is missing. Use the file made for this import.` };
   return { rows: raw.slice(1).map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? "").trim()]))) };
 }
