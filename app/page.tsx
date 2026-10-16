@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, PackageOpen, Calculator, ReceiptText, Wallet, Zap } from "lucide-react";
+import { ArrowRight, PackageOpen, Calculator, ReceiptText, Wallet, Zap, FileUp } from "lucide-react";
 import { visibleSections } from "@/lib/menu";
 import { requireUser } from "@/lib/users";
 import { allowed } from "@/lib/access";
@@ -18,6 +18,7 @@ const ALL_QUICK = [
   { href: "/warehouse/estimate", label: "Price boxes (estimate)", icon: Calculator },
   { href: "/warehouse/receipts", label: "New warehouse receipt", icon: ReceiptText },
   { href: "/warehouse/billing", label: "Receive a payment", icon: Wallet },
+  { href: "/settings/import", label: "Import customers (CSV)", icon: FileUp },
 ];
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
