@@ -3,7 +3,7 @@ import { calcInsurance } from "./pricing";
 import type { PrealertItem, HazardKey } from "./compliance";
 import { usToday, isoToday, timeNow } from "./clock";
 export { timeNow };
-import { COMPANY, HAITI, ORIGIN, DESTINATION, AIRLINE } from "./company";
+import { COMPANY, HAITI, ORIGIN, DESTINATION, AIRLINE, COMPANY_EMAILS } from "./company";
 
 export type Ship = "Air" | "Ocean";
 export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string; prealert?: string };
@@ -129,7 +129,7 @@ export const findCustomer = (q: string) => {
   const t = q.trim().toLowerCase();
   if (!t) return undefined;
   if (/^\d+$/.test(t)) return db.customers.find((c) => c.no === Number(t));
-  if (t.includes("@")) return db.customers.find((c) => c.email.toLowerCase() === t) ?? db.customers.find((c) => c.emailMore && c.emailMore.toLowerCase().split(/[;,\s]+/).includes(t));
+  if (t.includes("@")) return COMPANY_EMAILS.includes(t) ? undefined : db.customers.find((c) => c.email.toLowerCase() === t) ?? db.customers.find((c) => c.emailMore && c.emailMore.toLowerCase().split(/[;,\s]+/).includes(t));
   return db.customers.find((c) => c.name.toLowerCase() === t);
 };
 export const newCustomer = (name: string, init: Partial<Customer> = {}): Customer => {
