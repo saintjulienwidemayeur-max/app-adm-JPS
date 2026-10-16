@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, wrCode, total, money, payStatus, rateFor } from "@/lib/wh-store";
+import { db, wrCode, total, money, payStatus, rateFor, oldBalance, oldOpen } from "@/lib/wh-store";
 import { saveCustomer, saveCustomerRates } from "@/lib/wh-actions";
 import { emailProblem, PROBLEM_TEXT } from "@/lib/mailrules";
 import { CustomerFields } from "@/components/customer-fields";
@@ -15,6 +15,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const c = db.customers.find((x) => x.no === Number(no));
   if (!c) notFound();
   const wrs = db.wrs.filter((w) => w.cust === c.no);
+  const old = db.oldInvoices.filter((o) => o.cust === c.no), oldOwed = old.reduce((a, o) => a + oldBalance(o), 0);
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/customers" className="text-sm text-brand underline">All customers</Link>
@@ -43,6 +44,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         )}
       </section>
 
+      {old.length > 0 && <p className="mt-4 text-sm"><Link href={`/warehouse/oldinvoices?c=${c.no}`} className="font-semibold text-brand underline">{old.length} old invoice{old.length === 1 ? "" : "s"}</Link> (old billing system){oldOwed > 0 ? <> · <b className="text-red-700">{money(oldOwed)} still owed</b> on {old.filter(oldOpen).length}</> : " · nothing owed"}</p>}
       <h2 className="mt-6 font-bold">Warehouse receipts ({wrs.length})</h2>
       {wrs.length === 0 ? <p className="mt-1 text-sm text-zinc-600">No receipts yet.</p> : (
         <table className="mt-2 w-full text-left text-sm">
