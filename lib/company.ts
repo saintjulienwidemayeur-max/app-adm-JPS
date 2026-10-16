@@ -22,3 +22,7 @@ export const AIRLINE = "AMERIJET";
 // replace this with the exact text of your original if it must match.
 export const BOL_TERMS =
   "Received by the carrier the packages described above, in apparent good order and condition unless otherwise noted, to be carried to the place of delivery subject to the carrier's terms and conditions of carriage.";
+
+// JP's own mailboxes. The old system used them as the e-mail of customers who had none, so many customers carry one of them: they are not
+// a customer's address (never used to recognise a customer, for example to link a website account).
+export const COMPANY_EMAILS = ["jpslogisticsmiami@gmail.com", "jpslogisticshaiti@gmail.com", COMPANY.email, HAITI.email].filter(Boolean).map((e) => e.toLowerCase());
