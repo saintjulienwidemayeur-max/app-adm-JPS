@@ -4,13 +4,18 @@
 // Runs on the server only: SUPABASE_SERVICE_ROLE_KEY must never reach the browser.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+// A key copied from a dashboard that hides it looks like "••••••••": not a key, and it cannot be put in an HTTP header.
+const plain = (v: string | undefined) => { const s = (v ?? "").trim(); return /^[\x21-\x7e]+$/.test(s) ? s : undefined; };
+export const keyLooksMasked = (v: string | undefined) => !!v && !plain(v);
+
 // Website statuses: 0 received in Miami · 1 in transit / customs · 2 arrived in Haiti · 3 ready for pickup
 export type Status = 0 | 1 | 2 | 3;
 
 let cli: SupabaseClient | null | undefined;
 const client = () => {
   if (cli !== undefined) return cli;
-  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.SUPABASE_URL, key = plain(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (keyLooksMasked(process.env.SUPABASE_SERVICE_ROLE_KEY)) console.error("[sync] SUPABASE_SERVICE_ROLE_KEY contains hidden characters (••••): copy the real key from Supabase > Settings > API Keys.");
   try { return (cli = url && key ? createClient(url.trim(), key.trim(), { auth: { persistSession: false } }) : null); }
   catch (e) { console.error("[sync] SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not valid:", e instanceof Error ? e.message : e); return (cli = null); }
 };
@@ -96,8 +101,9 @@ export async function siteClients(): Promise<{ rows: SiteClient[]; error?: strin
 // ---------- E-mail through the website ----------
 // The website already sends e-mail (Edge Function `admin-mail`, through Brevo). The warehouse app calls it with the website staff account
 // (SITE_STAFF_EMAIL / SITE_STAFF_PASSWORD: an owner or agent of the website's admin panel), so every e-mail goes out from the website.
-const ANON = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6bHduaG1ib3F1bmZscXp2bGNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzMzc4NDMsImV4cCI6MjEwNTkxMzg0M30.tAffoPTs9CFT0KR_e6_uPPfjLjNM3Re4Kev2rcePIGk";
+const ANON = plain(process.env.SUPABASE_ANON_KEY) || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6bHduaG1ib3F1bmZscXp2bGNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzMzc4NDMsImV4cCI6MjEwNTkxMzg0M30.tAffoPTs9CFT0KR_e6_uPPfjLjNM3Re4Kev2rcePIGk";
 export const mailEnabled = () => syncEnabled() && !!process.env.SITE_STAFF_EMAIL && !!process.env.SITE_STAFF_PASSWORD;
+export const mailSetupProblem = () => (keyLooksMasked(process.env.SUPABASE_SERVICE_ROLE_KEY) ? "SUPABASE_SERVICE_ROLE_KEY contains hidden characters (••••). Copy the real key from Supabase > Settings > API Keys." : "");
 const MAIL_ERRORS: Record<string, string> = {
   NOT_AUTHORIZED: "The website refused the staff account (SITE_STAFF_EMAIL / SITE_STAFF_PASSWORD must be an owner or agent).",
   CLIENT_NOT_FOUND: "This person has no account on the website.", SEND_FAILED: "The e-mail service (Brevo) refused the message.", BAD_REQUEST: "Subject or message missing or too long.",
