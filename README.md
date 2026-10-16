@@ -80,3 +80,7 @@ Invoices, receivables, reports, payables, orders and the old invoices live in th
 
 ## Received items and the website
 Type the customer on Received items (optional): the parcel is created on the customer's tracking page on the website (status "received in Miami"), and the website sends the push notification and the e-mail. Shipping a shipment moves its parcels to "in transit", scanning the pieces at Arrivals PV moves them to "arrived in Haiti" (push + e-mail each time). Customers can also ask for an estimate on the website (`estimate_requests`, section 15 of the website SQL): the requests are listed on the Estimate page, where you price them and e-mail the answer.
+
+## Scanner and PWA
+- **Scanner**: a keyboard-type (USB/Bluetooth) scanner types what it reads into the focused field and presses Enter. `lib/tracking.ts` (`extractTracking`) finds the tracking number in whatever was read: a plain barcode, a QR code or 2D label with a whole record (UPS 1Z inside it), a USPS barcode (420 + ZIP + number), a FedEx 34-digit barcode (the tail), a tracking link. Received items, Consolidate and Intake use it; a number read as the tail of a long barcode still matches the pre-alert (`sameTracking`). The camera button reads QR codes and Code 128/39/93, ITF, EAN, PDF417 and Data Matrix.
+- **PWA**: the app installs like an app (Chrome/Edge: "Install the app" in the menu; phone: Add to Home Screen). `app/manifest.ts`, `public/sw.js` (keeps only static files, never pages or data), `public/offline.html`, icons in `public/icons/`. Same in the billing app.

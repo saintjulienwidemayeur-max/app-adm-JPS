@@ -1,4 +1,5 @@
 "use server";
+import { extractTracking } from "@/lib/tracking";
 
 import { calcPricing } from "@/lib/pricing";
 import { usToday } from "@/lib/clock";
@@ -11,7 +12,7 @@ export type ScanResult =
   | { kind: "error"; message: string };
 
 export async function scanParcel(raw: string, shelf?: string): Promise<ScanResult> {
-  const tracking = raw.trim().toUpperCase();
+  const tracking = extractTracking(raw);
   if (!tracking) return { kind: "error", message: "Empty scan." };
 
   const p = parcels.get(tracking);
