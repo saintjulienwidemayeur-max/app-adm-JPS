@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/users";
 import { allowed } from "@/lib/access";
 import { syncSiteClients } from "@/lib/site-clients";
 import { tryLoaded, flush } from "@/lib/persist";
-import { menuBadges, owed } from "@/lib/badges";
+import { menuBadges } from "@/lib/badges";
 import { money } from "@/lib/wh-store";
 import { usToday } from "@/lib/clock";
 
@@ -31,7 +31,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
     { href: "/warehouse/prealerts", n: String(b["/warehouse/prealerts"]), label: "Pre-alerts expected" },
     { href: "/warehouse/consolidate", n: String(b["/warehouse/consolidate"]), label: "Parcels to consolidate" },
     { href: "/warehouse/pickups", n: String(b["/warehouse/pickups"]), label: "Pickups scheduled" },
-    { href: "/billing", n: money(owed()), label: `Owed on ${b["/billing"]} open invoice${b["/billing"] === 1 ? "" : "s"}` },
   ];
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">

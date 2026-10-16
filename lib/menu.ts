@@ -3,7 +3,7 @@
 import { allowed, isOn, type Claims } from "./access";
 import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, type LucideIcon } from "lucide-react";
 
-export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean };
+export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean; accessOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
 
 export const HOME = { href: "/", label: "Main menu", icon: Home };
@@ -42,10 +42,11 @@ export const SECTIONS: MenuSection[] = [
     ],
   },
   {
-    slug: "billing", title: "Billing", icon: Wallet, blurb: "Receive payments; invoicing is in the billing system",
+    slug: "billing", title: "Billing", icon: Wallet, blurb: "Receive the payments of customers",
     pages: [
       { href: "/warehouse/payments", label: "Receive payments", icon: Banknote, desc: "Receive a payment from a customer and print the payment receipt" },
-      { href: "/billing", label: "Billing system", icon: ExternalLink, desc: "Invoices, receivables, reports, payables and old invoices (opens the billing system)" },
+      // Not a page of this app: the checkbox that lets a person sign in to the separate billing app (same people, same codes).
+      { href: "/billing", label: "Billing system (separate app): may sign in", icon: ExternalLink, desc: "Access to the billing app", accessOnly: true },
     ],
   },
   {
@@ -71,7 +72,7 @@ export function locate(path: string): { section?: MenuSection; page?: MenuPage }
 export { isOn };
 // What this person sees in the menu: only the pages they may open, and no empty section.
 export const visibleSections = (c: Pick<Claims, "admin" | "perms">): MenuSection[] =>
-  SECTIONS.map((s) => ({ ...s, pages: s.pages.filter((p) => allowed(c, p.href)) })).filter((s) => s.pages.length > 0);
+  SECTIONS.map((s) => ({ ...s, pages: s.pages.filter((p) => !p.accessOnly && allowed(c, p.href)) })).filter((s) => s.pages.length > 0);
 // Every page a limited user can be given (grouped by section), for the access picker.
 export const grantable = (): { slug: string; title: string; pages: { href: string; label: string }[] }[] =>
   SECTIONS.map((s) => ({ slug: s.slug, title: s.title, pages: s.pages.filter((p) => !p.adminOnly).map((p) => ({ href: p.href, label: p.label })) })).filter((s) => s.pages.length > 0);
