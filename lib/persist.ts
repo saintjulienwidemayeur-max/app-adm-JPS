@@ -135,13 +135,16 @@ async function write() {
   let c: PoolClient | undefined;
   const next = new Map<string, Map<string, string>>();
   try {
+    // First find what changed, without touching the database: most pages change nothing, and then there is nothing to do.
+    const sets: [string, Map<string, string>][] = [...TABLES.map((t) => [t.name, rowsOf(t)] as [string, Map<string, string>]), [META, metaMap()]];
+    const work = sets.map(([name, cur]) => {
+      const old = st.seen.get(name) ?? new Map<string, string>();
+      return { name, cur, up: [...cur].filter(([k, json]) => old.get(k) !== json), del: [...old.keys()].filter((k) => !cur.has(k)) };
+    });
+    if (work.every((w) => !w.up.length && !w.del.length)) return;
     c = await pool.connect();
     await c.query("begin");
-    const sets: [string, Map<string, string>][] = [...TABLES.map((t) => [t.name, rowsOf(t)] as [string, Map<string, string>]), [META, metaMap()]];
-    for (const [name, cur] of sets) {
-      const old = st.seen.get(name) ?? new Map<string, string>();
-      const up = [...cur].filter(([k, json]) => old.get(k) !== json);
-      const del = [...old.keys()].filter((k) => !cur.has(k));
+    for (const { name, cur, up, del } of work) {
       if (up.length) await c.query(`insert into ${name} (k, data) select * from unnest($1::text[], $2::jsonb[]) on conflict (k) do update set data = excluded.data, updated_at = now()`, [up.map(([k]) => k), up.map(([, j]) => j)]);
       if (del.length) await c.query(`delete from ${name} where k = any($1::text[])`, [del]);
       next.set(name, cur);
