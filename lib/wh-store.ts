@@ -103,17 +103,17 @@ export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship) =>
 
 const today = () => usToday();
 type WhDb = {
-  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; users: User[]; maillog: MailLog[]; audit: AuditEntry[]; blockedEmails: string[]; customers: Customer[]; reps: Rep[];
+  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; users: User[]; maillog: MailLog[]; audit: AuditEntry[]; oldInvoices: OldInvoice[]; blockedEmails: string[]; customers: Customer[]; reps: Rep[];
   feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
   n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number; pickup: number; prealert: number; mail: number; user: number; audit: number };
 };
-const g = globalThis as unknown as { __wh12?: WhDb };
-export const db: WhDb = (g.__wh12 ??= {
+const g = globalThis as unknown as { __wh13?: WhDb };
+export const db: WhDb = (g.__wh13 ??= {
   items: [
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
-  wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], users: [], maillog: [], audit: [], blockedEmails: [...BLOCKED_EMAILS], customers: [], reps: [],
+  wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], users: [], maillog: [], audit: [], oldInvoices: [], blockedEmails: [...BLOCKED_EMAILS], customers: [], reps: [],
   feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
   n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001, pickup: 1, prealert: 1, mail: 1, user: 1, audit: 1 },
 });
@@ -242,11 +242,22 @@ export type User = { id: string; name: string; salt: string; hash: string; admin
 // One e-mail sent from the app through the website (what, to how many, by whom).
 // One line of the activity log: who did what, when, and how it ended.
 export type AuditEntry = { id: number; date: string; time: string; user: string; action: string; detail: string; result: string };
+// An invoice of the old billing system, kept for reference (history, statements, what is still owed). Its lines and the payments applied to it.
+export type OldInvoice = {
+  no: string; date: string; cust: number; consignee?: number; total: number; paid: boolean; method: string; shipment: string; ship: string; rep: string;
+  lines: { d: string; q: number; u: number; a: number }[]; pays: { id: string; date: string; method: string; amount: number }[];
+};
 export type MailLog = { id: number; date: string; time: string; by: string; subject: string; to: string; sent: number; total: number; failed: string[] };
 
 // ---------- Pre-alerts ----------
 // No answer from the customer = Air.
 export const effectiveShip = (p: Prealert): Ship => p.choice ?? "Air";
+
+// ---------- Old invoices ----------
+export const oldApplied = (o: OldInvoice) => r2(o.pays.reduce((a, p) => a + p.amount, 0));
+// Open = the old system did not mark it paid and the payments applied do not cover it.
+export const oldBalance = (o: OldInvoice) => (o.paid ? 0 : Math.max(0, r2(o.total - oldApplied(o))));
+export const oldOpen = (o: OldInvoice) => oldBalance(o) > 0.01;
 
 // ---------- Pickups ----------
 export const pickupFeeLine = (p: Pickup) => db.wrs.find((w) => w.id === p.wr)?.fees.find((f) => f.id === p.feeId);

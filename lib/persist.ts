@@ -35,6 +35,7 @@ const TABLES: Table[] = [
   { name: "wh_users", key: (u: { id: string }) => u.id, rows: () => db.users, set: (r) => { db.users = r; } },
   { name: "wh_maillog", key: (m: { id: number }) => String(m.id), rows: () => db.maillog, set: (r) => { db.maillog = (r as { id: number }[]).sort((a, b) => b.id - a.id) as never; } },
   { name: "wh_audit", key: (a: { id: number }) => String(a.id), rows: () => db.audit, set: (r) => { db.audit = (r as { id: number }[]).sort((a, b) => b.id - a.id) as never; } },
+  { name: "wh_oldinvoices", key: (o: { no: string }) => o.no, rows: () => db.oldInvoices, set: (r) => { db.oldInvoices = r; } },
   { name: "wh_bookings", key: (b: { shipment: string }) => b.shipment, rows: () => db.bookings, set: (r) => { db.bookings = r; } },
 ];
 // Counters and the fee-name lists are two small rows of a "meta" table.
