@@ -22,7 +22,7 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--color-brand
 }
 
 body { background: #f3f5fa; }
-main { padding-bottom: 3rem; max-width: 100%; overflow-x: auto; }
+main { padding-bottom: 3rem; overflow-x: auto; }
 main h1 { color: var(--color-brand); font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; }
 main .rounded-lg { background: #fff; border-color: #dfe4f0; box-shadow: 0 1px 3px rgb(16 24 40 / 0.06); }
 main table { background: #fff; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 1px 3px rgb(16 24 40 / 0.06); }
