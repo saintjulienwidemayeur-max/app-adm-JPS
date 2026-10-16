@@ -32,7 +32,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>Received items</h1>
-      <datalist id="rcvcust">{db.customers.slice(0, 3000).map((c) => <option key={c.no} value={String(c.no)}>{c.name}</option>)}</datalist>
+      <datalist id="rcvcust">{db.customers.slice(0, 3000).map((c) => <option key={c.no} value={`${c.no} · ${c.name}`} />)}</datalist>
       <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once, then scan each parcel. If you know whose parcel it is, type the customer (optional): the customer gets a push notification and an e-mail that the parcel arrived at the office, and it shows on the website's tracking page. A tracking number the customer announced (Pre-alerts) is matched right away; any other parcel waits in the review queue until it is identified.</p>
 
       {!sess ? (
@@ -51,11 +51,17 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <div className="text-center"><div className="text-4xl font-extrabold leading-none text-brand" aria-live="polite">{count}</div><div className="text-xs text-zinc-600">parcel{count === 1 ? "" : "s"} accepted</div></div>
-            <form action={receiveItem} className="flex min-w-60 flex-1 gap-1">
-              <Input id="tracking" name="tracking" placeholder="Scan tracking number" autoFocus autoComplete="off" required />
-              <CameraScan target="tracking" submit />
-              <Input name="customer" list="rcvcust" placeholder="For customer (optional)" autoComplete="off" className="w-56" aria-label="Customer (optional)" />
-              <Button type="submit">Add</Button>
+            <form action={receiveItem} className="grid min-w-72 flex-1 gap-2">
+              <label className="grid gap-1 text-xs font-semibold text-zinc-700">Whose parcel is it? <span className="font-normal text-zinc-500">(optional: type a name or a number and pick the customer. Choose it BEFORE you scan; leave it empty if you don&apos;t know)</span>
+                <Input name="customer" list="rcvcust" placeholder="Customer: name or number" autoComplete="off" className="max-w-xl" />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-zinc-700">Tracking number
+                <span className="flex gap-1">
+                  <Input id="tracking" name="tracking" placeholder="Scan tracking number" autoFocus autoComplete="off" required />
+                  <CameraScan target="tracking" submit />
+                  <Button type="submit">Add</Button>
+                </span>
+              </label>
             </form>
           </div>
           {q.err && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{q.err}</p>}
@@ -87,7 +93,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <td className={td}>{i.piece ?? <span className="text-zinc-400">–</span>}</td><td className={td}>{i.shipped ? "Yes" : "No"}</td>
               <td className={td}><details><summary className="cursor-pointer text-brand underline">Edit</summary>
                 <form action={updateItem} className="mt-1 grid gap-1"><input type="hidden" name="id" value={i.id} />
-                  <Input name="tracking" defaultValue={i.tracking} aria-label="Tracking" /><Input name="carrier" defaultValue={i.carrier} aria-label="Carrier" />{!i.customer && <Input name="customer" list="rcvcust" placeholder="Customer number (tells them)" aria-label="Customer" />}
+                  <Input name="tracking" defaultValue={i.tracking} aria-label="Tracking" /><Input name="carrier" defaultValue={i.carrier} aria-label="Carrier" />{!i.customer && <Input name="customer" list="rcvcust" placeholder="Customer: name or number (tells them)" aria-label="Customer" />}
                   <Button type="submit">Save</Button></form>
                 {!i.piece && <form action={deleteItem} className="mt-1"><input type="hidden" name="id" value={i.id} /><button className="text-red-700 underline">Delete parcel</button></form>}
               </details></td>

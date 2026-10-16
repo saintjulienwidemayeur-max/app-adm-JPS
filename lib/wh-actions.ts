@@ -59,6 +59,8 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
   const e = await pushStatus({ tracking: item.tracking, status: 0, clientId, type: ship, description: "Received at the Miami warehouse" });
   return e ? `The website update failed: ${e}` : "";
 }
+// The customer field of Received items: "1001 · Name" (picked from the list), a number, a name or an e-mail.
+const pickCustomer = (v: string) => { const n = v.match(/^\s*(\d+)\s*(·|$)/); return findCustomer(n ? n[1] : v); };
 export const receiveItem = act("receiveItem", async (f: F) => {
   const sess = await readSess();
   if (!sess) back(RX, { err: "Start a delivery first." });
@@ -67,7 +69,7 @@ export const receiveItem = act("receiveItem", async (f: F) => {
   const dup = db.items.find((i) => i.tracking === tracking);
   if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` });
   const typed = s(f, "customer");
-  const who = typed ? findCustomer(typed) : undefined;
+  const who = typed ? pickCustomer(typed) : undefined;
   if (typed && !who) back(RX, { err: `No customer matches "${typed}". Leave the field empty if you don't know it, or pick a customer from the list.` });
   const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
   db.items.push(item);
@@ -103,7 +105,7 @@ export const updateItem = act("updateItem", async (f: F) => {
   // Identifying the customer later (for a parcel that arrived unannounced) tells them and puts the parcel on their tracking page.
   const typed = s(f, "customer");
   if (typed && !it.customer) {
-    const who = findCustomer(typed);
+    const who = pickCustomer(typed);
     if (!who) back(RX, { err: `No customer matches "${typed}".` });
     Object.assign(it, { customer: who!.name, ship: it.ship ?? "Air", clientId: it.clientId ?? who!.clientId });
     const warn = await notifyReceived(it, who, it.ship ?? "Air");
