@@ -1,7 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { db, nowStr } from "./wh-store";
-import { ensureLoaded, flush } from "./persist";
+import { act } from "./act";
 import { grantable } from "./menu";
 import { requireAdmin, requireUser, newCredential, codeMatches, startSession, MIN_CODE } from "./users";
 
@@ -9,11 +9,6 @@ type F = FormData;
 const s = (f: F, k: string) => String(f.get(k) ?? "").trim();
 const go = (path: string, q: Record<string, string> = {}): never => redirect(Object.keys(q).length ? `${path}?${new URLSearchParams(q)}` : path);
 const USERS = "/settings/users", ACCOUNT = "/account";
-// Sign-in state first, then run, then save what changed.
-const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
-  await ensureLoaded();
-  try { await fn(...a); } finally { await flush(); }
-};
 const okPerms = (f: F) => { const all = new Set(grantable().flatMap((g) => g.pages.map((p) => p.href))); return [...new Set(f.getAll("perm").map(String))].filter((h) => all.has(h)); };
 const activeAdmins = (except?: string) => db.users.filter((u) => u.admin && u.active && u.id !== except).length;
 const nameProblem = (name: string, except?: string) => {
@@ -22,7 +17,7 @@ const nameProblem = (name: string, except?: string) => {
   return "";
 };
 
-export const createUser = act(async (f: F) => {
+export const createUser = act("createUser", async (f: F) => {
   await requireAdmin();
   const name = s(f, "name"), code = String(f.get("code") ?? ""), admin = s(f, "role") === "admin", perms = okPerms(f);
   const bad = nameProblem(name) || (code.length < MIN_CODE ? `The code needs at least ${MIN_CODE} characters.` : "") || (!admin && perms.length === 0 ? "Choose at least one page this person may open (or make them an administrator)." : "");
@@ -31,7 +26,7 @@ export const createUser = act(async (f: F) => {
   go(USERS, { ok: `${name} was created. They sign in with their name and code.` });
 });
 
-export const saveUser = act(async (f: F) => {
+export const saveUser = act("saveUser", async (f: F) => {
   const me = await requireAdmin();
   const u = db.users.find((x) => x.id === s(f, "id"));
   if (!u) return go(USERS);
@@ -47,7 +42,7 @@ export const saveUser = act(async (f: F) => {
   go(USERS, { ok: `${name} saved.${u.id !== me.id ? " If they are signed in, the change applies the next time they open a page." : ""}` });
 });
 
-export const deleteUser = act(async (id: string) => {
+export const deleteUser = act("deleteUser", async (id: string) => {
   const me = await requireAdmin();
   const u = db.users.find((x) => x.id === id);
   if (!u) return go(USERS);
@@ -58,7 +53,7 @@ export const deleteUser = act(async (id: string) => {
 });
 
 // Everyone can change their own code.
-export const changeOwnCode = act(async (f: F) => {
+export const changeOwnCode = act("changeOwnCode", async (f: F) => {
   const me = await requireUser();
   const cur = String(f.get("current") ?? ""), next = String(f.get("next") ?? ""), again = String(f.get("again") ?? "");
   if (!codeMatches(me, cur)) go(ACCOUNT, { err: "The current code is wrong." });

@@ -34,11 +34,12 @@ const TABLES: Table[] = [
   { name: "wh_prealerts", key: (p: { id: string }) => p.id, rows: () => db.prealerts, set: (r) => { db.prealerts = r; } },
   { name: "wh_users", key: (u: { id: string }) => u.id, rows: () => db.users, set: (r) => { db.users = r; } },
   { name: "wh_maillog", key: (m: { id: number }) => String(m.id), rows: () => db.maillog, set: (r) => { db.maillog = (r as { id: number }[]).sort((a, b) => b.id - a.id) as never; } },
+  { name: "wh_audit", key: (a: { id: number }) => String(a.id), rows: () => db.audit, set: (r) => { db.audit = (r as { id: number }[]).sort((a, b) => b.id - a.id) as never; } },
   { name: "wh_bookings", key: (b: { shipment: string }) => b.shipment, rows: () => db.bookings, set: (r) => { db.bookings = r; } },
 ];
 // Counters and the fee-name lists are two small rows of a "meta" table.
 const META = "wh_meta";
-const metaRows = () => ({ n: db.n, feeNames: db.feeNames, payMethods: db.payMethods, carriers: db.carriers });
+const metaRows = () => ({ n: db.n, feeNames: db.feeNames, payMethods: db.payMethods, carriers: db.carriers, blockedEmails: db.blockedEmails });
 
 const rowsOf = (t: Table) => new Map(t.rows().map((r) => [t.key(r as never), JSON.stringify(r)]));
 const metaMap = () => new Map(Object.entries(metaRows()).map(([k, v]) => [k, JSON.stringify(v)]));
@@ -80,6 +81,7 @@ async function load() {
       if (row.k === "feeNames") Object.assign(db.feeNames, row.data);
       if (row.k === "payMethods" && Array.isArray(row.data)) db.payMethods = row.data as unknown as string[];
       if (row.k === "carriers" && Array.isArray(row.data)) db.carriers = row.data as unknown as string[];
+      if (row.k === "blockedEmails" && Array.isArray(row.data)) db.blockedEmails = row.data as unknown as string[];
     }
     // Make sure the counters are ahead of every number already used (defence against a lost counter row).
     db.n.wr = Math.max(db.n.wr, ...db.wrs.map((w) => Number(w.id) + 1));
@@ -89,6 +91,7 @@ async function load() {
     db.n.prealert = Math.max(db.n.prealert, ...db.prealerts.map((p) => Number(p.id.replace(/\D/g, "")) + 1));
     db.n.mail = Math.max(db.n.mail, ...db.maillog.map((m) => m.id + 1));
     db.n.user = Math.max(db.n.user, ...db.users.map((u) => Number(u.id.replace(/\D/g, "")) + 1));
+    db.n.audit = Math.max(db.n.audit, ...db.audit.map((a) => a.id + 1));
     db.n.cust = Math.max(db.n.cust, ...db.customers.map((x) => x.no + 1));
     seen.set(META, metaSeen);
     st.seen = seen;

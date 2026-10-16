@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db, wrCode, total, money, payStatus, rateFor } from "@/lib/wh-store";
 import { saveCustomer, saveCustomerRates } from "@/lib/wh-actions";
+import { emailProblem, PROBLEM_TEXT } from "@/lib/mailrules";
 import { CustomerFields } from "@/components/customer-fields";
 import { Button } from "@/components/ui/button";
 
@@ -21,6 +22,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
       {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
 
+      {emailProblem(c) && <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">No real e-mail yet ({PROBLEM_TEXT[emailProblem(c) as "missing"]}). This customer is not e-mailed and not invited to the website until you enter their own address below.</p>}
       <form action={saveCustomer} className="mt-4 rounded-lg border p-3">
         <input type="hidden" name="no" value={c.no} />
         <CustomerFields c={c} />
