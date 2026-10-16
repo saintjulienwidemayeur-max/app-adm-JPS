@@ -4,7 +4,7 @@
 //     get these from the website: push + e-mail, see jps-sync.pushStatus);
 //   - the invoice (PDF) is sent by the billing app when the invoice is made.
 // Each e-mail is logged (Administration > Email customers > history) and the PDF that was sent is kept (wh_docs).
-import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, type WR, type Customer } from "./wh-store";
+import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, paidAmt, money, type WR, type Customer } from "./wh-store";
 import { flush, saveDoc } from "./persist";
 import { mailOne, mailTo, mailEnabled, findClientId, type MailFile } from "./jps-sync";
 import { usableEmail } from "./mailrules";
@@ -73,7 +73,8 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
   const lbs = Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
   const pdf = await receiptPdf(w), name = `Receipt-${code}.pdf`;
   const lines = w.pieces.slice(0, 15).map((p) => `- ${p.type} ${p.l}x${p.w}x${p.h} in, ${p.lbs} lb${p.contents ? ` (${p.contents})` : ""}`).join("\n");
-  const message = tx.rcpt(code, w.pieces.length, lbs, w.ship) + (w.estimate ? tx.est(`$${total(w).toFixed(2)}`) : tx.fin) + `\n\n${lines}\n\n${COMPANY.name} · ${COMPANY.phone}`;
+  const sums = `\n\nTotal: ${money(total(w))}${paidAmt(w) > 0 ? ` · Paid: ${money(paidAmt(w))}` : ""} · Balance: ${money(Math.max(0, balance(w)))}`;
+  const message = tx.rcpt(code, w.pieces.length, lbs, w.ship) + (w.estimate ? tx.est(`$${total(w).toFixed(2)}`) : tx.fin) + `\n\n${lines}${sums}\n\n${COMPANY.name} · ${COMPANY.phone}`;
   const r = await deliver(c, w.email, tx.rcptSubject(code), message, [{ name, content: Buffer.from(pdf).toString("base64") }]);
   log(tx.rcptSubject(code), r.to || w.customer, r.error || undefined);
   if (r.error) return r.error;
