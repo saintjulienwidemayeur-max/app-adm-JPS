@@ -84,3 +84,6 @@ Type the customer on Received items (optional): the parcel is created on the cus
 ## Scanner and PWA
 - **Scanner**: a keyboard-type (USB/Bluetooth) scanner types what it reads into the focused field and presses Enter. `lib/tracking.ts` (`extractTracking`) finds the tracking number in whatever was read: a plain barcode, a QR code or 2D label with a whole record (UPS 1Z inside it), a USPS barcode (420 + ZIP + number), a FedEx 34-digit barcode (the tail), a tracking link. Received items and Consolidate use it; a number read as the tail of a long barcode still matches the pre-alert (`sameTracking`). The camera button reads QR codes and Code 128/39/93, ITF, EAN, PDF417 and Data Matrix.
 - **PWA**: the app installs like an app (Chrome/Edge: "Install the app" in the menu; phone: Add to Home Screen). `app/manifest.ts`, `public/sw.js` (keeps only static files, never pages or data), `public/offline.html`, icons in `public/icons/`. Same in the billing app.
+
+## Documentation
+`docs/JPS-Gid-Itilizasyon.pdf` is the user guide (Haitian Creole, steps A to X, screenshots with arrows, made from a simulated operation in both apps). `docs/JPS-Rapo-Odit.pdf` is the audit of the calculations and of what the operation needs. `docs/audit-calculs.ts` is the automated check of the calculations (run it with `npx tsx docs/audit-calculs.ts`: 1,618 checks).
