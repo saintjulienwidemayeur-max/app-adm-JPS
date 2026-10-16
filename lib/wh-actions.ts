@@ -11,6 +11,7 @@ import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
 import { extractTracking, sameTracking } from "./tracking";
+import { oldScanIndex } from "./cargo-import";
 import { parseEstimate, estimate } from "./estimate";
 import { usableEmail } from "./mailrules";
 
@@ -79,6 +80,9 @@ export const receiveItem = act("receiveItem", async (f: F) => {
   const typed = s(f, "customer");
   const who = typed ? pickCustomer(typed) : undefined;
   if (typed && !who) back(RX, { err: `No customer matches "${typed}". Leave the field empty if you don't know it, or pick a customer from the list.` });
+  // Already received in the old system? A warning only (a customer can order again, and tracking numbers get reused).
+  const oldHit = db.oldWrs.length ? oldScanIndex(db.oldWrs).get(tracking.slice(-12))?.find((h) => true) : undefined;
+  const oldMsg = oldHit ? ` Careful: this tracking number was already received in the old system on ${oldHit.date || "an unknown date"} (receipt ${oldHit.wr}).` : "";
   const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
@@ -95,14 +99,14 @@ export const receiveItem = act("receiveItem", async (f: F) => {
     if (pa.siteId) await markSitePrealertReceived(pa.siteId);
     const c = db.customers.find((x) => x.no === pa!.cust);
     const warn = await notifyReceived(item, c ?? { name: pa.customer, email: "", clientId: pa.clientId }, ship);
-    back(RX, { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}`, ...(warn && { warn }) });
+    back(RX, { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) });
   }
   if (who) {
     Object.assign(item, { customer: who.name, ship: "Air" as Ship, clientId: who.clientId });
     const warn = await notifyReceived(item, who, "Air");
-    back(RX, { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}`, ...(warn && { warn }) });
+    back(RX, { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) });
   }
-  back(RX, { ok: tracking, warn: "Not announced by any customer: it waits in the review queue until it is identified." });
+  back(RX, { ok: tracking, warn: `Not announced by any customer: it waits in the review queue until it is identified.${oldMsg}` });
 });
 export const updateItem = act("updateItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));

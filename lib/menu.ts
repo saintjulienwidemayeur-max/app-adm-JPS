@@ -1,7 +1,7 @@
 // The app's menu: five sections, like the old billing software's main menu. The sidebar, the main menu, each section's page and the
 // breadcrumb all read this list, so a page is added in one place.
 import { allowed, isOn, type Claims } from "./access";
-import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, SlidersHorizontal, Archive, type LucideIcon } from "lucide-react";
 
 export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean; accessOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
@@ -22,6 +22,7 @@ export const SECTIONS: MenuSection[] = [
     slug: "receipts", title: "Warehouse Receipts", icon: ReceiptText, blurb: "Pieces, fees, notices and receipts",
     pages: [
       { href: "/warehouse/receipts", label: "Warehouse receipts", icon: ReceiptText, desc: "Pieces, fees, notices, invoices and payments of each receipt" },
+      { href: "/warehouse/oldreceipts", label: "Old receipts", icon: Archive, desc: "The receipts of the old system: pieces, parcels scanned, search by tracking number" },
       { href: "/warehouse/consolidate", label: "Consolidate", icon: Layers, desc: "Turn received parcels into JP's pieces on a receipt" },
     ],
   },
@@ -38,6 +39,7 @@ export const SECTIONS: MenuSection[] = [
     pages: [
       { href: "/warehouse/shipments", label: "Shipments", icon: Ship, desc: "Booking, Bill of Lading, Letter of Instruction, cargo list, proof of export" },
       { href: "/warehouse/pallets", label: "Load pallet", icon: Truck, desc: "Scan pieces onto a pallet or container" },
+      { href: "/warehouse/oldshipments", label: "Old shipments", icon: History, desc: "The shipments of the old system and what was on them" },
       { href: "/warehouse/loading-sheet", label: "Loading sheet", icon: ClipboardList, desc: "Print what is loaded on each pallet" },
     ],
   },
