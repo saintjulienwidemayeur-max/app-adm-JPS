@@ -1,11 +1,4 @@
-import { IntakeClient } from "./intake-client";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Intake · JP's Logistics" };
-
-export default function Page() {
-  return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <IntakeClient />
-    </main>
-  );
-}
+// Intake was an old stand-alone prototype (fake data, nothing saved). Received items + Consolidate replaced it: old bookmarks land there.
+export default function Page() { redirect("/warehouse/receiving"); }
