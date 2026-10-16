@@ -5,7 +5,7 @@ import { listDocs } from "@/lib/persist";
 import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
-import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, markNotified } from "@/lib/wh-actions";
+import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -51,10 +51,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <span className={`rounded px-2 py-0.5 text-xs font-semibold ${nstate === "current" ? "bg-green-100 text-green-800" : nstate === "outdated" ? "bg-amber-100 text-amber-900" : "bg-zinc-100 text-zinc-700"}`}>
             {nstate === "current" ? `Customer notified by ${notice?.channel} · ${notice?.date} ${notice?.time}` : nstate === "outdated" ? `Update NOT sent: the receipt changed after the ${notice?.channel} of ${notice?.date}` : "Customer not notified yet"}
           </span></div>
-        <p className="mt-1 text-xs text-zinc-600">The receipt (PDF) is e-mailed to the customer by itself: a few minutes after a piece is saved, and when the shipment ships. If the receipt changes later, the updated one goes out again. Nothing to press. (If you told the customer by WhatsApp, record it here.)</p>
+        <p className="mt-1 text-xs text-zinc-600">The receipt (PDF) is e-mailed to the customer by itself: a few minutes after a piece is saved, and when the shipment ships. If the receipt changes later, the updated one goes out again. Nothing to press. To send it again now (for example after you changed something), use the button.</p>
         <form className="mt-2 flex flex-wrap items-center gap-2">
-          <button formAction={markNotified.bind(null, w.id, "WhatsApp")} className={lnk}>Record: sent by WhatsApp</button>
-          {w.notices && w.notices.length > 0 && <span className="text-xs text-zinc-500">{w.notices.length} notice{w.notices.length > 1 ? "s" : ""} · {w.notices.map((n) => `${n.channel}${n.auto ? " (automatic)" : ""} ${n.date}`).join(" · ")}</span>}
+          <button formAction={notifyEmail.bind(null, w.id, "receipt", undefined)} disabled={!w.pieces.length} className={`${lnk} !border-brand !bg-brand !text-white`}>Notify by e-mail</button>
+          {w.notices && w.notices.length > 0 && <span className="text-xs text-zinc-500">{w.notices.length} notice{w.notices.length > 1 ? "s" : ""} · {w.notices.map((n) => `E-mail${n.auto ? " (automatic)" : ""}${n.to ? ` to ${n.to}` : ""} ${n.date}`).join(" · ")}</span>}
         </form>
         {docs.length > 0 && <ul className="mt-2 grid gap-0.5 text-xs">{docs.map((d) => <li key={d.id}><a href={`/docs/${d.id}`} target="_blank" className="text-brand underline">{d.name}</a> <span className="text-zinc-500">· {d.note} · {new Date(d.created).toLocaleString("en-US")}</span></li>)}</ul>}
       </section>
