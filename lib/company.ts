@@ -26,3 +26,7 @@ export const BOL_TERMS =
 // JP's own mailboxes. The old system used them as the e-mail of customers who had none, so many customers carry one of them: they are not
 // a customer's address (never used to recognise a customer, for example to link a website account).
 export const COMPANY_EMAILS = ["jpslogisticsmiami@gmail.com", "jpslogisticshaiti@gmail.com", COMPANY.email, HAITI.email].filter(Boolean).map((e) => e.toLowerCase());
+
+// Addresses shared by many customers (several accounts of one company, or a placeholder): nothing is e-mailed there until the customers
+// get a real address of their own. The administrator can add or remove addresses (Administration > Email customers).
+export const BLOCKED_EMAILS = ["alainnonez@yahoo.com", "hantzjr.b@boulosdistribution.com", "romarmultiservices@gmail.com", "ramses60@aol.com"];

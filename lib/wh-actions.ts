@@ -5,19 +5,14 @@ import { revalidatePath } from "next/cache";
 import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
-import { ensureLoaded, flush } from "./persist";
-import { requireUser } from "./users";
+import { act } from "./act";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
 import { parseEstimate, estimate } from "./estimate";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
-const act = <A extends unknown[]>(fn: (...a: A) => Promise<void>) => async (...a: A): Promise<void> => {
-  await ensureLoaded();
-  await requireUser(); // an action can only be called by someone who is signed in
-  try { await fn(...a); } finally { await flush(); }
-};
+
 
 type F = FormData;
 const s = (f: F, k: string) => String(f.get(k) ?? "").trim();
@@ -35,7 +30,7 @@ type Sess = { batch: string; date: string; carrier: string; receiver: string };
 const readSess = async (): Promise<Sess | null> => { try { return JSON.parse((await cookies()).get("rcv")?.value ?? "null"); } catch { return null; } };
 const cleanTracking = (v: string) => v.toUpperCase().replace(/\s+/g, "");
 
-export const startDelivery = act(async (f: F) => {
+export const startDelivery = act("startDelivery", async (f: F) => {
   const carrier = s(f, "carrier").toUpperCase(), receiver = s(f, "receiver");
   const d = new Date(s(f, "date") + "T00:00");
   if (!carrier || isNaN(d.getTime())) back(RX, { err: "Choose the date and the carrier." });
@@ -45,13 +40,13 @@ export const startDelivery = act(async (f: F) => {
   jar.set("rcv_name", receiver, { path: "/", maxAge: 60 * 60 * 24 * 365 });
   back(RX);
 });
-export const endDelivery = act(async () => {
+export const endDelivery = act("endDelivery", async () => {
   const sess = await readSess();
   (await cookies()).delete("rcv");
   const n = sess ? db.items.filter((i) => i.batch === sess.batch).length : 0;
   back(RX, sess ? { ok: `Delivery closed: ${n} parcel${n === 1 ? "" : "s"} from ${sess.carrier}.` } : {});
 });
-export const receiveItem = act(async (f: F) => {
+export const receiveItem = act("receiveItem", async (f: F) => {
   const sess = await readSess();
   if (!sess) back(RX, { err: "Start a delivery first." });
   const tracking = cleanTracking(s(f, "tracking"));
@@ -73,7 +68,7 @@ export const receiveItem = act(async (f: F) => {
   if (pa!.siteId) await markSitePrealertReceived(pa!.siteId);
   back(RX, { ok: tracking, info: `Matched: ${pa!.customer} (customer ${pa!.cust}) · ${pa!.choice ? ship : "no answer yet, Air by default"}${pa!.wait ? " · waiting for other orders" : ""}.` });
 });
-export const updateItem = act(async (f: F) => {
+export const updateItem = act("updateItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));
   if (!it) return;
   if (tracking.length < 6) back(RX, { err: "The tracking number is too short." });
@@ -82,7 +77,7 @@ export const updateItem = act(async (f: F) => {
   it.carrier = s(f, "carrier").toUpperCase() || it.carrier;
   back(RX, { ok: tracking });
 });
-export const deleteItem = act(async (f: F) => {
+export const deleteItem = act("deleteItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id"));
   if (it?.piece) back(RX, { err: `${it.tracking} is part of piece ${it.piece}. Delete that piece first.` });
   db.items = db.items.filter((i) => i.id !== num(f, "id"));
@@ -126,12 +121,12 @@ async function assign(ids: number[], f: F) {
   const note = created ? ` New customer ${c.no}: add the phone and address on the Customers page.` : "";
   return back(CO, { ok: `Piece ${no} created for ${c.name} (customer ${c.no}, ${wrCode(w)}${addToOpen ? "" : ", new receipt"}) from ${items.length} parcel${items.length > 1 ? "s" : ""}.${note}`, wr: w.id, piece: String(no), ...(warn && { warn }) });
 }
-export const singlePiece = act(async (f: F) => { await assign([num(f, "id")], f); });
-export const combinePieces = act(async (f: F) => { await assign(f.getAll("id").map(Number), f); });
+export const singlePiece = act("singlePiece", async (f: F) => { await assign([num(f, "id")], f); });
+export const combinePieces = act("combinePieces", async (f: F) => { await assign(f.getAll("id").map(Number), f); });
 
 // ---------- Warehouse receipts ----------
 const emailOk = (e: string) => !e || /^\S+@\S+\.\S+$/.test(e);
-export const createWR = act(async (f: F) => {
+export const createWR = act("createWR", async (f: F) => {
   const name = s(f, "customer");
   if (!name) back("/warehouse/receipts", { err: "Choose or enter the customer." });
   const c = findCustomer(name) ?? newCustomer(name);
@@ -152,7 +147,7 @@ function applyShip(w: WR, ship: Ship): string {
   else w.fees = w.fees.filter((x) => x.auto !== "handling");
   return "";
 }
-export const switchShip = act(async (wr: string) => {
+export const switchShip = act("switchShip", async (wr: string) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w) return;
   const to: Ship = w.ship === "Air" ? "Ocean" : "Air", bad = applyShip(w, to);
@@ -160,13 +155,13 @@ export const switchShip = act(async (wr: string) => {
   back(wrPath(w.id), { ok: `Changed to ${to === "Ocean" ? "Ocean" : "Air"}: the receipt is now ${wrCode(w)}${to === "Ocean" ? ` and the ${money(OCEAN_HANDLING)} handling fee was added` : ""}.` });
 });
 // "Client was told" log: the customer was notified of the receipt by email or WhatsApp. Later changes show as "update not sent".
-export const markNotified = act(async (wr: string, channel: string) => {
+export const markNotified = act("markNotified", async (wr: string, channel: string) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w) return;
   (w.notices ??= []).push({ date: nowStr(), time: timeNow(), channel: channel === "WhatsApp" ? "WhatsApp" : "Email", sig: wrSig(w) });
   back(wrPath(w.id), { ok: `Recorded: the customer was notified by ${channel === "WhatsApp" ? "WhatsApp" : "email"}.` });
 });
-export const updateWR = act(async (f: F) => {
+export const updateWR = act("updateWR", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const declared = num(f, "declared") || 0;
@@ -200,7 +195,7 @@ const feeProblem = (label: string, amount: number) => {
   if (amount > 100000) return "That amount is too large.";
   return "";
 };
-export const addFee = act(async (f: F) => {
+export const addFee = act("addFee", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const label = s(f, "label"), amount = num(f, "amount"), kind = feeKind(s(f, "kind"));
@@ -213,7 +208,7 @@ export const addFee = act(async (f: F) => {
   remember(kind, label);
   back(wrPath(w.id), { ok: `${kind === "credit" ? "Credit" : "Fee"} "${label}" added.` });
 });
-export const saveFees = act(async (f: F) => {
+export const saveFees = act("saveFees", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const next: Fee[] = [];
@@ -229,7 +224,7 @@ export const saveFees = act(async (f: F) => {
   back(wrPath(w.id), { ok: "Fees saved." });
 });
 // Bound from the page as deleteFee.bind(null, receiptId, feeId): a submit button with a function formAction can't carry a name/value.
-export const deleteFee = act(async (wr: string, fee: number) => {
+export const deleteFee = act("deleteFee", async (wr: string, fee: number) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w) return;
   const next = w.fees.filter((x) => x.id !== fee);
@@ -247,7 +242,7 @@ const custFields = (f: F) => ({
   rep: repOf(s(f, "rep")) ? s(f, "rep") : "", route: s(f, "route").toUpperCase(),
 });
 const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-export const createCustomer = act(async (f: F) => {
+export const createCustomer = act("createCustomer", async (f: F) => {
   const d = custFields(f);
   if (!d.name) back(CU, { err: "Enter the customer's full name." });
   if (!emailOk(d.email)) back(CU, { err: "That email address isn't valid." });
@@ -256,7 +251,7 @@ export const createCustomer = act(async (f: F) => {
   const c = newCustomer(d.name, d);
   back(`${CU}/${c.no}`, { ok: `Customer ${c.no} created.` });
 });
-export const saveCustomer = act(async (f: F) => {
+export const saveCustomer = act("saveCustomer", async (f: F) => {
   const c = db.customers.find((x) => x.no === num(f, "no"));
   if (!c) return;
   const d = custFields(f), here = `${CU}/${c.no}`;
@@ -274,7 +269,7 @@ export const saveCustomer = act(async (f: F) => {
 });
 
 // The customer's own rates (from the old system, or typed here). Empty = the standard rate.
-export const saveCustomerRates = act(async (f: F) => {
+export const saveCustomerRates = act("saveCustomerRates", async (f: F) => {
   const c = db.customers.find((x) => x.no === num(f, "no"));
   if (!c) return;
   const here = `${CU}/${c.no}`, rates: NonNullable<typeof c.rates> = {};
@@ -293,7 +288,7 @@ export const saveCustomerRates = act(async (f: F) => {
 const RP = "/warehouse/reps";
 const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean).map((x) => x[0]).join("").slice(0, 3).toUpperCase();
 const repInput = (f: F) => { const name = s(f, "name"); return { name, initials: (s(f, "initials") || initialsOf(name)).toUpperCase().slice(0, 4) }; };
-export const addRep = act(async (f: F) => {
+export const addRep = act("addRep", async (f: F) => {
   const { name, initials } = repInput(f);
   if (!name) back(RP, { err: "Enter the representative's name." });
   if (!initials) back(RP, { err: "Enter the initials." });
@@ -301,7 +296,7 @@ export const addRep = act(async (f: F) => {
   db.reps.push({ id: String(db.n.rep++), name, initials });
   back(RP, { ok: `${name} (${initials}) added.` });
 });
-export const saveRep = act(async (f: F) => {
+export const saveRep = act("saveRep", async (f: F) => {
   const r = db.reps.find((x) => x.id === s(f, "id"));
   if (!r) return;
   const { name, initials } = repInput(f);
@@ -310,7 +305,7 @@ export const saveRep = act(async (f: F) => {
   Object.assign(r, { name, initials });
   back(RP, { ok: `${name} saved.` });
 });
-export const deleteRep = act(async (f: F) => {
+export const deleteRep = act("deleteRep", async (f: F) => {
   const r = db.reps.find((x) => x.id === s(f, "id"));
   if (!r) return;
   if (db.customers.some((c) => c.rep === r.id) || db.wrs.some((w) => w.rep === r.id)) back(RP, { err: `${r.name} still has customers or receipts. Give them to another representative first.` });
@@ -328,7 +323,7 @@ function pieceInput(f: F) {
   if (contents.length > 120) return "The contents are too long (120 characters max).";
   return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs, contents };
 }
-export const addPiece = act(async (f: F) => {
+export const addPiece = act("addPiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const p = pieceInput(f);
@@ -336,7 +331,7 @@ export const addPiece = act(async (f: F) => {
   else w.pieces.push({ no: db.n.piece++, ...p });
   back(wrPath(w.id));
 });
-export const updatePiece = act(async (f: F) => {
+export const updatePiece = act("updatePiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
   const piece = w?.pieces.find((x) => x.no === no);
   if (!w || !piece) return;
@@ -346,7 +341,7 @@ export const updatePiece = act(async (f: F) => {
   else Object.assign(piece, p);
   back(wrPath(w.id), { ok: `Piece ${no} updated.` });
 });
-export const deletePiece = act(async (f: F) => {
+export const deletePiece = act("deletePiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
   if (!w) return;
   if (db.loads.some((l) => l.no === no)) back(wrPath(w.id), { err: `Piece ${no} is already loaded. Remove it from the pallet first.` });
@@ -354,14 +349,14 @@ export const deletePiece = act(async (f: F) => {
   w.pieces = w.pieces.filter((x) => x.no !== no);
   back(wrPath(w.id), { ok: `Piece ${no} deleted.` });
 });
-export const createInvoice = act(async (f: F) => {
+export const createInvoice = act("createInvoice", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   if (!w.pieces.length) back(wrPath(w.id), { err: "Add at least one piece before invoicing." });
   if (!w.invoice) { w.invoice = `INV-${db.n.inv++}`; w.invoiceDate = nowStr(); }
   back(wrPath(w.id), { ok: `Invoice ${w.invoice} created.` });
 });
-export const addPayment = act(async (f: F) => {
+export const addPayment = act("addPayment", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   const amount = num(f, "amount");
@@ -375,7 +370,7 @@ export const addPayment = act(async (f: F) => {
   back(wrPath(w.id), { ok: `Payment of ${money(paid)} by ${method} added. ${balance(w) > 0 ? `Balance left: ${money(balance(w))}.` : "Paid in full."}` });
 });
 // Bound from the page: voidPayment.bind(null, receiptId, paymentIndex).
-export const voidPayment = act(async (wr: string, i: number) => {
+export const voidPayment = act("voidPayment", async (wr: string, i: number) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w || !w.payments[i]) return;
   const [p] = w.payments.splice(i, 1);
@@ -387,7 +382,7 @@ export const voidPayment = act(async (wr: string, i: number) => {
 // ---------- Billing: customer payments, credit, invoice follow-up ----------
 const PY = "/warehouse/payments";
 // A payment from a customer is spread over their receipts with a balance, oldest first; what is left stays as the customer's credit.
-export const receivePayment = act(async (f: F) => {
+export const receivePayment = act("receivePayment", async (f: F) => {
   const c = db.customers.find((x) => x.no === num(f, "cust"));
   if (!c) back(PY, { err: "Choose the customer." });
   const here = `${PY}?c=${c!.no}`, amount = num(f, "amount"), method = s(f, "method"), ref = s(f, "ref");
@@ -407,7 +402,7 @@ export const receivePayment = act(async (f: F) => {
   rememberName(db.payMethods, method);
   back(`${PY}/${batch}`);
 });
-export const applyCredit = act(async (wr: string) => {
+export const applyCredit = act("applyCredit", async (wr: string) => {
   const w = db.wrs.find((x) => x.id === wr), c = w && custOf(w);
   if (!w || !c) return;
   const take = Math.min(creditOf(c), balance(w));
@@ -416,11 +411,11 @@ export const applyCredit = act(async (wr: string) => {
   (c.creditLog ??= []).push({ date: nowStr(), time: timeNow(), amount: -r2(take), note: `Applied to ${wrCode(w)}` });
   back(wrPath(w.id), { ok: `${money(take)} of the customer's credit applied.` });
 });
-export const markInvoiceSent = act(async (wr: string) => {
+export const markInvoiceSent = act("markInvoiceSent", async (wr: string) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (w?.invoice) { w.invoiceSent = nowStr(); back(`/warehouse/invoices/${w.invoice}`, { ok: "Marked as emailed." }); }
 });
-export const cancelInvoice = act(async (wr: string) => {
+export const cancelInvoice = act("cancelInvoice", async (wr: string) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w?.invoice) return;
   if (w.payments.length) back(`/warehouse/invoices/${w.invoice}`, { err: "This invoice has payments. Void them first." });
@@ -439,7 +434,7 @@ const itemInput = (desc: string, qty: number, unit: number) => {
   if (!Number.isFinite(unit) || unit < 0 || unit > 1_000_000) return "Enter the unit cost (0 or more).";
   return "";
 };
-export const createOrder = act(async (f: F) => {
+export const createOrder = act("createOrder", async (f: F) => {
   const name = s(f, "customer");
   if (!name) back(OR, { err: "Choose or enter the customer." });
   const c = findCustomer(name) ?? newCustomer(name);
@@ -447,7 +442,7 @@ export const createOrder = act(async (f: F) => {
   db.orders.unshift(o);
   back(orderPath(o.id));
 });
-export const saveOrder = act(async (f: F) => {
+export const saveOrder = act("saveOrder", async (f: F) => {
   const o = db.orders.find((x) => x.id === s(f, "order"));
   if (!o) return;
   const pct = num(f, "feePct");
@@ -456,7 +451,7 @@ export const saveOrder = act(async (f: F) => {
   Object.assign(o, { feePct: pct, notes: s(f, "notes"), tracking: s(f, "tracking"), rep: repOf(s(f, "rep")) ? s(f, "rep") : "", status: ORDER_STATUSES.includes(status) ? status : o.status });
   back(orderPath(o.id), { ok: "Order saved." });
 });
-export const addOrderItem = act(async (f: F) => {
+export const addOrderItem = act("addOrderItem", async (f: F) => {
   const o = db.orders.find((x) => x.id === s(f, "order"));
   if (!o) return;
   const desc = s(f, "desc"), qty = num(f, "qty"), unit = num(f, "unit"), bad = itemInput(desc, qty, unit);
@@ -464,7 +459,7 @@ export const addOrderItem = act(async (f: F) => {
   o.items.push({ desc, qty, unit: r2(unit) });
   back(orderPath(o.id), { ok: `"${desc}" added.` });
 });
-export const saveOrderItems = act(async (f: F) => {
+export const saveOrderItems = act("saveOrderItems", async (f: F) => {
   const o = db.orders.find((x) => x.id === s(f, "order"));
   if (!o) return;
   const next = [];
@@ -477,13 +472,13 @@ export const saveOrderItems = act(async (f: F) => {
   back(orderPath(o.id), { ok: "Lines saved." });
 });
 // Bound from the page: deleteOrderItem.bind(null, orderId, lineIndex).
-export const deleteOrderItem = act(async (id: string, i: number) => {
+export const deleteOrderItem = act("deleteOrderItem", async (id: string, i: number) => {
   const o = db.orders.find((x) => x.id === id);
   if (!o) return;
   o.items.splice(i, 1);
   back(orderPath(o.id), { ok: "Line removed." });
 });
-export const addOrderPayment = act(async (f: F) => {
+export const addOrderPayment = act("addOrderPayment", async (f: F) => {
   const o = db.orders.find((x) => x.id === s(f, "order"));
   if (!o) return;
   const amount = num(f, "amount"), method = s(f, "method");
@@ -495,7 +490,7 @@ export const addOrderPayment = act(async (f: F) => {
   if (orderBalance(o) <= 0 && o.status === "Invoiced") o.status = "Paid";
   back(orderPath(o.id), { ok: `Payment of ${money(r2(amount))} by ${method} added. ${orderBalance(o) > 0 ? `Balance left: ${money(orderBalance(o))}.` : "Paid in full: JP's can buy the order."}` });
 });
-export const voidOrderPayment = act(async (id: string, i: number) => {
+export const voidOrderPayment = act("voidOrderPayment", async (id: string, i: number) => {
   const o = db.orders.find((x) => x.id === id);
   if (!o || !o.payments[i]) return;
   const [p] = o.payments.splice(i, 1);
@@ -504,7 +499,7 @@ export const voidOrderPayment = act(async (id: string, i: number) => {
 });
 
 // Scan a parcel on Consolidate: it is selected for consolidation, and if it was never received it is received right now.
-export const scanForConsolidate = act(async (f: F) => {
+export const scanForConsolidate = act("scanForConsolidate", async (f: F) => {
   const tracking = cleanTracking(s(f, "tracking")), picks = s(f, "picks").split(",").filter(Boolean);
   const go = (q: Record<string, string>): never => back(CO, { ...(picks.length && { pick: picks.join(",") }), ...q });
   if (tracking.length < 6) go({ err: "That doesn't look like a tracking number. Scan it again." });
@@ -548,7 +543,7 @@ const pickupProblem = (f: F, price: number) => {
   if (!Number.isFinite(price) || price < 0 || price > 100000) return "Enter a pickup price of 0 or more.";
   return "";
 };
-export const createPickup = act(async (f: F) => {
+export const createPickup = act("createPickup", async (f: F) => {
   const name = s(f, "customer");
   if (!name) back(PK, { err: "Choose or enter the customer." });
   const price = priceOf(f), bad = pickupProblem(f, price);
@@ -567,7 +562,7 @@ export const createPickup = act(async (f: F) => {
   db.pickups.unshift(p);
   back(pickupPath(p.id), { ok: `Pickup ${p.id} scheduled.${price > 0 ? ` ${money(price)} added to receipt ${wrCode(w)}.` : ""}` });
 });
-export const savePickup = act(async (f: F) => {
+export const savePickup = act("savePickup", async (f: F) => {
   const p = db.pickups.find((x) => x.id === s(f, "pickup"));
   if (!p) return;
   const price = priceOf(f), bad = pickupProblem(f, price);
@@ -580,7 +575,7 @@ export const savePickup = act(async (f: F) => {
   back(pickupPath(p.id), { ok: "Pickup saved." });
 });
 // Bound from the page as setPickupStatus.bind(null, id, status).
-export const setPickupStatus = act(async (id: string, status: string) => {
+export const setPickupStatus = act("setPickupStatus", async (id: string, status: string) => {
   const p = db.pickups.find((x) => x.id === id);
   if (!p || !PICKUP_STATUSES.includes(status as PickupStatus) || p.status === status) return;
   if (status === "Cancelled") {
@@ -600,7 +595,7 @@ export const setPickupStatus = act(async (id: string, status: string) => {
 const PA = "/warehouse/prealerts";
 const paPath = (id: string) => `${PA}/${id}`;
 const hazardsOf = (f: F): HazardKey[] => f.getAll("hz").map(String).filter((v): v is HazardKey => HAZARD_FLAGS.some(([k]) => k === v));
-export const savePrealert = act(async (f: F) => {
+export const savePrealert = act("savePrealert", async (f: F) => {
   const pa = db.prealerts.find((x) => x.id === s(f, "id"));
   if (!pa) return;
   const choice = s(f, "choice") === "Air" || s(f, "choice") === "Ocean" ? (s(f, "choice") as Ship) : undefined;
@@ -609,7 +604,7 @@ export const savePrealert = act(async (f: F) => {
   if (it && !it.piece) it.ship = effectiveShip(pa);
   back(paPath(pa.id), { ok: "Saved." });
 });
-export const cancelPrealert = act(async (id: string) => {
+export const cancelPrealert = act("cancelPrealert", async (id: string) => {
   const pa = db.prealerts.find((x) => x.id === id);
   if (!pa || pa.status !== "Expected") return;
   pa.status = "Cancelled";
@@ -617,7 +612,7 @@ export const cancelPrealert = act(async (id: string) => {
 });
 
 // ---------- Estimate -> warehouse receipt ----------
-export const estimateToReceipt = act(async (f: F) => {
+export const estimateToReceipt = act("estimateToReceipt", async (f: F) => {
   const query: Record<string, string> = {};
   f.forEach((v, k) => { if (k !== "ship" && String(v).trim()) query[k] = String(v); });
   const fail = (err: string): never => back("/warehouse/estimate", { ...query, err });
@@ -646,7 +641,7 @@ export const estimateToReceipt = act(async (f: F) => {
 const shipPath = (name: string) => `/warehouse/shipments/${encodeURIComponent(name)}`;
 const SH = "/warehouse/shipments";
 const yn = (v: string): "YES" | "NO" => (v === "YES" ? "YES" : "NO");
-export const createShipment = act(async (f: F) => {
+export const createShipment = act("createShipment", async (f: F) => {
   const name = s(f, "name").replace(/\s+/g, " ");
   if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(name)) back(SH, { err: "Name the shipment with letters, numbers, spaces, dots, dashes or underscores (40 characters max), for example PL-AIR-10-06-2026." });
   if (db.shipments.some((x) => x.name.toLowerCase() === name.toLowerCase())) back(SH, { err: `${name} already exists.` });
@@ -655,7 +650,7 @@ export const createShipment = act(async (f: F) => {
   openBooking(sh);
   back(shipPath(name), { ok: `Shipment ${name} created (Cargo ID ${sh.cargoId}).` });
 });
-export const saveBooking = act(async (f: F) => {
+export const saveBooking = act("saveBooking", async (f: F) => {
   const name = s(f, "shipment"), sh = db.shipments.find((x) => x.name === name);
   if (!sh) return;
   const b = openBooking(sh), here = shipPath(name);
@@ -681,7 +676,7 @@ export const saveBooking = act(async (f: F) => {
 });
 
 // ---------- Pallets / containers / cargo ----------
-export const loadPiece = act(async (f: F) => {
+export const loadPiece = act("loadPiece", async (f: F) => {
   const shipment = s(f, "shipment"), pallet = s(f, "pallet"), ship = shipOf(s(f, "ship"));
   const q = { shipment, pallet, ship };
   const no = Number(s(f, "code").split("|").pop());
@@ -696,12 +691,12 @@ export const loadPiece = act(async (f: F) => {
   db.loads.push({ shipment, pallet, wr: hit!.w.id, no, date: nowStr() });
   back(PL, { ...q, ship: sh.ship, ok: String(no) });
 });
-export const unloadPiece = act(async (f: F) => {
+export const unloadPiece = act("unloadPiece", async (f: F) => {
   const l = db.loads.find((x) => x.no === num(f, "no"));
   if (l && !db.shipments.find((x) => x.name === l.shipment)?.shipped) db.loads = db.loads.filter((x) => x !== l);
   revalidatePath(PL);
 });
-export const shipCargo = act(async (f: F) => {
+export const shipCargo = act("shipCargo", async (f: F) => {
   const sh = db.shipments.find((x) => x.name === s(f, "shipment"));
   const q = { shipment: s(f, "shipment"), pallet: s(f, "pallet"), ship: s(f, "ship") };
   if (!sh || sh.shipped) return;
@@ -729,7 +724,7 @@ async function syncArrived(wrIds: string[]) {
   }
   return failed;
 }
-export const receiveHere = act(async (f: F) => {
+export const receiveHere = act("receiveHere", async (f: F) => {
   const raw = s(f, "code"), no = Number(raw.split("|").pop());
   const l = db.loads.find((x) => x.no === no);
   if (!l) back(AR, { err: `Piece "${raw}" was never loaded on a shipment. Check the label.` });
@@ -739,7 +734,7 @@ export const receiveHere = act(async (f: F) => {
   const failed = await syncArrived([l!.wr]);
   back(AR, { ok: `Piece ${no} received.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
-export const arriveShipment = act(async (f: F) => {
+export const arriveShipment = act("arriveShipment", async (f: F) => {
   const name = s(f, "shipment");
   if (!db.shipments.find((x) => x.name === name)?.shipped) return;
   const touched = new Set<string>();
@@ -747,7 +742,7 @@ export const arriveShipment = act(async (f: F) => {
   const failed = await syncArrived([...touched]);
   back(AR, { ok: `All pieces of ${name} are marked as here.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
-export const markHereNotified = act(async (f: F) => {
+export const markHereNotified = act("markHereNotified", async (f: F) => {
   // Email sending is not wired yet: this only records that the customer was told.
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (w) w.hereNotified = true;
@@ -755,7 +750,7 @@ export const markHereNotified = act(async (f: F) => {
 });
 
 // Website status 3 "ready for pickup".
-export const markReady = act(async (f: F) => {
+export const markReady = act("markReady", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   w.ready = true;

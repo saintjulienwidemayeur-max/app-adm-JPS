@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-export type Recipient = { no: number; name: string; email: string; site: boolean };
+export type Recipient = { no: number; name: string; email: string; site: boolean; why?: string };
 // Choose customers: search, tick one by one, or tick everyone shown.
 export function RecipientPicker({ people }: { people: Recipient[] }) {
   const [q, setQ] = useState(""), [on, setOn] = useState<Set<number>>(new Set());
@@ -19,7 +19,7 @@ export function RecipientPicker({ people }: { people: Recipient[] }) {
         {shown.length === 0 ? <p className="p-3 text-sm text-zinc-500">Nobody matches.</p> : shown.map((p) => (
           <label key={p.no} className={`flex items-center gap-2 border-b border-zinc-100 px-2 py-1.5 text-sm ${p.site ? "" : "opacity-50"}`}>
             <input type="checkbox" name="to" value={p.no} checked={on.has(p.no)} disabled={!p.site} onChange={(e) => set([p.no], e.target.checked)} />
-            <span className="font-medium">{p.name}</span> <span className="text-xs text-zinc-500">#{p.no} · {p.email || "no e-mail"}{p.site ? "" : " · no website account"}</span>
+            <span className="font-medium">{p.name}</span> <span className="text-xs text-zinc-500">#{p.no} · {p.email || "no e-mail"}{p.site ? "" : ` · ${p.why || "no real e-mail"}`}</span>
           </label>))}
       </div>
     </div>

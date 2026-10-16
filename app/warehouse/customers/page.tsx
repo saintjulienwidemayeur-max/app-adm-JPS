@@ -3,6 +3,7 @@ import { db } from "@/lib/wh-store";
 import { createCustomer } from "@/lib/wh-actions";
 import { syncSiteClients } from "@/lib/site-clients";
 import { currentUser } from "@/lib/users";
+import { emailProblem, PROBLEM_TEXT } from "@/lib/mailrules";
 import { tryLoaded, flush } from "@/lib/persist";
 import { CustomerFields } from "@/components/customer-fields";
 import { AutoForm } from "@/components/auto-form";
@@ -20,13 +21,15 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const me = await currentUser();
   const q = await searchParams;
   const needle = (q.q ?? "").trim().toLowerCase();
-  const all = db.customers.filter((c) => !needle || [String(c.no), c.name, c.phone, c.email, c.emailMore ?? "", c.consignee, c.box ?? ""].some((v) => v.toLowerCase().includes(needle)));
+  const fix = q.fix === "1";
+  const needFix = db.customers.reduce((a, c) => a + (emailProblem(c) ? 1 : 0), 0);
+  const all = db.customers.filter((c) => (!fix || emailProblem(c)) && (!needle || [String(c.no), c.name, c.phone, c.email, c.emailMore ?? "", c.consignee, c.box ?? ""].some((v) => v.toLowerCase().includes(needle))));
   const pages = Math.max(1, Math.ceil(all.length / PER));
   const page = Math.min(pages, Math.max(1, Number(q.page) || 1));
   const rows = all.slice((page - 1) * PER, page * PER);
   const wrCount = new Map<number, number>();
   for (const w of db.wrs) wrCount.set(w.cust, (wrCount.get(w.cust) ?? 0) + 1);
-  const link = (p: number) => `/warehouse/customers?${new URLSearchParams({ ...(q.q && { q: q.q }), page: String(p) })}`;
+  const link = (p: number) => `/warehouse/customers?${new URLSearchParams({ ...(q.q && { q: q.q }), ...(fix && { fix: "1" }), page: String(p) })}`;
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
       <h1>Customers</h1>
@@ -37,7 +40,9 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
       {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
 
+      <p className="mt-2 text-sm">{fix ? <><b>Customers waiting for a real e-mail.</b> <Link href="/warehouse/customers" className="text-brand underline">Show everyone</Link></> : <Link href="/warehouse/customers?fix=1" className="text-brand underline">{needFix} customers need a real e-mail (missing, shared or company address): they are not e-mailed</Link>}</p>
       <AutoForm className="mt-4 flex items-center gap-3">
+        {fix && <input type="hidden" name="fix" value="1" />}
         <Input name="q" defaultValue={q.q} placeholder="Search by number, name, phone, email, box or consignee" aria-label="Search customers" className="max-w-md" autoFocus />
         <span className="text-sm text-zinc-600">{all.length === db.customers.length ? `${all.length} customers` : `${all.length} of ${db.customers.length}`}</span>
       </AutoForm>
@@ -51,7 +56,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <tr key={c.no} className="border-b border-zinc-100">
                 <td className={`${td} font-semibold`}>{c.no}</td>
                 <td className={`${td} truncate`} title={c.name}>{c.name}{c.clientId && <span className="ml-1.5 rounded bg-[#eaeefb] px-1.5 py-0.5 text-[10px] font-semibold text-brand">Website</span>}</td>
-                <td className={`${td} truncate`}>{c.box || "–"}</td><td className={`${td} truncate`} title={c.phone}>{c.phone || "–"}</td><td className={`${td} truncate`} title={c.email}>{c.email || "–"}</td>
+                <td className={`${td} truncate`}>{c.box || "–"}</td><td className={`${td} truncate`} title={c.phone}>{c.phone || "–"}</td><td className={`${td} truncate`} title={c.email}>{c.email || "–"}{emailProblem(c) && <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800" title={PROBLEM_TEXT[emailProblem(c) as "missing"]}>fix</span>}</td>
                 <td className={`${td} truncate`}>{c.consigneeCountry}</td><td className={td}>{wrCount.get(c.no) ?? 0}</td>
                 <td className={td}><Link href={`/warehouse/customers/${c.no}`} className="text-brand underline">Open</Link></td>
               </tr>))}</tbody>

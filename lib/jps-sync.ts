@@ -106,7 +106,7 @@ export const mailEnabled = () => syncEnabled() && !!process.env.SITE_STAFF_EMAIL
 export const mailSetupProblem = () => (keyLooksMasked(process.env.SUPABASE_SERVICE_ROLE_KEY) ? "SUPABASE_SERVICE_ROLE_KEY contains hidden characters (••••). Copy the real key from Supabase > Settings > API Keys." : "");
 const MAIL_ERRORS: Record<string, string> = {
   NOT_AUTHORIZED: "The website refused the staff account (SITE_STAFF_EMAIL / SITE_STAFF_PASSWORD must be an owner or agent).",
-  CLIENT_NOT_FOUND: "This person has no account on the website.", SEND_FAILED: "The e-mail service (Brevo) refused the message.", BAD_REQUEST: "Subject or message missing or too long.",
+  UNKNOWN_ACTION: "UNKNOWN_ACTION", CLIENT_NOT_FOUND: "This person has no account on the website.", SEND_FAILED: "The e-mail service (Brevo) refused the message.", BAD_REQUEST: "Subject or message missing or too long.",
 };
 async function mailCall(body: Record<string, unknown>): Promise<{ ok?: boolean; sent?: number; total?: number; error?: string }> {
   try {
@@ -120,3 +120,58 @@ async function mailCall(body: Record<string, unknown>): Promise<{ ok?: boolean; 
 }
 export const mailOne = async (clientId: string, subject: string, message: string) => (await mailCall({ action: "send", client_id: clientId, subject, message })).error ?? null;
 export const mailAll = (subject: string, message: string) => mailCall({ action: "broadcast", subject, message });
+// Many customers, the same message. The website's function takes a list (action "send_many"); an older version of it only knows "send":
+// then they are sent one by one (a few at a time).
+export async function mailMany(clientIds: string[], subject: string, message: string): Promise<{ sent: number; total: number; error?: string }> {
+  let sent = 0;
+  for (let i = 0; i < clientIds.length; i += 100) {
+    const chunk = clientIds.slice(i, i + 100);
+    const r = await mailCall({ action: "send_many", client_ids: chunk, subject, message });
+    if (r.error && /UNKNOWN_ACTION/.test(r.error)) {
+      for (let j = 0; j < chunk.length; j += 6) sent += (await Promise.all(chunk.slice(j, j + 6).map(async (id) => ((await mailOne(id, subject, message)) ? 0 : 1)))).reduce<number>((a, b) => a + b, 0);
+    } else if (r.error) return { sent, total: clientIds.length, error: r.error };
+    else sent += r.sent ?? 0;
+  }
+  return { sent, total: clientIds.length };
+}
+
+
+// ---------- Accounts on the website: create, reset, and who signed in ----------
+// client_signup / client_reset_password can only be called with the service key (the website refuses them from a browser).
+export async function siteSignup(a: { name: string; email: string; phone: string; address: string; password: string }): Promise<{ id?: string; box?: string; code?: string; error?: string }> {
+  const c = client();
+  if (!c) return { error: "The website is not connected." };
+  const call = (phone: string) => c.rpc("client_signup", { p_name: a.name, p_email: a.email, p_phone: phone, p_address: a.address, p_password: a.password });
+  let r = await call(a.phone);
+  if (r.error && /PHONE_TAKEN/.test(r.error.message)) r = await call(""); // the phone number is already on another account: open this one without it
+  if (r.error) return { code: /EMAIL_TAKEN/.test(r.error.message) ? "EMAIL_TAKEN" : undefined, error: r.error.message };
+  const row = (Array.isArray(r.data) ? r.data[0] : r.data) as { id?: string; box_number?: string } | null;
+  return row?.id ? { id: row.id, box: row.box_number ?? undefined } : { error: "The website did not return the new account." };
+}
+export async function siteResetPassword(email: string, password: string): Promise<string | null> {
+  const c = client();
+  if (!c) return "The website is not connected.";
+  const r = await c.rpc("client_reset_password", { p_email: email, p_new_password: password });
+  return r.error ? r.error.message : r.data === false ? "No account with that e-mail on the website." : null;
+}
+export async function siteSetLang(id: string, lang: string) { await client()?.from("clients").update({ lang }).eq("id", id); }
+
+// Who signed in at least once (needs the `last_login_at` column: schema section 14) and who turned the notifications on.
+export async function siteAccountStats(): Promise<{ login: Map<string, string>; push: Set<string>; loginTracking: boolean; error?: string }> {
+  const out = { login: new Map<string, string>(), push: new Set<string>(), loginTracking: true as boolean, error: undefined as string | undefined };
+  const c = client();
+  if (!c) return out;
+  for (let from = 0; from < 50000; from += 1000) {
+    const r = await c.from("clients").select("id,last_login_at").range(from, from + 999);
+    if (r.error) { out.loginTracking = false; break; }
+    for (const x of (r.data ?? []) as { id: string; last_login_at: string | null }[]) if (x.last_login_at) out.login.set(x.id, x.last_login_at);
+    if ((r.data ?? []).length < 1000) break;
+  }
+  for (let from = 0; from < 50000; from += 1000) {
+    const r = await c.from("push_subscriptions").select("client_id").range(from, from + 999);
+    if (r.error) { out.error = r.error.message; break; }
+    for (const x of (r.data ?? []) as { client_id: string }[]) out.push.add(x.client_id);
+    if ((r.data ?? []).length < 1000) break;
+  }
+  return out;
+}
