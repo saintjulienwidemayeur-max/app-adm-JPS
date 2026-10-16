@@ -1,7 +1,7 @@
 // The app's menu: five sections, like the old billing software's main menu. The sidebar, the main menu, each section's page and the
 // breadcrumb all read this list, so a page is added in one place.
 import { allowed, isOn, type Claims } from "./access";
-import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, ScanLine, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, type LucideIcon } from "lucide-react";
+import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, type LucideIcon } from "lucide-react";
 
 export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
@@ -30,7 +30,6 @@ export const SECTIONS: MenuSection[] = [
     pages: [
       { href: "/warehouse/prealerts", label: "Pre-alerts", icon: BellRing, desc: "Orders customers announced, and unidentified parcels" },
       { href: "/warehouse/receiving", label: "Received items", icon: PackageOpen, desc: "Scan each parcel that arrives from the carriers" },
-      { href: "/warehouse/intake", label: "Intake", icon: ScanLine, desc: "Activate a parcel and print its 4x6 label" },
       { href: "/warehouse/arrivals", label: "Arrivals PV", icon: MapPin, desc: "Check in the pieces that arrived at the destination office" },
     ],
   },
