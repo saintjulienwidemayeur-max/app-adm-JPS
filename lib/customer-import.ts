@@ -29,6 +29,7 @@ export function readLines(text: string): { lines: ImportLine[]; problems: string
   if (rows.length < 2) return { lines: [], problems: ["The file is empty, or it has no header line."] };
   const head = rows[0].map((h) => sp(h).toLowerCase());
   const at = (r: string[], k: string) => { const i = head.indexOf(k); return i < 0 ? "" : r[i] ?? ""; };
+  if (head.includes("inv_no") || head.includes("payment_id")) return { lines: [], problems: ["This is a file of old invoices or payments: use part 2 below (Old invoices and payments), with the 4 files. This part takes the customers file (clients_import.csv)."] };
   for (const need of ["customer_no", "name"]) if (!head.includes(need)) return { lines: [], problems: [`The header line has no "${need}" column. Use the file made for this import.`] };
   const lines: ImportLine[] = [], seen = new Set<number>();
   rows.slice(1).forEach((r, idx) => {
