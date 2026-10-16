@@ -1,5 +1,7 @@
 import "./globals.css";
 import type { ReactNode } from "react";
+import type { Metadata, Viewport } from "next";
+import { PwaRegister } from "@/components/pwa";
 import { connection } from "next/server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -11,7 +13,12 @@ import { db } from "@/lib/wh-store";
 import { VERSION } from "@/lib/version";
 import { persistState, initStore, refresh } from "@/lib/persist";
 
-export const metadata = { title: "JP's Logistics & More" };
+export const metadata: Metadata = {
+  title: "JP's Logistics & More", applicationName: "JP's Warehouse",
+  appleWebApp: { capable: true, title: "JP's Warehouse", statusBarStyle: "default" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+};
+export const viewport: Viewport = { themeColor: "#20338f", width: "device-width", initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   await connection(); // the banner reflects the database state at request time
@@ -27,6 +34,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en">
       <body>
+        <PwaRegister />
         {reconnected && <meta httpEquiv="refresh" content="1" />}
         {reconnected && <div role="status" className="no-print bg-green-700 px-4 py-2 text-center text-sm font-medium text-white">The database is back. Reloading…</div>}
         {(mode === "down" || (mode === "database" && ps.error)) && (

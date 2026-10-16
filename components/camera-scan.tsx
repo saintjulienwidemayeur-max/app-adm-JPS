@@ -9,10 +9,11 @@ export function CameraScan({ target, submit = false }: { target: string; submit?
     if (!on) return;
     let stop = () => {};
     (async () => {
-      const { Html5Qrcode } = await import("html5-qrcode");
-      const s = new Html5Qrcode("cam-reader");
+      const { Html5Qrcode, Html5QrcodeSupportedFormats: F } = await import("html5-qrcode");
+      // QR codes and the barcodes of parcel labels (Code 128 / 39 / 93, ITF, EAN, PDF417, Data Matrix).
+      const s = new Html5Qrcode("cam-reader", { verbose: false, formatsToSupport: [F.QR_CODE, F.CODE_128, F.CODE_39, F.CODE_93, F.ITF, F.EAN_13, F.EAN_8, F.UPC_A, F.PDF_417, F.DATA_MATRIX], useBarCodeDetectorIfSupported: true });
       try {
-        await s.start({ facingMode: "environment" }, { fps: 10, qrbox: 240 }, (txt) => {
+        await s.start({ facingMode: "environment" }, { fps: 10, qrbox: (w: number, h: number) => ({ width: Math.floor(Math.min(w, 420) * 0.9), height: Math.floor(Math.min(h, 420) * 0.5) }) }, (txt) => {
           const el = document.getElementById(target) as HTMLInputElement | null;
           if (el) {
             Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, txt);

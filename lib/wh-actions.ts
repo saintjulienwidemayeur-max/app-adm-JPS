@@ -9,6 +9,7 @@ import { act } from "./act";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
+import { extractTracking, sameTracking } from "./tracking";
 import { parseEstimate, estimate } from "./estimate";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
@@ -28,7 +29,7 @@ const RX = "/warehouse/receiving", PL = "/warehouse/pallets";
 // ---------- Received items: one delivery = one scanning session ----------
 type Sess = { batch: string; date: string; carrier: string; receiver: string };
 const readSess = async (): Promise<Sess | null> => { try { return JSON.parse((await cookies()).get("rcv")?.value ?? "null"); } catch { return null; } };
-const cleanTracking = (v: string) => v.toUpperCase().replace(/\s+/g, "");
+const cleanTracking = (v: string) => extractTracking(v);
 
 export const startDelivery = act("startDelivery", async (f: F) => {
   const carrier = s(f, "carrier").toUpperCase(), receiver = s(f, "receiver");
@@ -66,7 +67,7 @@ export const receiveItem = act("receiveItem", async (f: F) => {
   if (!sess) back(RX, { err: "Start a delivery first." });
   const tracking = cleanTracking(s(f, "tracking"));
   if (tracking.length < 6) back(RX, { err: "That doesn't look like a tracking number. Scan it again." });
-  const dup = db.items.find((i) => i.tracking === tracking);
+  const dup = db.items.find((i) => sameTracking(i.tracking, tracking));
   if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` });
   const typed = s(f, "customer");
   const who = typed ? pickCustomer(typed) : undefined;
@@ -74,13 +75,14 @@ export const receiveItem = act("receiveItem", async (f: F) => {
   const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
-  let pa = db.prealerts.find((x) => x.status === "Expected" && cleanTrackingNo(x.tracking) === cleanTrackingNo(tracking));
+  let pa = db.prealerts.find((x) => x.status === "Expected" && sameTracking(x.tracking, tracking));
   if (!pa && syncEnabled()) {
     const r = await sitePrealerts(cleanTrackingNo(tracking)); // announced on the website but not imported yet
     if (r.rows[0]) pa = await adoptSitePrealert(r.rows[0]);
   }
   if (pa && pa.status === "Expected") {
     const ship = effectiveShip(pa);
+    if (cleanTrackingNo(pa.tracking).length > item.tracking.length) item.tracking = cleanTrackingNo(pa.tracking); // the scanner read the tail of a long barcode: keep the number the customer announced
     Object.assign(item, { customer: pa.customer, ship, prealert: pa.id, clientId: pa.clientId });
     Object.assign(pa, { status: "Received", itemId: item.id });
     if (pa.siteId) await markSitePrealertReceived(pa.siteId);
@@ -539,7 +541,7 @@ export const scanForConsolidate = act("scanForConsolidate", async (f: F) => {
   const tracking = cleanTracking(s(f, "tracking")), picks = s(f, "picks").split(",").filter(Boolean);
   const go = (q: Record<string, string>): never => back(CO, { ...(picks.length && { pick: picks.join(",") }), ...q });
   if (tracking.length < 6) go({ err: "That doesn't look like a tracking number. Scan it again." });
-  let it = db.items.find((i) => i.tracking === tracking), added = false;
+  let it = db.items.find((i) => sameTracking(i.tracking, tracking)), added = false;
   if (!it) {
     const sess = await readSess();
     it = { id: db.n.item++, date: sess?.date ?? nowStr(), carrier: sess?.carrier ?? "UNKNOWN", tracking, receiver: sess?.receiver ?? (await cookies()).get("rcv_name")?.value ?? "", batch: sess?.batch ?? "0" };

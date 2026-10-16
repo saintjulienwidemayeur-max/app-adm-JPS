@@ -15,4 +15,4 @@ export async function middleware(req: NextRequest) {
   return NextResponse.next({ request: { headers } });
 }
 
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png|logo.png).*)"] };
+export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png|logo.png|icons/|manifest.webmanifest|sw.js|offline.html).*)"] };

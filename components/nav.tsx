@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/auth";
 import { ChevronRight, KeyRound, LogOut } from "lucide-react";
+import { InstallButton } from "@/components/pwa";
 import { HOME, locate, isOn, visibleSections } from "@/lib/menu";
 
 const Pill = ({ n, active }: { n?: number; active?: boolean }) => (n ? <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${active ? "bg-white text-brand" : "bg-white/20 text-white"}`}>{n}</span> : null);
@@ -57,6 +58,7 @@ export function Nav({ mode = "memory", user = null, badges = {}, version = "" }:
       </div>
       <div className="mt-auto border-t border-white/15 p-2">
         <p className="px-3 pb-1 text-xs text-white/60">Signed in as <b className="text-white">{user.name}</b>{user.admin ? " (administrator)" : ""}</p>
+        <InstallButton />
         <Link href="/account" className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-white/85 hover:bg-white/10 hover:text-white"><KeyRound size={16} aria-hidden /> My account</Link>
         <form action={logout}><button className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-white/85 hover:bg-white/10 hover:text-white"><LogOut size={16} aria-hidden /> Sign out</button></form>
         <p className={`px-3 pt-1 text-xs ${mode === "memory" ? "text-amber-300" : mode === "down" ? "text-red-300" : "text-white/55"}`}>
