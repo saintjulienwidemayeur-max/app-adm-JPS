@@ -42,7 +42,7 @@ const TABLES: Table[] = [
 ];
 // Counters and the fee-name lists are two small rows of a "meta" table.
 const META = "wh_meta";
-const metaRows = () => ({ n: db.n, feeNames: db.feeNames, payMethods: db.payMethods, carriers: db.carriers, blockedEmails: db.blockedEmails });
+const metaRows = () => ({ n: db.n, feeNames: db.feeNames, payMethods: db.payMethods, carriers: db.carriers, blockedEmails: db.blockedEmails, settings: db.settings });
 
 const rowsOf = (t: Table) => new Map(t.rows().map((r) => [t.key(r as never), JSON.stringify(r)]));
 const metaMap = () => new Map(Object.entries(metaRows()).map(([k, v]) => [k, JSON.stringify(v)]));
@@ -96,6 +96,7 @@ async function load() {
       if (row.k === "payMethods" && Array.isArray(row.data)) db.payMethods = row.data as unknown as string[];
       if (row.k === "carriers" && Array.isArray(row.data)) db.carriers = row.data as unknown as string[];
       if (row.k === "blockedEmails" && Array.isArray(row.data)) db.blockedEmails = row.data as unknown as string[];
+      if (row.k === "settings") Object.assign(db.settings, row.data);
     }
     // Make sure the counters are ahead of every number already used (defence against a lost counter row).
     db.n.wr = Math.max(db.n.wr, ...db.wrs.map((w) => Number(w.id) + 1));
@@ -237,6 +238,7 @@ export async function refresh(background = false): Promise<void> {
         if (row.k === "payMethods" && Array.isArray(row.data)) db.payMethods = row.data as unknown as string[];
         if (row.k === "carriers" && Array.isArray(row.data)) db.carriers = row.data as unknown as string[];
         if (row.k === "blockedEmails" && Array.isArray(row.data)) db.blockedEmails = row.data as unknown as string[];
+        if (row.k === "settings") Object.assign(db.settings, row.data);
         metaSeen.set(row.k, JSON.stringify(row.data));
       }
       st.seen.set(META, metaSeen);

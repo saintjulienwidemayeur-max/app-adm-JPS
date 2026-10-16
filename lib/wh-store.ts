@@ -29,7 +29,7 @@ export type Customer = {
 };
 export type CustomerRates = { ocean?: number; air?: number; capa?: number; capo?: number; sdq?: number; droc?: number };
 // One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
-export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" };
+export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" | "storage" };
 // A notice sent to the customer about a receipt (email or WhatsApp). `sig` is the state of the receipt that was sent.
 export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"; sig: string; auto?: boolean; to?: string; doc?: string; why?: string };
 export type WR = {
@@ -101,10 +101,15 @@ export const defaultRate = (ship: Ship) => (ship === "Ocean" ? OCEAN_RATE : AIR_
 // The rate of this customer (from the old system or typed on the customer page), else the standard one.
 export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : defaultRate(ship); };
 
+// Settings the administrator can change (Administration > Fees & rates).
+// Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
+// (0 = no automatic storage fee).
+export type Settings = { storageFreeDays: number; storageFee: number };
+export const DEFAULT_SETTINGS: Settings = { storageFreeDays: 30, storageFee: 10 };
 const today = () => usToday();
 type WhDb = {
   items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; users: User[]; maillog: MailLog[]; audit: AuditEntry[]; oldInvoices: OldInvoice[]; blockedEmails: string[]; customers: Customer[]; reps: Rep[];
-  feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
+  feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[]; settings: Settings;
   n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number; pickup: number; prealert: number; mail: number; user: number; audit: number };
 };
 const g = globalThis as unknown as { __wh13?: WhDb };
@@ -114,7 +119,7 @@ export const db: WhDb = (g.__wh13 ??= {
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
   wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], users: [], maillog: [], audit: [], oldInvoices: [], blockedEmails: [...BLOCKED_EMAILS], customers: [], reps: [],
-  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
+  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS], settings: { ...DEFAULT_SETTINGS },
   n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001, pickup: 1, prealert: 1, mail: 1, user: 1, audit: 1 },
 });
 export const nowStr = today;
