@@ -29,13 +29,13 @@ export type Customer = {
 };
 export type CustomerRates = { ocean?: number; air?: number; capa?: number; capo?: number; sdq?: number; droc?: number };
 // One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
-export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" };
+export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" | "storage" };
 // A notice sent to the customer about a receipt (email or WhatsApp). `sig` is the state of the receipt that was sent.
-export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"; sig: string };
+export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"; sig: string; auto?: boolean; to?: string; doc?: string; why?: string };
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; hereNotified?: boolean; ready?: boolean; rate?: number; estimate?: boolean; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; estimate?: boolean; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
 };
 // A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
 export type OrderItem = { desc: string; qty: number; unit: number };
@@ -101,10 +101,15 @@ export const defaultRate = (ship: Ship) => (ship === "Ocean" ? OCEAN_RATE : AIR_
 // The rate of this customer (from the old system or typed on the customer page), else the standard one.
 export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : defaultRate(ship); };
 
+// Settings the administrator can change (Administration > Fees & rates).
+// Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
+// (0 = no automatic storage fee).
+export type Settings = { storageFreeDays: number; storageFee: number };
+export const DEFAULT_SETTINGS: Settings = { storageFreeDays: 30, storageFee: 10 };
 const today = () => usToday();
 type WhDb = {
-  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; users: User[]; maillog: MailLog[]; audit: AuditEntry[]; oldInvoices: OldInvoice[]; blockedEmails: string[]; customers: Customer[]; reps: Rep[];
-  feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[];
+  items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; users: User[]; maillog: MailLog[]; audit: AuditEntry[]; oldInvoices: OldInvoice[]; oldWrs: OldWR[]; oldShips: OldShip[]; blockedEmails: string[]; customers: Customer[]; reps: Rep[];
+  feeNames: { charge: string[]; credit: string[] }; payMethods: string[]; carriers: string[]; settings: Settings;
   n: { wr: number; piece: number; item: number; cargo: number; inv: number; batch: number; cust: number; rep: number; fee: number; pay: number; pickup: number; prealert: number; mail: number; user: number; audit: number };
 };
 const g = globalThis as unknown as { __wh13?: WhDb };
@@ -113,8 +118,8 @@ export const db: WhDb = (g.__wh13 ??= {
     { id: 1, date: today(), carrier: "AMAZON", tracking: "TBA334984152752", receiver: "Demo", batch: "0" },
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
-  wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], users: [], maillog: [], audit: [], oldInvoices: [], blockedEmails: [...BLOCKED_EMAILS], customers: [], reps: [],
-  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS],
+  wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], users: [], maillog: [], audit: [], oldInvoices: [], oldWrs: [], oldShips: [], blockedEmails: [...BLOCKED_EMAILS], customers: [], reps: [],
+  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS], settings: { ...DEFAULT_SETTINGS },
   n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001, pickup: 1, prealert: 1, mail: 1, user: 1, audit: 1 },
 });
 export const nowStr = today;
@@ -248,6 +253,12 @@ export type OldInvoice = {
   no: string; date: string; cust: number; consignee?: number; total: number; paid: boolean; method: string; shipment: string; ship: string; rep: string;
   lines: { d: string; q: number; u: number; a: number }[]; pays: { id: string; date: string; method: string; amount: number }[];
 };
+// The cargo history of the old system (Access: CASKWR, CASKITEMS, ItemsScanned, tblCargoBL, tblCargoList), kept for reference: what was received,
+// which parcels (tracking numbers) were scanned, which pieces went on which shipment. Search it when a customer asks about an old parcel.
+export type OldPiece = { n: number; type: string; l: number; w: number; h: number; lbs: number; cuft: number; contents: string; loaded: boolean; shipped: boolean; delivered: boolean };
+export type OldScan = { t: string; date: string; carrier: string; ship: string; notified: boolean };
+export type OldWR = { wr: string; date: string; shipper: string; billTo: number; cust: number; ship: string; kind: string; handling: number; other: number; credit: number; paid: number; method: string; contents: string; comments: string; invoiced: boolean; paidFull: boolean; pieces: OldPiece[]; scans: OldScan[]; ships: string[] };
+export type OldShip = { id: string; type: string; name: string; awb: string; bol: string; date: string; sail: string; arrival: string; container: string; line: string; vessel: string; pieces: number; cost: number; shipper: string; consignee: string; items: number[] };
 export type MailLog = { id: number; date: string; time: string; by: string; subject: string; to: string; sent: number; total: number; failed: string[] };
 
 // ---------- Pre-alerts ----------

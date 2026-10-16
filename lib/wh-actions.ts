@@ -2,15 +2,18 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
+import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti } from "./auto-mail";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
 import { extractTracking, sameTracking } from "./tracking";
+import { oldScanIndex } from "./cargo-import";
 import { parseEstimate, estimate } from "./estimate";
+import { usableEmail } from "./mailrules";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
 
@@ -55,7 +58,12 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
   if (!clientId && c) {
     for (const who of [c.box, c.email, c.name]) { if (!who) continue; const r = await findClientId(who); if (r.id) { clientId = r.id; break; } }
   }
-  if (!clientId) return `${c?.name ?? "This customer"} has no account on the website: no tracking and no notification.`;
+  if (!clientId) {
+    // No account on the website: the e-mail on file (if there is a real one) gets "your parcel arrived" from here.
+    const full = c && "no" in c ? (c as Customer) : db.customers.find((x) => x.name === c?.name);
+    if (full && usableEmail(full)) { emailParcelArrived(full, item.tracking); return ""; }
+    return `${c?.name ?? "This customer"} has no account on the website and no usable e-mail: no tracking and no notification.`;
+  }
   item.clientId = clientId;
   const e = await pushStatus({ tracking: item.tracking, status: 0, clientId, type: ship, description: "Received at the Miami warehouse" });
   return e ? `The website update failed: ${e}` : "";
@@ -72,6 +80,9 @@ export const receiveItem = act("receiveItem", async (f: F) => {
   const typed = s(f, "customer");
   const who = typed ? pickCustomer(typed) : undefined;
   if (typed && !who) back(RX, { err: `No customer matches "${typed}". Leave the field empty if you don't know it, or pick a customer from the list.` });
+  // Already received in the old system? A warning only (a customer can order again, and tracking numbers get reused).
+  const oldHit = db.oldWrs.length ? oldScanIndex(db.oldWrs).get(tracking.slice(-12))?.find((h) => true) : undefined;
+  const oldMsg = oldHit ? ` Careful: this tracking number was already received in the old system on ${oldHit.date || "an unknown date"} (receipt ${oldHit.wr}).` : "";
   const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
@@ -88,14 +99,14 @@ export const receiveItem = act("receiveItem", async (f: F) => {
     if (pa.siteId) await markSitePrealertReceived(pa.siteId);
     const c = db.customers.find((x) => x.no === pa!.cust);
     const warn = await notifyReceived(item, c ?? { name: pa.customer, email: "", clientId: pa.clientId }, ship);
-    back(RX, { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}`, ...(warn && { warn }) });
+    back(RX, { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) });
   }
   if (who) {
     Object.assign(item, { customer: who.name, ship: "Air" as Ship, clientId: who.clientId });
     const warn = await notifyReceived(item, who, "Air");
-    back(RX, { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}`, ...(warn && { warn }) });
+    back(RX, { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) });
   }
-  back(RX, { ok: tracking, warn: "Not announced by any customer: it waits in the review queue until it is identified." });
+  back(RX, { ok: tracking, warn: `Not announced by any customer: it waits in the review queue until it is identified.${oldMsg}` });
 });
 export const updateItem = act("updateItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));
@@ -156,6 +167,7 @@ async function assign(ids: number[], f: F) {
     const e = await pushStatus({ tracking: i.tracking, status: 0, clientId, type: ship, description: `JP's ${no}` });
     if (e) warn = `Piece created, but the website update failed: ${e}`;
   }
+  queueReceiptSoon(w.id); // the receipt goes to the customer by e-mail by itself (a few minutes after the last piece)
   const note = created ? ` New customer ${c.no}: add the phone and address on the Customers page.` : "";
   return back(CO, { ok: `Piece ${no} created for ${c.name} (customer ${c.no}, ${wrCode(w)}${addToOpen ? "" : ", new receipt"}) from ${items.length} parcel${items.length > 1 ? "s" : ""}.${note}`, wr: w.id, piece: String(no), ...(warn && { warn }) });
 }
@@ -371,7 +383,7 @@ export const addPiece = act("addPiece", async (f: F) => {
   if (!w) return;
   const p = pieceInput(f);
   if (typeof p === "string") back(wrPath(w.id), { err: p });
-  else w.pieces.push({ no: db.n.piece++, ...p });
+  else { w.pieces.push({ no: db.n.piece++, ...p }); queueReceiptSoon(w.id); }
   back(wrPath(w.id));
 });
 export const updatePiece = act("updatePiece", async (f: F) => {
@@ -752,6 +764,8 @@ export const shipCargo = act("shipCargo", async (f: F) => {
   // Tracking website: status 1 "in transit / customs" for every linked parcel of these receipts.
   let failed = 0;
   for (const i of mine) if (i.clientId && await pushStatus({ tracking: i.tracking, status: 1, clientId: i.clientId })) failed++;
+  // E-mails by themselves: the receipt (PDF) to every customer of this shipment, and "in transit" to the customers with no website account.
+  for (const id of wrIds) { const w = db.wrs.find((x) => x.id === id); if (!w) continue; queueMail(() => emailReceipt(w, `shipment ${sh.name} shipped`)); emailHaiti(w, "shipped"); }
   back(PL, { ...q, ok: `${sh.name} shipped (Cargo ID ${sh.cargoId}).`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
 
@@ -764,6 +778,8 @@ async function syncArrived(wrIds: string[]) {
     const w = db.wrs.find((x) => x.id === id);
     if (!w || !w.pieces.length || !w.pieces.every((p) => db.loads.some((l) => l.no === p.no && l.here))) continue;
     for (const i of db.items) if (i.wr === id && i.clientId && await pushStatus({ tracking: i.tracking, status: 2, clientId: i.clientId })) failed++;
+    emailHaiti(w, "arrived"); // customers with no website account (the others get the website's push + e-mail)
+    if (syncEnabled() || mailEnabled()) w.hereNotified = true; // the customer is told by itself: nothing to press
   }
   return failed;
 }
@@ -799,6 +815,7 @@ export const markReady = act("markReady", async (f: F) => {
   w.ready = true;
   let failed = 0;
   for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId })) failed++;
+  emailHaiti(w, "ready");
   back(AR, { ok: `${wrCode(w)} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
 

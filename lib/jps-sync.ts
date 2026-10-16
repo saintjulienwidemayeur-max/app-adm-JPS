@@ -144,7 +144,11 @@ async function mailCall(body: Record<string, unknown>): Promise<{ ok?: boolean; 
     return r.ok ? j : { error: MAIL_ERRORS[j.error ?? ""] ?? j.error ?? `The website answered ${r.status}.` };
   } catch (e) { return { error: `Could not reach the website: ${e instanceof Error ? e.message : e}` }; }
 }
-export const mailOne = async (clientId: string, subject: string, message: string) => (await mailCall({ action: "send", client_id: clientId, subject, message })).error ?? null;
+export type MailFile = { name: string; content: string }; // content = the file in base64
+export const mailOne = async (clientId: string, subject: string, message: string, attachments?: MailFile[]) => (await mailCall({ action: "send", client_id: clientId, subject, message, ...(attachments?.length && { attachments }) })).error ?? null;
+// To an e-mail address (a customer with no account on the website). Needs the website's function with the "send_to" action.
+export const mailTo = async (to: { email: string; name?: string; lang?: string }, subject: string, message: string, attachments?: MailFile[]) =>
+  (await mailCall({ action: "send_to", to_email: to.email, to_name: to.name ?? "", lang: to.lang ?? "fr", subject, message, ...(attachments?.length && { attachments }) })).error ?? null;
 export const mailAll = (subject: string, message: string) => mailCall({ action: "broadcast", subject, message });
 // Many customers, the same message. The website's function takes a list (action "send_many"); an older version of it only knows "send":
 // then they are sent one by one (a few at a time).

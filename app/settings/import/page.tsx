@@ -1,6 +1,6 @@
 import { db } from "@/lib/wh-store";
 import { requireAdmin } from "@/lib/users";
-import { importCustomers } from "@/lib/import-actions";
+import { importCustomers, importCargo } from "@/lib/import-actions";
 import { Button } from "@/components/ui/button";
 
 export const metadata = { title: "Import data · JP's Logistics" };
@@ -42,6 +42,26 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       </form>
 
       <p className="mt-8 text-sm text-zinc-600">The old invoices and payments are imported in the billing system (Administration &gt; Import old invoices), after the customers.</p>
+
+      <h2 className="mt-8 text-lg font-bold">Cargo history</h2>
+      <p className="text-sm text-zinc-600">The old system&apos;s receipts, pieces, scanned parcels (tracking numbers) and shipments, kept for reference: search them in <b>Warehouse Receipts &gt; Old receipts</b> and <b>Prepare Shipping &gt; Old shipments</b>, and Received items warns when a tracking number was already received before. Import the customers first. The app has <b>{db.oldWrs.length.toLocaleString("en-US")}</b> old receipts and <b>{db.oldShips.length.toLocaleString("en-US")}</b> old shipments now. Importing again replaces them.</p>
+      {q.cerr && <p role="alert" className="mt-3 text-sm font-medium text-red-700">{q.cerr}</p>}
+      {q.cdone && (
+        <div className={`mt-3 rounded-lg border p-3 text-sm ${q.cdone === "import" ? "border-green-300 bg-green-50" : "border-blue-300 bg-blue-50"}`}>
+          <p className="font-semibold">{q.cdone === "import" ? "Imported." : "Check only: nothing was saved."}</p>
+          <ul className="mt-1 list-disc pl-5"><li><b>{Number(q.cr).toLocaleString("en-US")}</b> receipts with <b>{Number(q.cp).toLocaleString("en-US")}</b> pieces and <b>{Number(q.cs).toLocaleString("en-US")}</b> scanned parcels</li><li><b>{Number(q.ch).toLocaleString("en-US")}</b> shipments, <b>{Number(q.cl).toLocaleString("en-US")}</b> pieces on shipments</li></ul>
+          {q.cx && <p className="mt-1 text-xs text-zinc-700">{q.cx}</p>}
+        </div>
+      )}
+      <form action={importCargo} encType="multipart/form-data" className="mt-4 grid gap-3 rounded-lg border p-4">
+        {([["receipts", "Receipts (old_receipts.csv)"], ["pieces", "Pieces (old_receipt_pieces.csv)"], ["scans", "Scanned parcels (old_scans.csv)"], ["ships", "Shipments (old_shipments.csv)"], ["shipPieces", "Pieces on shipments (old_shipment_pieces.csv)"]] as const).map(([k, label]) => (
+          <label key={k} className="grid gap-1 text-sm font-medium text-zinc-700">{label}<input type="file" name={k} accept=".csv,text/csv" required className="text-sm" /></label>))}
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" name="mode" value="check" variant="outline">1. Check the files (saves nothing)</Button>
+          <Button type="submit" name="mode" value="import">2. Import</Button>
+        </div>
+        <p className="text-xs text-zinc-600">Choose the 5 files each time. Check first: it shows the totals so you can compare with the old system.</p>
+      </form>
     </main>
   );
 }

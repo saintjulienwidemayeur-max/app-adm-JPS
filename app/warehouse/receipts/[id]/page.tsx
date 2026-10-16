@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { listDocs } from "@/lib/persist";
 import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
@@ -24,11 +25,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const loadedOn = db.loads.find((l) => w.pieces.some((p) => p.no === l.no))?.shipment;
   const anyLoaded = w.pieces.some((p) => loaded.has(p.no));
   const code = wrCode(w);
-  const mail = `mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics – Warehouse receipt ${code}`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nYour warehouse receipt ${code} has ${w.pieces.length} piece(s). Total: ${money(total(w))}.\n\nJP's Logistics & More`)}`;
   const lbs = r2(w.pieces.reduce((a, p) => a + p.lbs, 0));
   const ins = quote(w);
   const card = cardFees(balance(w));
   const nstate = noticeState(w), notice = lastNotice(w);
+  const docs = await listDocs("receipt", w.id);
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/receipts" className="text-sm text-brand underline">All receipts</Link>
@@ -36,7 +37,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <h1>{code} · {w.customer} <span className="text-base font-normal text-zinc-600">· {w.ship} · {w.date}{w.route && ` · ${w.route}`}</span></h1>
         <div className="flex flex-wrap gap-2">
           <Link href={`/warehouse/receipts/${w.id}/report`} className={lnk}>View receipt</Link>
-          {w.email ? <a href={mail} className={lnk}>Email receipt</a> : <span className="inline-flex h-9 items-center text-xs text-zinc-500">Add an email to send the receipt</span>}
+          <a href={`/warehouse/receipts/${w.id}/pdf`} target="_blank" className={lnk}>Download PDF</a>
           {w.pieces.length > 0 && !w.invoice && <CompareShip current={estimateFor(w, w.ship)} other={estimateFor(w, otherShip(w))} wr={wrCode(w)} locked={anyLoaded} switchAction={switchShip.bind(null, w.id)} />}
           {loadedOn && <Link href={`/warehouse/shipments/${encodeURIComponent(loadedOn)}/poe/${w.cust}`} className={lnk}>Proof of export</Link>}
           {w.pieces.length > 0 && <Link href={`/warehouse/receipts/${w.id}/labels`} className={`${lnk} !border-brand !bg-brand !text-white`}>Print labels</Link>}
@@ -50,12 +51,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <span className={`rounded px-2 py-0.5 text-xs font-semibold ${nstate === "current" ? "bg-green-100 text-green-800" : nstate === "outdated" ? "bg-amber-100 text-amber-900" : "bg-zinc-100 text-zinc-700"}`}>
             {nstate === "current" ? `Customer notified by ${notice?.channel} · ${notice?.date} ${notice?.time}` : nstate === "outdated" ? `Update NOT sent: the receipt changed after the ${notice?.channel} of ${notice?.date}` : "Customer not notified yet"}
           </span></div>
-        <p className="mt-1 text-xs text-zinc-600">After you send the receipt (Email or WhatsApp), record it here. If the receipt changes later, the update has to be sent and recorded again.</p>
+        <p className="mt-1 text-xs text-zinc-600">The receipt (PDF) is e-mailed to the customer by itself: a few minutes after a piece is saved, and when the shipment ships. If the receipt changes later, the updated one goes out again. Nothing to press. (If you told the customer by WhatsApp, record it here.)</p>
         <form className="mt-2 flex flex-wrap items-center gap-2">
-          <button formAction={markNotified.bind(null, w.id, "Email")} className={lnk}>Record: sent by email</button>
           <button formAction={markNotified.bind(null, w.id, "WhatsApp")} className={lnk}>Record: sent by WhatsApp</button>
-          {w.notices && w.notices.length > 0 && <span className="text-xs text-zinc-500">{w.notices.length} notice{w.notices.length > 1 ? "s" : ""} sent · {w.notices.map((n) => `${n.channel} ${n.date}`).join(" · ")}</span>}
+          {w.notices && w.notices.length > 0 && <span className="text-xs text-zinc-500">{w.notices.length} notice{w.notices.length > 1 ? "s" : ""} · {w.notices.map((n) => `${n.channel}${n.auto ? " (automatic)" : ""} ${n.date}`).join(" · ")}</span>}
         </form>
+        {docs.length > 0 && <ul className="mt-2 grid gap-0.5 text-xs">{docs.map((d) => <li key={d.id}><a href={`/docs/${d.id}`} target="_blank" className="text-brand underline">{d.name}</a> <span className="text-zinc-500">· {d.note} · {new Date(d.created).toLocaleString("en-US")}</span></li>)}</ul>}
       </section>
 
       <section className="mt-4 rounded-lg border p-3 text-sm">
