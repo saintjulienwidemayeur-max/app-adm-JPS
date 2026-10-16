@@ -7,7 +7,7 @@ import { HOME, locate, isOn, visibleSections } from "@/lib/menu";
 
 const Pill = ({ n, active }: { n?: number; active?: boolean }) => (n ? <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${active ? "bg-white text-brand" : "bg-white/20 text-white"}`}>{n}</span> : null);
 
-export function Nav({ mode = "memory", user = null, badges = {} }: { mode?: "memory" | "database" | "down"; user?: { name: string; admin: boolean; perms: string[] } | null; badges?: Record<string, number> }) {
+export function Nav({ mode = "memory", user = null, badges = {}, version = "" }: { mode?: "memory" | "database" | "down"; user?: { name: string; admin: boolean; perms: string[] } | null; badges?: Record<string, number>; version?: string }) {
   const path = usePathname();
   if (path === "/login" || !user) return null;
   const SECTIONS = visibleSections(user);
@@ -62,6 +62,7 @@ export function Nav({ mode = "memory", user = null, badges = {} }: { mode?: "mem
         <p className={`px-3 pt-2 text-xs ${mode === "memory" ? "text-amber-300" : mode === "down" ? "text-red-300" : "text-white/55"}`}>
           {mode === "memory" ? "Memory only: data is lost when the server restarts." : mode === "down" ? "Database not reachable." : "Saved in the database."}
         </p>
+        {version && <p className="px-3 pt-1 text-[11px] text-white/40">Version {version}</p>}
       </div>
     </nav>
   );
