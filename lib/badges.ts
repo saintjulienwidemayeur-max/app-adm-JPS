@@ -1,5 +1,5 @@
 // Small counters shown next to menu entries (what is waiting for someone). Server only: reads the working copy.
-import { db, balance, orderBalance } from "./wh-store";
+import { db, balance } from "./wh-store";
 
 export type Badges = Record<string, number>;
 export function menuBadges(): Badges {
@@ -8,8 +8,7 @@ export function menuBadges(): Badges {
     "/warehouse/prealerts": db.prealerts.filter((p) => p.status === "Expected").length,
     "/warehouse/consolidate": waiting,
     "/warehouse/pickups": db.pickups.filter((p) => p.status === "Scheduled").length,
-    "/warehouse/invoices": db.wrs.filter((w) => w.invoice && balance(w) > 0).length,
-    "/warehouse/orders": db.orders.filter((o) => orderBalance(o) > 0).length,
+    "/billing": db.wrs.filter((w) => w.invoice && balance(w) > 0).length,
     "/warehouse/shipments": db.shipments.filter((s) => !s.shipped).length,
   };
   return b;

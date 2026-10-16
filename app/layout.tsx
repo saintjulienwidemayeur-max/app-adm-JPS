@@ -9,7 +9,7 @@ import { menuBadges } from "@/lib/badges";
 import { currentUser } from "@/lib/users";
 import { db } from "@/lib/wh-store";
 import { VERSION } from "@/lib/version";
-import { persistState, initStore } from "@/lib/persist";
+import { persistState, initStore, refresh } from "@/lib/persist";
 
 export const metadata = { title: "JP's Logistics & More" };
 
@@ -17,6 +17,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   await connection(); // the banner reflects the database state at request time
   const wasDown = persistState().enabled && !persistState().loaded;
   if (wasDown) await initStore(); // retry if the database was down at start
+  await refresh(); // what the other app (billing) saved
   const ps = persistState();
   const reconnected = wasDown && ps.loaded; // this page was drawn from an empty copy: reload it
   const path = (await headers()).get("x-pathname") ?? "/";

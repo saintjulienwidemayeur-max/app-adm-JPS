@@ -74,3 +74,9 @@ Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` (see `.env.ex
 - Consolidate (customer assigned to a parcel, piece created) -> website status 0 (customer found by box number, e-mail or exact name)
 - Ship this cargo -> status 1 · all pieces of a receipt scanned on Arrivals PV -> status 2 · "Ready for pickup" -> status 3
 The website's existing webhook sends the push and the e-mail.
+
+## Billing is a separate app
+Invoices, receivables, reports, payables, orders and the old invoices live in their own app (repo `JPS-billing`), on the **same database**. This app keeps only **Receive payments** (Billing section) and a **Billing system** entry that opens the other app: set `BILLING_URL` (Render > Environment) to its address. A person needs the "Billing system" access (Administration > Users & access) to open it. Both apps call `refresh()` (`lib/persist.ts`) on every request and every few seconds while in use, so what one saves shows in the other within seconds; counters take the larger value so the two never give out the same number. Deploy both with the same `DATABASE_URL`.
+
+## Received items and the website
+Type the customer on Received items (optional): the parcel is created on the customer's tracking page on the website (status "received in Miami"), and the website sends the push notification and the e-mail. Shipping a shipment moves its parcels to "in transit", scanning the pieces at Arrivals PV moves them to "arrived in Haiti" (push + e-mail each time). Customers can also ask for an estimate on the website (`estimate_requests`, section 15 of the website SQL): the requests are listed on the Estimate page, where you price them and e-mail the answer.
