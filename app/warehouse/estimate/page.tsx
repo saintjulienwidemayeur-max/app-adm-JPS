@@ -90,7 +90,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <F label="Air handling ($, minimum 35)"><Input name="handlingAir" type="number" step="0.01" min="0" defaultValue={q.handlingAir ?? EST_AIR_HANDLING} className="text-right" /></F>
               <F label="Ocean handling ($, minimum 45)"><Input name="handlingOcean" type="number" step="0.01" min="0" defaultValue={q.handlingOcean ?? EST_OCEAN_HANDLING} className="text-right" /></F>
               <F label="Declared value ($)"><Input name="declared" type="number" step="0.01" min="0" defaultValue={q.declared} className="text-right" /></F>
-              <label className="flex items-end gap-1.5 pb-2 text-sm sm:col-span-3"><input type="checkbox" name="insure" value="yes" defaultChecked={q.insure === "yes"} /> The customer accepts insurance (3.5% of the declared value, minimum $50)</label>
+              <label className="flex items-end gap-1.5 pb-2 text-sm sm:col-span-3"><input type="checkbox" name="insure" value="yes" defaultChecked={q.insure === "yes"} /> The customer accepts insurance ($50 flat when the declared value is up to $2,213, then 3.5% of the declared value)</label>
               <F label="Pickup ($, minimum 20)"><Input name="pickup" type="number" step="0.01" min="0" defaultValue={q.pickup} className="text-right" /></F>
               <F label="Repacking / consolidation ($, minimum 10)"><Input name="repack" type="number" step="0.01" min="0" defaultValue={q.repack} className="text-right" /></F>
               <F label="Other fee (name)"><Input name="otherLabel" defaultValue={q.otherLabel} maxLength={60} /></F>

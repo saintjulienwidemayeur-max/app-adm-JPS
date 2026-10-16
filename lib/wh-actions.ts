@@ -181,7 +181,12 @@ function applyShip(w: WR, ship: Ship): string {
   db.items.forEach((i) => { if (i.wr === w.id) i.ship = ship; });
   w.ship = ship;
   w.rate = rateFor(custOf(w), ship);
-  if (ship === "Ocean") { if (!w.fees.some((x) => x.label.toLowerCase() === HANDLING_LABEL.toLowerCase())) w.fees.push({ id: db.n.fee++, label: HANDLING_LABEL, amount: OCEAN_HANDLING, kind: "charge", auto: "handling" }); }
+  if (ship === "Ocean") {
+    // Ocean handling: a handling line typed by hand (for example the Air one) becomes the automatic Ocean line, at least $45.
+    const own = w.fees.find((x) => x.kind === "charge" && x.label.trim().toLowerCase() === HANDLING_LABEL.toLowerCase());
+    if (own) { own.auto = "handling"; own.amount = Math.max(own.amount, OCEAN_HANDLING); }
+    else w.fees.push({ id: db.n.fee++, label: HANDLING_LABEL, amount: OCEAN_HANDLING, kind: "charge", auto: "handling" });
+  }
   else w.fees = w.fees.filter((x) => x.auto !== "handling");
   return "";
 }

@@ -58,6 +58,11 @@ function makePool() {
 }
 
 async function ensureTables(c: PoolClient) {
+  // Two apps starting together would both run `create table if not exists` and one could fail: one at a time.
+  await c.query("select pg_advisory_lock(7262001)");
+  try { await createTables(c); } finally { await c.query("select pg_advisory_unlock(7262001)"); }
+}
+async function createTables(c: PoolClient) {
   for (const name of [...TABLES.map((t) => t.name), META]) {
     await c.query(`create table if not exists ${name} (k text primary key, seq bigserial, data jsonb not null, updated_at timestamptz not null default now())`);
     // The tables hold customers' personal data: Supabase exposes public tables through its REST API, so lock them to the server connection.
