@@ -31,7 +31,7 @@ export type CustomerRates = { ocean?: number; air?: number; capa?: number; capo?
 // One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
 export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" };
 // A notice sent to the customer about a receipt (email or WhatsApp). `sig` is the state of the receipt that was sent.
-export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"; sig: string };
+export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"; sig: string; auto?: boolean; to?: string; doc?: string; why?: string };
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";

@@ -54,17 +54,15 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           <thead><tr>{["WR", "Customer", "Pieces here", "Balance", "Customer notified", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
           <tbody>{hereWrs.map(({ w, here, total }) => {
             const bal = Math.max(0, balance(w));
-            const mail = `mailto:${w.email}?subject=${encodeURIComponent(`JP's Logistics – your package is here (${wrCode(w)})`)}&body=${encodeURIComponent(`Hello ${w.customer},\n\nYour package(s) for receipt ${wrCode(w)} have arrived in Pétion-Ville.\n\nJP's Logistics & More`)}`;
             return (
               <tr key={w.id} className="border-b border-zinc-100">
                 <td className={td}>{wrCode(w)}</td><td className={td}>{w.customer}</td>
                 <td className={td}>{here} of {total}{here < total && <span className="ml-1 text-amber-700">· partial</span>}</td>
-                <td className={td}>{money(bal)}</td><td className={td}>{w.hereNotified ? "Yes" : "No"}</td>
+                <td className={td}>{money(bal)}</td><td className={td}>{w.hereNotified ? "Yes (automatic)" : here === total ? "Not set up" : "When all pieces are here"}</td>
                 <td className={`${td} flex gap-2`}>
-                  {w.email ? <a href={mail} className={lnk}>Email customer</a> : <span className="text-xs text-zinc-500">No email on receipt</span>}
                   {here === total && !w.ready && <form action={markReady}><input type="hidden" name="wr" value={w.id} /><button className={lnk}>Ready for pickup</button></form>}
                   {w.ready && <span className="text-xs font-medium text-green-700">Ready for pickup</span>}
-                  {!w.hereNotified && <form action={markHereNotified}><input type="hidden" name="wr" value={w.id} /><button className={lnk}>Mark notified</button></form>}
+                  {here === total && <span className="text-xs text-zinc-500">The customer is told by itself (push + e-mail)</span>}
                 </td>
               </tr>);
           })}</tbody>

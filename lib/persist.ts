@@ -63,6 +63,10 @@ async function ensureTables(c: PoolClient) {
   try { await createTables(c); } finally { await c.query("select pg_advisory_unlock(7262001)"); }
 }
 async function createTables(c: PoolClient) {
+  // The PDFs that were e-mailed (receipts, invoices): the exact file the customer got. Not part of the in-memory copy (they are big).
+  await c.query("create table if not exists wh_docs (id bigserial primary key, kind text not null, ref text not null, name text not null, note text, created_at timestamptz not null default now(), data bytea not null)");
+  await c.query("alter table wh_docs enable row level security");
+  await c.query("create index if not exists wh_docs_ref on wh_docs (kind, ref)");
   for (const name of [...TABLES.map((t) => t.name), META]) {
     await c.query(`create table if not exists ${name} (k text primary key, seq bigserial, data jsonb not null, updated_at timestamptz not null default now())`);
     // The tables hold customers' personal data: Supabase exposes public tables through its REST API, so lock them to the server connection.
@@ -242,4 +246,33 @@ export async function refresh(background = false): Promise<void> {
   } catch (e) {
     console.error("[persist] refresh failed:", e instanceof Error ? e.message : e);
   } finally { c?.release(); st.syncing = false; }
+}
+
+// ---------- Documents (PDF) that were sent ----------
+export type DocInfo = { id: string; kind: string; ref: string; name: string; note: string; created: string };
+const memDocs = ((globalThis as unknown as { __whDocs?: Map<string, DocInfo & { data: Buffer }> }).__whDocs ??= new Map());
+let memSeq = 1;
+export async function saveDoc(d: { kind: string; ref: string; name: string; note?: string; data: Uint8Array }): Promise<string> {
+  const pool = st.pool;
+  if (pool && st.loaded) {
+    const r = await pool.query<{ id: string }>("insert into wh_docs (kind, ref, name, note, data) values ($1,$2,$3,$4,$5) returning id::text", [d.kind, d.ref, d.name, d.note ?? "", Buffer.from(d.data)]);
+    return r.rows[0].id;
+  }
+  const id = `m${memSeq++}`;
+  memDocs.set(id, { id, kind: d.kind, ref: d.ref, name: d.name, note: d.note ?? "", created: new Date().toISOString(), data: Buffer.from(d.data) });
+  return id;
+}
+export async function getDoc(id: string): Promise<(DocInfo & { data: Buffer }) | null> {
+  if (id.startsWith("m")) return memDocs.get(id) ?? null;
+  if (!st.pool || !st.loaded || !/^\d+$/.test(id)) return null;
+  const r = await st.pool.query("select id::text, kind, ref, name, coalesce(note,'') as note, created_at, data from wh_docs where id = $1", [id]);
+  const x = r.rows[0];
+  return x ? { id: x.id, kind: x.kind, ref: x.ref, name: x.name, note: x.note, created: new Date(x.created_at).toISOString(), data: x.data } : null;
+}
+export async function listDocs(kind: string, ref: string): Promise<DocInfo[]> {
+  if (st.pool && st.loaded) {
+    const r = await st.pool.query("select id::text, kind, ref, name, coalesce(note,'') as note, created_at from wh_docs where kind = $1 and ref = $2 order by id desc limit 50", [kind, ref]);
+    return r.rows.map((x) => ({ id: x.id, kind: x.kind, ref: x.ref, name: x.name, note: x.note, created: new Date(x.created_at).toISOString() }));
+  }
+  return [...memDocs.values()].filter((d) => d.kind === kind && d.ref === ref).map(({ data: _d, ...i }) => i).reverse();
 }
