@@ -5,7 +5,8 @@
 // table into memory; after every server action it writes back only the rows that changed.
 // One row per record (customer, receipt, parcel, ...) with the record itself in a jsonb column,
 // so you can browse and query the tables in the Supabase dashboard.
-// Server only. Runs as a single instance: two copies of the app writing at once is not supported.
+// Server only. Two apps can share the same database (the warehouse app and the billing app): each one calls refresh() on every request, which
+// brings in the rows the other one changed (a row this app changed itself and has not saved yet is kept).
 import { Pool, type PoolClient } from "pg";
 import { db } from "./wh-store";
 
@@ -13,6 +14,7 @@ type Table = { name: string; key: (row: never) => string; rows: () => unknown[];
 type Store = {
   pool: Pool | null; loaded: boolean; error: string | null;
   seen: Map<string, Map<string, string>>; queue: Promise<unknown>; starting: Promise<void> | null; retry?: boolean;
+  maxAt?: Map<string, number>; syncAt?: number; keysAt?: number; syncing?: boolean; lastUse?: number; timer?: boolean;
 };
 const g = globalThis as unknown as { __whStore?: Store };
 const st: Store = (g.__whStore ??= { pool: null, loaded: false, error: null, seen: new Map(), queue: Promise.resolve(), starting: null });
@@ -60,6 +62,7 @@ async function ensureTables(c: PoolClient) {
     await c.query(`create table if not exists ${name} (k text primary key, seq bigserial, data jsonb not null, updated_at timestamptz not null default now())`);
     // The tables hold customers' personal data: Supabase exposes public tables through its REST API, so lock them to the server connection.
     await c.query(`alter table ${name} enable row level security`);
+    await c.query(`create index if not exists ${name}_updated on ${name} (updated_at)`); // the other app asks "what changed?" every few seconds
   }
 }
 
@@ -68,6 +71,7 @@ async function load() {
   const c = await pool.connect();
   try {
     await ensureTables(c);
+    const maxAt = await latest(c); // taken BEFORE reading the tables: what is saved while we read is picked up by the next refresh
     const seen = new Map<string, Map<string, string>>();
     for (const t of TABLES) {
       const r = await c.query<{ k: string; data: unknown }>(`select k, data from ${t.name} order by seq`);
@@ -96,6 +100,7 @@ async function load() {
     db.n.cust = Math.max(db.n.cust, ...db.customers.map((x) => x.no + 1));
     seen.set(META, metaSeen);
     st.seen = seen;
+    st.maxAt = maxAt;
   } finally { c.release(); }
 }
 
@@ -108,6 +113,7 @@ export function initStore(): Promise<void> {
       await load();
       st.loaded = true; st.error = null;
       console.log("[persist] database ready");
+      if (!st.timer) { st.timer = true; setInterval(() => { if (Date.now() - (st.lastUse ?? 0) < 1800000) void refresh(true); }, 5000).unref(); } // keeps the working copy fresh between requests, while the app is in use
     } catch (e) {
       st.error = e instanceof Error ? e.message : String(e);
       // One retry timer at a time (every page visit calls initStore too: without this the timers and the log lines pile up).
@@ -169,4 +175,66 @@ export function flush(): Promise<void> {
   const p = st.queue.then(write, write);
   st.queue = p;
   return p as Promise<void>;
+}
+
+// The newest change of every table, in one cheap query (each table has an index on updated_at).
+async function latest(c: PoolClient): Promise<Map<string, number>> {
+  const q = [...TABLES.map((t) => t.name), META].map((n) => `select '${n}' as t, max(updated_at) as m from ${n}`).join(" union all ");
+  return new Map((await c.query<{ t: string; m: Date | null }>(q)).rows.map((r) => [r.t, r.m ? r.m.getTime() : 0]));
+}
+
+// Brings in what the other app wrote to the database since the last look (at most every 3 seconds, and every 5 seconds in the background).
+// Rows this app changed and has not saved yet are kept. Counters take the larger value, so two apps never give out the same number.
+export async function refresh(background = false): Promise<void> {
+  const pool = st.pool;
+  if (!background) st.lastUse = Date.now();
+  if (!pool || !st.loaded || st.syncing || Date.now() - (st.syncAt ?? 0) < (background ? 2500 : 3000)) return;
+  st.syncing = true; st.syncAt = Date.now();
+  let c: PoolClient | undefined;
+  try {
+    c = await pool.connect();
+    const now = await latest(c), before = st.maxAt ?? new Map<string, number>();
+    const reconcile = Date.now() - (st.keysAt ?? 0) > 60000;
+    for (const t of TABLES) {
+      const moved = (now.get(t.name) ?? 0) > (before.get(t.name) ?? 0);
+      if (!moved && !reconcile) continue;
+      const seen = st.seen.get(t.name) ?? new Map<string, string>();
+      const local = new Map((t.rows() as unknown[]).map((r) => [t.key(r as never), r]));
+      let changed = false;
+      if (moved) {
+        const since = new Date((before.get(t.name) ?? 0) - 10000); // a margin: a save that started before our last look may have committed after it
+        const r = await c.query<{ k: string; data: unknown }>(`select k, data from ${t.name} where updated_at > $1 order by seq`, [since]);
+        for (const row of r.rows) {
+          const json = JSON.stringify(row.data), mine = local.get(row.k);
+          if (mine !== undefined && JSON.stringify(mine) !== seen.get(row.k)) continue; // changed here and not saved yet
+          if (mine !== undefined && json === seen.get(row.k)) continue; // nothing new
+          local.set(row.k, row.data); seen.set(row.k, json); changed = true;
+        }
+      }
+      if (reconcile) {
+        const keys = new Set((await c.query<{ k: string }>(`select k from ${t.name}`)).rows.map((x) => x.k));
+        for (const [k, v] of [...local]) if (!keys.has(k) && JSON.stringify(v) === seen.get(k)) { local.delete(k); seen.delete(k); changed = true; }
+      }
+      if (changed) { t.set([...local.values()] as never[]); st.seen.set(t.name, seen); }
+    }
+    if ((now.get(META) ?? 0) > (before.get(META) ?? 0)) {
+      const metaSeen = st.seen.get(META) ?? new Map<string, string>();
+      const m = await c.query<{ k: string; data: Record<string, unknown> }>(`select k, data from ${META} where updated_at > $1`, [new Date((before.get(META) ?? 0) - 10000)]);
+      for (const row of m.rows) {
+        if (row.k === "n") { for (const [k, v] of Object.entries(row.data)) if (typeof v === "number") (db.n as Record<string, number>)[k] = Math.max((db.n as Record<string, number>)[k] ?? 0, v); metaSeen.set("n", JSON.stringify(row.data)); continue; }
+        const mineJson = JSON.stringify((metaRows() as Record<string, unknown>)[row.k]);
+        if (mineJson !== metaSeen.get(row.k) && metaSeen.has(row.k)) continue;
+        if (row.k === "feeNames") Object.assign(db.feeNames, row.data);
+        if (row.k === "payMethods" && Array.isArray(row.data)) db.payMethods = row.data as unknown as string[];
+        if (row.k === "carriers" && Array.isArray(row.data)) db.carriers = row.data as unknown as string[];
+        if (row.k === "blockedEmails" && Array.isArray(row.data)) db.blockedEmails = row.data as unknown as string[];
+        metaSeen.set(row.k, JSON.stringify(row.data));
+      }
+      st.seen.set(META, metaSeen);
+    }
+    if (reconcile) st.keysAt = Date.now();
+    st.maxAt = now;
+  } catch (e) {
+    console.error("[persist] refresh failed:", e instanceof Error ? e.message : e);
+  } finally { c?.release(); st.syncing = false; }
 }

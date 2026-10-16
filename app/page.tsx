@@ -17,7 +17,7 @@ const ALL_QUICK = [
   { href: "/warehouse/receiving", label: "Scan a received parcel", icon: PackageOpen },
   { href: "/warehouse/estimate", label: "Price boxes (estimate)", icon: Calculator },
   { href: "/warehouse/receipts", label: "New warehouse receipt", icon: ReceiptText },
-  { href: "/warehouse/billing", label: "Receive a payment", icon: Wallet },
+  { href: "/warehouse/payments", label: "Receive a payment", icon: Wallet },
   { href: "/settings/import", label: "Import customers (CSV)", icon: FileUp },
 ];
 
@@ -31,7 +31,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
     { href: "/warehouse/prealerts", n: String(b["/warehouse/prealerts"]), label: "Pre-alerts expected" },
     { href: "/warehouse/consolidate", n: String(b["/warehouse/consolidate"]), label: "Parcels to consolidate" },
     { href: "/warehouse/pickups", n: String(b["/warehouse/pickups"]), label: "Pickups scheduled" },
-    { href: "/warehouse/invoices", n: money(owed()), label: `Owed on ${b["/warehouse/invoices"]} open invoice${b["/warehouse/invoices"] === 1 ? "" : "s"}` },
+    { href: "/billing", n: money(owed()), label: `Owed on ${b["/billing"]} open invoice${b["/billing"] === 1 ? "" : "s"}` },
   ];
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">

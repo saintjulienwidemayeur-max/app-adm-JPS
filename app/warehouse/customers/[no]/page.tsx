@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { billingUrl } from "@/lib/billing-link";
 import { notFound } from "next/navigation";
 import { db, wrCode, total, money, payStatus, rateFor, oldBalance, oldOpen } from "@/lib/wh-store";
 import { saveCustomer, saveCustomerRates } from "@/lib/wh-actions";
@@ -44,7 +45,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         )}
       </section>
 
-      {old.length > 0 && <p className="mt-4 text-sm"><Link href={`/warehouse/oldinvoices?c=${c.no}`} className="font-semibold text-brand underline">{old.length} old invoice{old.length === 1 ? "" : "s"}</Link> (old billing system){oldOwed > 0 ? <> · <b className="text-red-700">{money(oldOwed)} still owed</b> on {old.filter(oldOpen).length}</> : " · nothing owed"}</p>}
+      {old.length > 0 && <p className="mt-4 text-sm">{billingUrl() ? <a href={billingUrl(`/oldinvoices?c=${c.no}`)} className="font-semibold text-brand underline">{old.length} old invoice{old.length === 1 ? "" : "s"}</a> : <b>{old.length} old invoice{old.length === 1 ? "" : "s"}</b>} (old billing system){oldOwed > 0 ? <> · <b className="text-red-700">{money(oldOwed)} still owed</b> on {old.filter(oldOpen).length}</> : " · nothing owed"}</p>}
       <h2 className="mt-6 font-bold">Warehouse receipts ({wrs.length})</h2>
       {wrs.length === 0 ? <p className="mt-1 text-sm text-zinc-600">No receipts yet.</p> : (
         <table className="mt-2 w-full text-left text-sm">

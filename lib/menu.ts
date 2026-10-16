@@ -1,7 +1,7 @@
 // The app's menu: five sections, like the old billing software's main menu. The sidebar, the main menu, each section's page and the
 // breadcrumb all read this list, so a page is added in one place.
 import { allowed, isOn, type Claims } from "./access";
-import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, ScanLine, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, Archive, type LucideIcon } from "lucide-react";
+import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, ScanLine, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, type LucideIcon } from "lucide-react";
 
 export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
@@ -43,13 +43,10 @@ export const SECTIONS: MenuSection[] = [
     ],
   },
   {
-    slug: "billing", title: "Billing", icon: Wallet, blurb: "Invoices, payments and orders",
+    slug: "billing", title: "Billing", icon: Wallet, blurb: "Receive payments; invoicing is in the billing system",
     pages: [
-      { href: "/warehouse/billing", label: "Billing", icon: Wallet, desc: "Receive payments and follow what is owed" },
-      { href: "/warehouse/invoices", label: "Invoices", icon: FileText, desc: "Printable invoices and follow-up" },
-      { href: "/warehouse/oldinvoices", label: "Old invoices", icon: Archive, desc: "The invoices of the old billing system: history and what is still owed" },
-      { href: "/warehouse/payments", label: "Payments", icon: Banknote, desc: "Payment batches and payment receipts" },
-      { href: "/warehouse/orders", label: "Orders", icon: ShoppingCart, desc: "Purchase orders JP's buys for customers" },
+      { href: "/warehouse/payments", label: "Receive payments", icon: Banknote, desc: "Receive a payment from a customer and print the payment receipt" },
+      { href: "/billing", label: "Billing system", icon: ExternalLink, desc: "Invoices, receivables, reports, payables and old invoices (opens the billing system)" },
     ],
   },
   {
@@ -58,7 +55,7 @@ export const SECTIONS: MenuSection[] = [
       { href: "/settings/users", label: "Users & access", icon: ShieldCheck, desc: "Create the people who sign in and choose the pages each may open", adminOnly: true },
       { href: "/settings/invite", label: "Invite customers", icon: UserPlus, desc: "Open each customer's account on the website and e-mail the temporary password (100 a day)", adminOnly: true },
       { href: "/settings/activity", label: "Activity log", icon: History, desc: "Everything each person does in the app", adminOnly: true },
-      { href: "/settings/import", label: "Import data", icon: FileUp, desc: "Bring the customers and the old invoices of the old system in from CSV files", adminOnly: true },
+      { href: "/settings/import", label: "Import data", icon: FileUp, desc: "Bring the customers of the old system in from a CSV file", adminOnly: true },
       { href: "/settings/email", label: "Email customers", icon: Mail, desc: "Send an e-mail through the website to all, to a shipment's customers or to chosen people" },
     ],
   },
