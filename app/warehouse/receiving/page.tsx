@@ -32,7 +32,8 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>Received items</h1>
-      <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once, then scan each parcel. A tracking number the customer announced (Pre-alerts) is matched to the customer right away; any other parcel waits in the review queue until it is identified.</p>
+      <datalist id="rcvcust">{db.customers.slice(0, 3000).map((c) => <option key={c.no} value={String(c.no)}>{c.name}</option>)}</datalist>
+      <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once, then scan each parcel. If you know whose parcel it is, type the customer (optional): the customer gets a push notification and an e-mail that the parcel arrived at the office, and it shows on the website's tracking page. A tracking number the customer announced (Pre-alerts) is matched right away; any other parcel waits in the review queue until it is identified.</p>
 
       {!sess ? (
         <form action={startDelivery} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
@@ -53,6 +54,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
             <form action={receiveItem} className="flex min-w-60 flex-1 gap-1">
               <Input id="tracking" name="tracking" placeholder="Scan tracking number" autoFocus autoComplete="off" required />
               <CameraScan target="tracking" submit />
+              <Input name="customer" list="rcvcust" placeholder="For customer (optional)" autoComplete="off" className="w-56" aria-label="Customer (optional)" />
               <Button type="submit">Add</Button>
             </form>
           </div>
@@ -85,7 +87,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <td className={td}>{i.piece ?? <span className="text-zinc-400">–</span>}</td><td className={td}>{i.shipped ? "Yes" : "No"}</td>
               <td className={td}><details><summary className="cursor-pointer text-brand underline">Edit</summary>
                 <form action={updateItem} className="mt-1 grid gap-1"><input type="hidden" name="id" value={i.id} />
-                  <Input name="tracking" defaultValue={i.tracking} aria-label="Tracking" /><Input name="carrier" defaultValue={i.carrier} aria-label="Carrier" />
+                  <Input name="tracking" defaultValue={i.tracking} aria-label="Tracking" /><Input name="carrier" defaultValue={i.carrier} aria-label="Carrier" />{!i.customer && <Input name="customer" list="rcvcust" placeholder="Customer number (tells them)" aria-label="Customer" />}
                   <Button type="submit">Save</Button></form>
                 {!i.piece && <form action={deleteItem} className="mt-1"><input type="hidden" name="id" value={i.id} /><button className="text-red-700 underline">Delete parcel</button></form>}
               </details></td>

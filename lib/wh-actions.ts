@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
-import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived } from "./jps-sync";
+import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
 import { isoToUs, usToIso } from "./clock";
@@ -46,6 +46,19 @@ export const endDelivery = act("endDelivery", async () => {
   const n = sess ? db.items.filter((i) => i.batch === sess.batch).length : 0;
   back(RX, sess ? { ok: `Delivery closed: ${n} parcel${n === 1 ? "" : "s"} from ${sess.carrier}.` } : {});
 });
+// The customer of a parcel is known (announced, typed at the scan, or set later): tell the website. That creates the parcel on the customer's
+// tracking page (status 0, "received in Miami") and the website sends the push notification and the e-mail "your parcel arrived at our office".
+async function notifyReceived(item: Item, c: { name: string; email: string; clientId?: string; box?: string } | undefined, ship: Ship): Promise<string> {
+  if (!syncEnabled()) return "";
+  let clientId = item.clientId ?? c?.clientId;
+  if (!clientId && c) {
+    for (const who of [c.box, c.email, c.name]) { if (!who) continue; const r = await findClientId(who); if (r.id) { clientId = r.id; break; } }
+  }
+  if (!clientId) return `${c?.name ?? "This customer"} has no account on the website: no tracking and no notification.`;
+  item.clientId = clientId;
+  const e = await pushStatus({ tracking: item.tracking, status: 0, clientId, type: ship, description: "Received at the Miami warehouse" });
+  return e ? `The website update failed: ${e}` : "";
+}
 export const receiveItem = act("receiveItem", async (f: F) => {
   const sess = await readSess();
   if (!sess) back(RX, { err: "Start a delivery first." });
@@ -53,6 +66,9 @@ export const receiveItem = act("receiveItem", async (f: F) => {
   if (tracking.length < 6) back(RX, { err: "That doesn't look like a tracking number. Scan it again." });
   const dup = db.items.find((i) => i.tracking === tracking);
   if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` });
+  const typed = s(f, "customer");
+  const who = typed ? findCustomer(typed) : undefined;
+  if (typed && !who) back(RX, { err: `No customer matches "${typed}". Leave the field empty if you don't know it, or pick a customer from the list.` });
   const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
@@ -61,12 +77,21 @@ export const receiveItem = act("receiveItem", async (f: F) => {
     const r = await sitePrealerts(cleanTrackingNo(tracking)); // announced on the website but not imported yet
     if (r.rows[0]) pa = await adoptSitePrealert(r.rows[0]);
   }
-  if (!pa || pa.status !== "Expected") back(RX, { ok: tracking, warn: "Not announced by any customer: it waits in the review queue until it is identified." });
-  const ship = effectiveShip(pa!);
-  Object.assign(item, { customer: pa!.customer, ship, prealert: pa!.id, clientId: pa!.clientId });
-  Object.assign(pa!, { status: "Received", itemId: item.id });
-  if (pa!.siteId) await markSitePrealertReceived(pa!.siteId);
-  back(RX, { ok: tracking, info: `Matched: ${pa!.customer} (customer ${pa!.cust}) · ${pa!.choice ? ship : "no answer yet, Air by default"}${pa!.wait ? " · waiting for other orders" : ""}.` });
+  if (pa && pa.status === "Expected") {
+    const ship = effectiveShip(pa);
+    Object.assign(item, { customer: pa.customer, ship, prealert: pa.id, clientId: pa.clientId });
+    Object.assign(pa, { status: "Received", itemId: item.id });
+    if (pa.siteId) await markSitePrealertReceived(pa.siteId);
+    const c = db.customers.find((x) => x.no === pa!.cust);
+    const warn = await notifyReceived(item, c ?? { name: pa.customer, email: "", clientId: pa.clientId }, ship);
+    back(RX, { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}`, ...(warn && { warn }) });
+  }
+  if (who) {
+    Object.assign(item, { customer: who.name, ship: "Air" as Ship, clientId: who.clientId });
+    const warn = await notifyReceived(item, who, "Air");
+    back(RX, { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}`, ...(warn && { warn }) });
+  }
+  back(RX, { ok: tracking, warn: "Not announced by any customer: it waits in the review queue until it is identified." });
 });
 export const updateItem = act("updateItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));
@@ -75,6 +100,15 @@ export const updateItem = act("updateItem", async (f: F) => {
   if (db.items.some((i) => i.tracking === tracking && i.id !== it.id)) back(RX, { err: `${tracking} already exists.` });
   it.tracking = tracking;
   it.carrier = s(f, "carrier").toUpperCase() || it.carrier;
+  // Identifying the customer later (for a parcel that arrived unannounced) tells them and puts the parcel on their tracking page.
+  const typed = s(f, "customer");
+  if (typed && !it.customer) {
+    const who = findCustomer(typed);
+    if (!who) back(RX, { err: `No customer matches "${typed}".` });
+    Object.assign(it, { customer: who!.name, ship: it.ship ?? "Air", clientId: it.clientId ?? who!.clientId });
+    const warn = await notifyReceived(it, who, it.ship ?? "Air");
+    back(RX, { ok: tracking, info: `For ${who!.name} (customer ${who!.no}).`, ...(warn && { warn }) });
+  }
   back(RX, { ok: tracking });
 });
 export const deleteItem = act("deleteItem", async (f: F) => {
@@ -757,4 +791,36 @@ export const markReady = act("markReady", async (f: F) => {
   let failed = 0;
   for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId })) failed++;
   back(AR, { ok: `${wrCode(w)} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+});
+
+// ---------- Estimate requests from the website ----------
+const ES = "/warehouse/estimate";
+export const dismissEstimateRequest = act("dismissEstimateRequest", async (f: F) => {
+  const e = await markSiteEstimateAnswered(s(f, "req"));
+  back(ES, e ? { err: e } : { ok: "Request marked as answered." });
+});
+// Answers a request: the priced estimate (Air and Ocean) goes to the customer by e-mail through the website.
+export const emailEstimate = act("emailEstimate", async (f: F) => {
+  const req = s(f, "req");
+  const keep: Record<string, string> = {};
+  for (const [k, v] of f.entries()) if (k !== "req" && typeof v === "string" && !k.startsWith("$")) keep[k] = v;
+  const here = (extra: Record<string, string>) => back(ES, { ...keep, req, ...extra });
+  if (!mailEnabled()) here({ err: "E-mail is not set up (Administration > Email customers shows what is missing)." });
+  const r = await siteEstimate(req);
+  if (!r) here({ err: "That request was not found on the website." });
+  const inp = parseEstimate((k) => keep[k]);
+  if (!inp.rows.length) here({ err: "Enter the boxes first." });
+  const est = estimate(inp);
+  const first = (r!.clients?.name ?? "").split(" ")[0] || "";
+  const lines = [first ? `Hello ${first},` : "Hello,", "", "Here is the estimate for the boxes you asked about:", ""];
+  for (const o of [est.air, est.ocean]) {
+    lines.push(`${o.ship === "Air" ? "BY AIR" : "BY SEA"}: ${money(o.total)}`);
+    for (const l of o.lines) lines.push(`  ${l.kind === "credit" ? "-" : ""}${money(l.amount)}  ${l.label}${l.detail ? ` (${l.detail})` : ""}`);
+    lines.push("");
+  }
+  lines.push("This is an estimate: the final amount is on your warehouse receipt, from the real weight and size of your parcels.", "", "Questions? Just reply to this message or write to us on WhatsApp.");
+  const e = await mailOne(r!.client_id, "Your estimate from JP's Logistics & More", lines.join("\n"));
+  if (e) here({ err: `Not sent: ${e}` });
+  await markSiteEstimateAnswered(req);
+  back(ES, { ok: `Estimate sent to ${r!.clients?.name ?? "the customer"} and the request is marked as answered.` });
 });

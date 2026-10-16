@@ -81,6 +81,32 @@ export async function markSitePrealertReceived(id: string): Promise<string | nul
   return r.error?.message ?? null;
 }
 
+// ---------- Estimate requests: a customer asks the website for a price (table `estimate_requests`, SQL section 15) ----------
+export type SiteEstimate = {
+  id: string; client_id: string; boxes: { qty: number; l: number; w: number; h: number; lbs: number; contents?: string }[]; ship_choice: "Air" | "Ocean" | null;
+  declared_value: number | null; note: string | null; status: "new" | "answered"; created_at: string; clients: { name: string; email: string } | null;
+};
+const EST_COLS = "id,client_id,boxes,ship_choice,declared_value,note,status,created_at,clients(name,email)";
+export async function siteEstimates(): Promise<{ rows: SiteEstimate[]; error?: string }> {
+  const c = client();
+  if (!c) return { rows: [] };
+  const r = await c.from("estimate_requests").select(EST_COLS).eq("status", "new").order("created_at", { ascending: true }).limit(100);
+  if (r.error) return { rows: [], error: /estimate_requests/.test(r.error.message) ? "Run section 15 of the website's SQL (estimate requests) in Supabase." : r.error.message };
+  return { rows: (r.data ?? []) as unknown as SiteEstimate[] };
+}
+export async function siteEstimate(id: string): Promise<SiteEstimate | null> {
+  const c = client();
+  if (!c) return null;
+  const r = await c.from("estimate_requests").select(EST_COLS).eq("id", id).maybeSingle();
+  return (r.data as unknown as SiteEstimate) ?? null;
+}
+export async function markSiteEstimateAnswered(id: string): Promise<string | null> {
+  const c = client();
+  if (!c) return null;
+  const r = await c.from("estimate_requests").update({ status: "answered", answered_at: new Date().toISOString() }).eq("id", id);
+  return r.error?.message ?? null;
+}
+
 // ---------- Customers who created an account on the website ----------
 export type SiteClient = { id: string; name: string; email: string; phone: string | null; address: string | null; city: string | null; country: string | null; box_number: string | null; lang: string | null; created_at: string };
 // All website accounts (read page by page: Supabase returns at most 1000 rows per request).

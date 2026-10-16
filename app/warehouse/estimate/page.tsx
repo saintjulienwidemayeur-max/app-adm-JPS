@@ -3,7 +3,9 @@ import { money, findCustomer, rateFor } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
 import { ESTIMATE_NOTE } from "@/lib/disclaimer";
 import { estimate, parseEstimate, EST_MAX_ROWS, EST_AIR_RATE, EST_OCEAN_RATE, EST_AIR_HANDLING, EST_OCEAN_HANDLING } from "@/lib/estimate";
-import { estimateToReceipt } from "@/lib/wh-actions";
+import { estimateToReceipt, dismissEstimateRequest, emailEstimate } from "@/lib/wh-actions";
+import { siteEstimates, siteEstimate, syncEnabled } from "@/lib/jps-sync";
+import Link from "next/link";
 import { db } from "@/lib/wh-store";
 import { usToday } from "@/lib/clock";
 import { AutoForm } from "@/components/auto-form";
@@ -30,6 +32,14 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const hasRows = inp.rows.length > 0;
   const card = (t: number) => cardFees(t);
   const opts = [est.air, est.ocean];
+  const reqs = syncEnabled() ? await siteEstimates() : { rows: [] as Awaited<ReturnType<typeof siteEstimates>>["rows"] };
+  const openReq = q.req ? (reqs.rows.find((r) => r.id === q.req) ?? (await siteEstimate(q.req)) ?? undefined) : undefined;
+  const reqLink = (r: (typeof reqs.rows)[number]) => {
+    const p = new URLSearchParams({ req: r.id, customer: r.clients?.name ?? "" });
+    r.boxes.slice(0, 20).forEach((b, i) => { p.set(`q_${i}`, String(b.qty)); p.set(`l_${i}`, String(b.l)); p.set(`w_${i}`, String(b.w)); p.set(`h_${i}`, String(b.h)); p.set(`lbs_${i}`, String(b.lbs)); if (b.contents) p.set(`c_${i}`, b.contents); });
+    if (r.declared_value) p.set("declared", String(r.declared_value));
+    return `/warehouse/estimate?${p}`;
+  };
   const carry = [...KEYS, ...Array.from({ length: EST_MAX_ROWS }, (_, i) => ["q", "l", "w", "h", "lbs", "c"].map((p) => `${p}_${i}`)).flat()].filter((k) => q[k]);
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 text-sm">
@@ -37,7 +47,25 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
         <h1>Estimate</h1>
         <p className="text-zinc-600">Price the customer&apos;s boxes before they ship: Air and Ocean side by side. Type the boxes (the dimensions in inches, the weight in lb) and the result updates by itself. Print it for the customer, or turn it into a warehouse receipt.</p>
         {q.err && <p role="alert" className="mt-2 font-medium text-red-700">{q.err}</p>}
+        {q.ok && <p role="status" className="mt-2 font-medium text-green-700">{q.ok}</p>}
+        {reqs.error && <p className="mt-2 text-xs text-amber-700">{reqs.error}</p>}
+        {reqs.rows.length > 0 && (
+          <section className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <h2 className="font-bold">Requests from the website ({reqs.rows.length})</h2>
+            <p className="text-xs text-zinc-600">Customers who asked for a price on jpslogistics.me. Price the boxes, then e-mail the estimate: the request is marked as answered.</p>
+            <ul className="mt-2 grid gap-2">{reqs.rows.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded border bg-white p-2">
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">{r.clients?.name ?? "Customer"} <span className="text-xs font-normal text-zinc-500">{new Date(r.created_at).toLocaleDateString("en-US")}{r.ship_choice ? ` · ${r.ship_choice}` : ""}</span></div>
+                  <div className="text-xs text-zinc-600">{r.boxes.map((b) => `${b.qty > 1 ? `${b.qty} × ` : ""}${b.l}×${b.w}×${b.h} in, ${b.lbs} lb${b.contents ? ` (${b.contents})` : ""}`).join(" · ")}{r.note ? ` · “${r.note}”` : ""}</div>
+                </div>
+                <Link href={reqLink(r)} className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium text-brand hover:bg-zinc-50">Price it</Link>
+                <form action={dismissEstimateRequest}><input type="hidden" name="req" value={r.id} /><button className="text-xs text-zinc-600 underline">Dismiss</button></form>
+              </li>))}</ul>
+          </section>
+        )}
         <AutoForm className="mt-4 grid gap-4">
+          {q.req && <input type="hidden" name="req" value={q.req} />}
           <section className="rounded-lg border p-3">
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
               <F label="Customer (optional, printed on the estimate)"><Input name="customer" list="cust" defaultValue={q.customer} placeholder="Name or number" /></F>
@@ -104,6 +132,14 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           </div>
           <p className="mt-4 border border-zinc-400 p-2 text-xs font-medium">{ESTIMATE_NOTE}</p>
 
+          {openReq && (
+            <form action={emailEstimate} className="no-print mt-5 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <input type="hidden" name="req" value={openReq.id} />
+              {carry.map((k) => <input key={k} type="hidden" name={k} value={q[k]} />)}
+              <div className="mr-2"><div className="font-bold">Answer {openReq.clients?.name ?? "the customer"}&apos;s request</div><div className="text-xs text-zinc-600">E-mails the Air and Ocean prices through the website and marks the request as answered.</div></div>
+              <Button type="submit">E-mail this estimate</Button>
+            </form>
+          )}
           <form action={estimateToReceipt} className="no-print mt-5 flex flex-wrap items-end gap-2 rounded-lg border p-3">
             {carry.map((k) => <input key={k} type="hidden" name={k} value={q[k]} />)}
             {!q.rateAir && <input type="hidden" name="rateAir" value={inp.rateAir} />}{!q.rateOcean && <input type="hidden" name="rateOcean" value={inp.rateOcean} />}
