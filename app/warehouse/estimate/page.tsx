@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { money, findCustomer, rateFor } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
 import { ESTIMATE_NOTE } from "@/lib/disclaimer";
-import { estimate, parseEstimate, EST_MAX_ROWS, EST_AIR_RATE, EST_OCEAN_RATE, EST_AIR_HANDLING, EST_OCEAN_HANDLING } from "@/lib/estimate";
+import { DESTINATIONS, destLabel, destOf, destRate } from "@/lib/wh-store";
+import { estimate, parseEstimate, EST_MAX_ROWS, EST_AIR_HANDLING, EST_OCEAN_HANDLING } from "@/lib/estimate";
 import { estimateToReceipt, dismissEstimateRequest, emailEstimate } from "@/lib/wh-actions";
 import { siteEstimates, siteEstimate, syncEnabled } from "@/lib/jps-sync";
 import Link from "next/link";
@@ -23,7 +24,9 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
   const get = (k: string) => q[k];
   const cust = q.customer ? findCustomer(q.customer) : undefined; // this customer's own rates, unless typed below
-  const inp = parseEstimate((k) => (k === "rateAir" && !q.rateAir && cust ? String(rateFor(cust, "Air")) : k === "rateOcean" && !q.rateOcean && cust ? String(rateFor(cust, "Ocean")) : q[k]));
+  const dest = DESTINATIONS.includes(q.dest ?? "") ? q.dest! : destOf(cust), destChanged = !!q.prevDest && q.prevDest !== dest; // a new destination brings its rates
+  const rateOf = (k: "rateAir" | "rateOcean") => (destChanged || !q[k] ? String(rateFor(cust, k === "rateAir" ? "Air" : "Ocean", dest)) : q[k]);
+  const inp = parseEstimate((k) => (k === "rateAir" || k === "rateOcean" ? rateOf(k) : q[k]));
   const est = estimate(inp);
   // Rows shown: at least 5, and always one empty row after the last one in use.
   let last = -1;
@@ -85,8 +88,10 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           <section className="rounded-lg border p-3">
             <h2 className="font-bold">Rates and extras</h2>
             <div className="mt-2 grid gap-2 sm:grid-cols-4">
-              <F label="Air rate per lb ($)"><Input name="rateAir" type="number" step="0.01" min="0" defaultValue={q.rateAir ?? (cust ? rateFor(cust, "Air") : EST_AIR_RATE)} key={`air-${cust?.no ?? 0}`} className="text-right" /></F>
-              <F label="Ocean rate per cubic foot ($)"><Input name="rateOcean" type="number" step="0.01" min="0" defaultValue={q.rateOcean ?? (cust ? rateFor(cust, "Ocean") : EST_OCEAN_RATE)} key={`oce-${cust?.no ?? 0}`} className="text-right" /></F>
+              <F label="Destination (sets the rates)"><select name="dest" defaultValue={dest} className="h-9 w-full rounded-md border bg-white px-2 text-sm">{DESTINATIONS.map((d) => <option key={d} value={d}>{destLabel(d)}</option>)}</select></F>
+              <input type="hidden" name="prevDest" value={dest} />
+              <F label="Air rate per lb ($)"><Input name="rateAir" type="number" step="0.01" min="0" defaultValue={rateOf("rateAir")} key={`air-${cust?.no ?? 0}-${dest}`} className="text-right" /></F>
+              <F label="Ocean rate per cubic foot ($)"><Input name="rateOcean" type="number" step="0.01" min="0" defaultValue={rateOf("rateOcean")} key={`oce-${cust?.no ?? 0}-${dest}`} className="text-right" /></F>
               <F label="Air handling ($, minimum 35)"><Input name="handlingAir" type="number" step="0.01" min="0" defaultValue={q.handlingAir ?? EST_AIR_HANDLING} className="text-right" /></F>
               <F label="Ocean handling ($, minimum 45)"><Input name="handlingOcean" type="number" step="0.01" min="0" defaultValue={q.handlingOcean ?? EST_OCEAN_HANDLING} className="text-right" /></F>
               <F label="Declared value ($)"><Input name="declared" type="number" step="0.01" min="0" defaultValue={q.declared} className="text-right" /></F>

@@ -35,7 +35,7 @@ export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; estimate?: boolean; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; estimate?: boolean; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
 };
 // A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
 export type OrderItem = { desc: string; qty: number; unit: number };
@@ -98,14 +98,23 @@ export const COUNTRIES = ["Haiti", "Dominican Republic", "United States", "Jamai
 // Standard rates per method (editable per receipt): Air is billed per lb (the larger of gross and volumetric weight), Ocean per cubic foot.
 export const AIR_RATE = 4.5, OCEAN_RATE = 16, OCEAN_HANDLING = 45, HANDLING_LABEL = "Handling fees";
 export const defaultRate = (ship: Ship) => (ship === "Ocean" ? OCEAN_RATE : AIR_RATE);
-// The rate of this customer (from the old system or typed on the customer page), else the standard one.
-export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : defaultRate(ship); };
+// Where a parcel goes: every destination has its own rates (Administration > Fees & rates). "Miami": parcels JP's takes in Haiti to send to Miami.
+export const DESTINATIONS = ["Port-au-Prince", "Cap Haitien", "Miragoane", "Cayes", "St Marc", "Hinche", "Jeremie", "Saint Domingue", "Miami"];
+export const DEFAULT_DEST = "Port-au-Prince";
+export const destLabel = (d: string) => (d === "Miami" ? "Miami (from Haiti)" : d);
+const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "");
+const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "Port-au-Prince", capehaitien: "Cap Haitien", caphaitien: "Cap Haitien", cap: "Cap Haitien", lescayes: "Cayes", cayes: "Cayes", stmarc: "St Marc", saintmarc: "St Marc", jeremie: "Jeremie", santodomingo: "Saint Domingue", saintdomingue: "Saint Domingue", stdomingue: "Saint Domingue", miragoane: "Miragoane", hinche: "Hinche", miami: "Miami" };
+// The destination a customer's consignee city points to (the usual one when it is not recognised).
+export const destOf = (c: { consigneeCity?: string } | undefined) => ALIASES[norm(c?.consigneeCity ?? "")] ?? DEFAULT_DEST;
+export const destRate = (dest: string | undefined, ship: Ship) => { const r = db.settings.rates?.[dest ?? ""]?.[ship === "Ocean" ? "ocean" : "air"]; return r && r > 0 ? r : defaultRate(ship); };
+// The rate of this customer (from the old system or typed on the customer page), else the rate of the destination, else the standard one.
+export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : destRate(dest, ship); };
 
 // Settings the administrator can change (Administration > Fees & rates).
 // Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
 // (0 = no automatic storage fee).
-export type Settings = { storageFreeDays: number; storageFee: number };
-export const DEFAULT_SETTINGS: Settings = { storageFreeDays: 30, storageFee: 10 };
+export type Settings = { storageFreeDays: number; storageFee: number; rates: Record<string, { air: number; ocean: number }> };
+export const DEFAULT_SETTINGS: Settings = { storageFreeDays: 30, storageFee: 10, rates: Object.fromEntries(DESTINATIONS.map((d) => [d, { air: AIR_RATE, ocean: OCEAN_RATE }])) };
 const today = () => usToday();
 type WhDb = {
   items: Item[]; wrs: WR[]; loads: Load[]; shipments: Shipment[]; bookings: Booking[]; orders: Order[]; pickups: Pickup[]; prealerts: Prealert[]; users: User[]; maillog: MailLog[]; audit: AuditEntry[]; oldInvoices: OldInvoice[]; oldWrs: OldWR[]; oldShips: OldShip[]; blockedEmails: string[]; customers: Customer[]; reps: Rep[];
@@ -119,7 +128,7 @@ export const db: WhDb = (g.__wh13 ??= {
     { id: 2, date: today(), carrier: "FEDEX", tracking: "962200190000033194400087790594477", receiver: "Demo", batch: "0" },
   ],
   wrs: [], loads: [], shipments: [], bookings: [], orders: [], pickups: [], prealerts: [], users: [], maillog: [], audit: [], oldInvoices: [], oldWrs: [], oldShips: [], blockedEmails: [...BLOCKED_EMAILS], customers: [], reps: [],
-  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS], settings: { ...DEFAULT_SETTINGS },
+  feeNames: { charge: [...FEE_PRESETS], credit: [...CREDIT_PRESETS] }, payMethods: [...PAY_METHODS], carriers: [...CARRIERS], settings: structuredClone(DEFAULT_SETTINGS),
   n: { wr: 11018, piece: 20032, item: 3, cargo: 611, inv: 5001, batch: 1, cust: 1001, rep: 1, fee: 1, pay: 1001, pickup: 1, prealert: 1, mail: 1, user: 1, audit: 1 },
 });
 export const nowStr = today;
@@ -156,7 +165,7 @@ export const repLabel = (id: string) => repOf(id)?.initials ?? "";
 export const openWR = (c: Customer, ship: Ship, init: Partial<WR> = {}): WR => {
   const w: WR = {
     id: String(db.n.wr++), date: nowStr(), customer: c.name, cust: c.no, email: c.email, route: c.route, rep: c.rep, ship,
-    comments: "", contents: "", declared: 0, insurance: "Declined", fees: [], payments: [], pieces: [], rate: rateFor(c, ship), ...init,
+    comments: "", contents: "", declared: 0, insurance: "Declined", fees: [], payments: [], pieces: [], dest: init.dest ?? destOf(c), rate: rateFor(c, ship, init.dest ?? destOf(c)), ...init,
   };
   if (ship === "Ocean") w.fees.push({ id: db.n.fee++, label: HANDLING_LABEL, amount: OCEAN_HANDLING, kind: "charge", auto: "handling" });
   db.wrs.unshift(w);
