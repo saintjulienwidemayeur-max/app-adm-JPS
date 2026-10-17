@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -192,7 +192,7 @@ function applyShip(w: WR, ship: Ship): string {
   if (w.invoice) return `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change the ship type.`;
   db.items.forEach((i) => { if (i.wr === w.id) i.ship = ship; });
   w.ship = ship;
-  w.rate = rateFor(custOf(w), ship);
+  w.rate = rateFor(custOf(w), ship, w.dest);
   if (ship === "Ocean") {
     // Ocean handling: a handling line typed by hand (for example the Air one) becomes the automatic Ocean line, at least $45.
     const own = w.fees.find((x) => x.kind === "charge" && x.label.trim().toLowerCase() === HANDLING_LABEL.toLowerCase());
@@ -236,12 +236,15 @@ export const updateWR = act("updateWR", async (f: F) => {
   if (declared < 0) back(wrPath(w.id), { err: "Declared value can't be negative." });
   if (!emailOk(s(f, "email"))) back(wrPath(w.id), { err: "That email address isn't valid." });
   const ship = shipOf(s(f, "ship") || w.ship);
-  const rate = s(f, "rate") === "" ? rateFor(custOf(w), ship) : num(f, "rate");
+  const dest = DESTINATIONS.includes(s(f, "dest")) ? s(f, "dest") : (w.dest ?? destOf(custOf(w))), destChanged = dest !== (w.dest ?? destOf(custOf(w)));
+  if (destChanged && w.invoice) back(wrPath(w.id), { err: `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change the destination.` });
+  // A new destination brings its rate, unless a different rate was typed on purpose.
+  const rate = s(f, "rate") === "" || (destChanged && num(f, "rate") === r2(w.rate ?? 0)) ? rateFor(custOf(w), ship, dest) : num(f, "rate");
   if (!Number.isFinite(rate) || rate < 0 || rate > 1000) back(wrPath(w.id), { err: "Enter a rate of 0 or more." });
   const bad = applyShip(w, ship);
   if (bad) back(wrPath(w.id), { err: bad });
   Object.assign(w, {
-    declared, rate: r2(rate), rep: repOf(s(f, "rep")) ? s(f, "rep") : "", insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined",
+    declared, dest, rate: r2(rate), rep: repOf(s(f, "rep")) ? s(f, "rep") : "", insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined",
     estimate: s(f, "estimate") === "yes", comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email"),
   });
   back(wrPath(w.id), { ok: "Receipt saved." });
@@ -693,7 +696,7 @@ export const estimateToReceipt = act("estimateToReceipt", async (f: F) => {
   const charge = opt.lines.filter((l) => l.kind !== "credit").reduce((a, l) => a + l.amount, 0);
   if (inp.credit > charge) fail("The credit is more than the charges.");
   const c = findCustomer(inp.customer) ?? newCustomer(inp.customer);
-  const w = openWR(c, ship, { estimate: true, rate: opt.rate, declared: inp.declared, insurance: inp.insure && inp.declared > 0 ? "Accepted" : "Declined" });
+  const w = openWR(c, ship, { estimate: true, ...(DESTINATIONS.includes(s(f, "dest")) && { dest: s(f, "dest") }), rate: opt.rate, declared: inp.declared, insurance: inp.insure && inp.declared > 0 ? "Accepted" : "Declined" });
   for (const r of inp.rows) for (let k = 0; k < r.qty; k++) w.pieces.push({ no: db.n.piece++, type: "BOX - OTHER", l: r.l, w: r.w, h: r.h, lbs: r.lbs, contents: r.contents });
   // Handling: Ocean already got its automatic line; use the amount of the estimate. Air gets one only when the estimate has it.
   const handling = ship === "Ocean" ? inp.handlingOcean : inp.handlingAir;

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { listDocs } from "@/lib/persist";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate } from "@/lib/wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
 import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
@@ -168,6 +168,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <select name="ship" defaultValue={w.ship} disabled={anyLoaded} className={sel}><option value="Air">Air (JPF)</option><option value="Ocean">Ocean (JPL)</option></select>
             {anyLoaded && <input type="hidden" name="ship" value={w.ship} />}
           </F>
+          <F label="Destination (sets the rate)"><select name="dest" defaultValue={w.dest ?? destOf(cust)} className={sel}>{DESTINATIONS.map((d) => <option key={d} value={d}>{destLabel(d)}</option>)}</select></F>
           <F label="Route"><Input name="route" defaultValue={w.route} maxLength={12} /></F>
           <input type="hidden" name="rep" value={w.rep} />
           <F label={w.ship === "Ocean" ? "Rate per cubic foot ($)" : "Rate per lb ($)"}><Input name="rate" type="number" step="0.01" min="0" defaultValue={(w.rate ?? 0).toFixed(2)} className="text-right" /></F>
