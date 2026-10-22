@@ -397,10 +397,12 @@ function pieceInput(f: F) {
 export const addPiece = act("addPiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
-  const p = pieceInput(f);
+  const p = pieceInput(f), qty = Math.round(num(f, "qty") || 1);
   if (typeof p === "string") back(wrPath(w.id), { err: p });
-  else { w.pieces.push({ no: db.n.piece++, ...p }); queueReceiptSoon(w.id); }
-  back(wrPath(w.id));
+  else if (!Number.isFinite(qty) || qty < 1 || qty > 100) back(wrPath(w.id), { err: "Number of boxes: from 1 to 100." });
+  else if (w.pieces.length + qty > 500) back(wrPath(w.id), { err: "A receipt can't have more than 500 pieces." });
+  else { for (let i = 0; i < qty; i++) w.pieces.push({ no: db.n.piece++, ...p }); queueReceiptSoon(w.id); }
+  back(wrPath(w.id), qty > 1 ? { ok: `${qty} boxes added (each one is its own piece with its own label).` } : {});
 });
 export const updatePiece = act("updatePiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
