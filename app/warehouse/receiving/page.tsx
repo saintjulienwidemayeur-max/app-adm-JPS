@@ -5,6 +5,7 @@ import { isoToUs, isoToday } from "@/lib/clock";
 import { receiveItem, startDelivery, endDelivery, updateItem, deleteItem } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ScanField } from "@/components/scan-field";
 import { CameraScan } from "@/components/camera-scan";
 
 export const metadata = { title: "Received items · JP's Logistics" };
@@ -57,9 +58,9 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               </label>
               <label className="grid gap-1 text-xs font-semibold text-zinc-700">Tracking number
                 <span className="flex gap-1">
-                  <Input id="tracking" name="tracking" placeholder="Scan tracking number" autoFocus autoComplete="off" required />
+                  <ScanField id="tracking" name="tracking" placeholder="Scan tracking number" />
                   <CameraScan target="tracking" submit />
-                  <Button type="submit">Add</Button>
+                  <Button type="submit" variant="outline" title="Not needed: a scan is added by itself">Add</Button>
                 </span>
               </label>
             </form>
@@ -84,10 +85,10 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       <p className="mb-2 mt-3 text-sm text-zinc-600">{all.length} of {db.items.length} parcels · {db.items.filter((i) => !i.piece).length} waiting to be consolidated</p>
       {rows.length === 0 ? <p className="text-sm text-zinc-600">No parcels match. Clear the filters or start scanning.</p> : (
         <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr>{["Date", "Received by", "Carrier", "Tracking", "Customer", "JP's piece", "Shipped", ""].map((h, i) => <th key={i} className={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Date", "Received by", "Scanned by", "Carrier", "Tracking", "Customer", "JP's piece", "Shipped", ""].map((h, i) => <th key={i} className={th}>{h}</th>)}</tr></thead>
           <tbody>{rows.map((i) => (
             <tr key={i.id} className="border-b border-zinc-100">
-              <td className={td}>{i.date}</td><td className={td}>{i.receiver || "–"}</td><td className={td}>{i.carrier}</td>
+              <td className={td}>{i.date}</td><td className={td}>{i.receiver || "–"}</td><td className={td}>{i.by || "–"}</td><td className={td}>{i.carrier}</td>
               <td className={`${td} font-mono text-xs`}>{i.tracking}</td>
               <td className={td}>{i.customer ?? <span className="text-zinc-400">–</span>}{i.customer && !i.clientId && <span className="ml-1 text-xs text-amber-700">· not on website</span>}</td>
               <td className={td}>{i.piece ?? <span className="text-zinc-400">–</span>}</td><td className={td}>{i.shipped ? "Yes" : "No"}</td>

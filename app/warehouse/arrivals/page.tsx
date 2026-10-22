@@ -2,6 +2,7 @@ import { db, money, balance, wrCode } from "@/lib/wh-store";
 import { receiveHere, arriveShipment, markHereNotified, markReady, notifyEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ScanField } from "@/components/scan-field";
 import { CameraScan } from "@/components/camera-scan";
 
 export const metadata = { title: "Arrivals PV · JP's Logistics" };
@@ -19,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const hereWrs = [...new Set(loads.filter((l) => l.here).map((l) => l.wr))].map((id) => {
     const w = db.wrs.find((x) => x.id === id)!;
     const mine = loads.filter((l) => l.wr === id);
-    return { w, here: mine.filter((l) => l.here).length, total: mine.length };
+    return { w, here: mine.filter((l) => l.here).length, total: mine.length, by: [...new Set(mine.filter((l) => l.here && l.hereBy).map((l) => l.hereBy!))].join(", ") };
   });
   const nExpected = expected.reduce((a, g) => a + g.rows.length, 0);
   return (
@@ -27,7 +28,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       <h1>Arrivals · Pétion-Ville</h1>
       <p className="text-sm text-zinc-600">Scan each piece label as cargo arrives in Haiti. Customers are told once their pieces are here.</p>
       <form action={receiveHere} className="mt-4 grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-3 sm:max-w-xl">
-        <div className="flex gap-1"><Input id="code" name="code" placeholder="Scan piece label" autoFocus required /><CameraScan target="code" submit /></div>
+        <div className="flex gap-1"><ScanField id="code" name="code" placeholder="Scan piece label" /><CameraScan target="code" submit /></div>
         <Button type="submit">Receive</Button>
       </form>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
@@ -51,14 +52,14 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       <h2 className="mt-8 font-bold">Here ({hereWrs.length} receipts)</h2>
       {hereWrs.length === 0 ? <p className="mt-1 text-sm text-zinc-600">No pieces received here yet.</p> : (
         <table className="mt-2 w-full text-left text-sm">
-          <thead><tr>{["WR", "Customer", "Pieces here", "Balance", "Customer notified", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
-          <tbody>{hereWrs.map(({ w, here, total }) => {
+          <thead><tr>{["WR", "Customer", "Pieces here", "Received by", "Balance", "Customer notified", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+          <tbody>{hereWrs.map(({ w, here, total, by }) => {
             const bal = Math.max(0, balance(w));
             return (
               <tr key={w.id} className="border-b border-zinc-100">
                 <td className={td}>{wrCode(w)}</td><td className={td}>{w.customer}</td>
                 <td className={td}>{here} of {total}{here < total && <span className="ml-1 text-amber-700">· partial</span>}</td>
-                <td className={td}>{money(bal)}</td><td className={td}>{w.hereNotified ? "Yes (automatic)" : here === total ? "Not set up" : "When all pieces are here"}</td>
+                <td className={td}>{by || "–"}</td><td className={td}>{money(bal)}</td><td className={td}>{w.hereNotified ? "Yes (automatic)" : here === total ? "Not set up" : "When all pieces are here"}</td>
                 <td className={`${td} flex gap-2`}>
                   {here === total && !w.ready && <form action={markReady}><input type="hidden" name="wr" value={w.id} /><button className={lnk}>Ready for pickup</button></form>}
                   {w.ready && <span className="text-xs font-medium text-green-700">Ready for pickup</span>}

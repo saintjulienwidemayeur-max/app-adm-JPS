@@ -1,8 +1,9 @@
 // Price estimate for a customer's boxes: Air and Ocean side by side.
-//   Air   = the larger of gross and volumetric weight (L x W x H / 139 per box) x rate per lb
-//   Ocean = cubic feet (L x W x H / 1728 per box) x rate per cubic foot, plus the Ocean handling fee
+//   Air   = the larger of gross and volumetric weight (L x W x H / 132 per box) x rate per lb
+//   Ocean = cubic feet (L x W x H / 1788 per box) x rate per cubic foot, plus the Ocean handling fee
 // Same rounding as a warehouse receipt (per box, 2 decimals), so an estimate and the receipt made from it agree.
 import { calcInsurance } from "./pricing";
+import { AIR_DIVISOR, CUFT_DIVISOR } from "./wh-store";
 
 export const EST_AIR_RATE = 4.5, EST_OCEAN_RATE = 16;
 export const EST_AIR_HANDLING = 35, EST_OCEAN_HANDLING = 45; // minimums printed in the disclaimer
@@ -38,7 +39,7 @@ export function parseEstimate(get: (k: string) => string | undefined): EstInput 
 }
 
 export function rowFigures(r: EstRow) {
-  const vol1 = r2((r.l * r.w * r.h) / 139), cu1 = r2((r.l * r.w * r.h) / 1728), ch1 = Math.max(r.lbs, vol1);
+  const vol1 = r2((r.l * r.w * r.h) / AIR_DIVISOR), cu1 = r2((r.l * r.w * r.h) / CUFT_DIVISOR), ch1 = Math.max(r.lbs, vol1);
   return { gross: r2(r.lbs * r.qty), volumetric: r2(vol1 * r.qty), cuft: r2(cu1 * r.qty), chargeable: r2(ch1 * r.qty), byVolume: vol1 > r.lbs };
 }
 

@@ -6,7 +6,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
 import { DISCLAIMER, ESTIMATE_NOTE } from "./disclaimer";
 import { COMPANY } from "./company";
 import { cardFees } from "./pricing";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
 
 const MAP: Record<string, string> = { "−": "-", "–": "-", "—": "-", "·": "-", "•": "*", "‘": "'", "’": "'", "“": '"', "”": '"', "…": "...", "→": "->", "×": "x", "≥": ">=", "€": "EUR", " ": " " };
 const safe = (s: unknown) => String(s ?? "").normalize("NFC").replace(/[^\x20-\x7e¡-ÿ]/g, (c) => MAP[c] ?? (c === "\n" ? " " : "?"));
@@ -79,18 +79,19 @@ const longDate = (d: string) => { const t = new Date(d); return isNaN(t.getTime(
 // ---------- Warehouse receipt ----------
 export async function receiptPdf(w: WR): Promise<Uint8Array> {
   const d = await Doc.make(), c = custOf(w), M = d.M, CW = d.W - 2 * M;
-  const consignee = c?.consignee || w.customer, place = [c?.consigneeCity, c?.consigneeCountry].filter(Boolean).join(", "), phone = c?.consigneePhone || c?.phone;
+  const sh = shipperOf(w), rc = receiverOf(w), consignee = rc.name, place = [c?.consigneeCity, c?.consigneeCountry].filter(Boolean).join(", "), phone = rc.phone;
   d.header([longDate(w.date), COMPANY.name, `${COMPANY.address}, ${COMPANY.city}`, COMPANY.phone]);
   d.y -= 4; d.text("Warehouse Receipt", 0, 20, { bold: true, right: d.W / 2 + d.width("Warehouse Receipt", 20, true) / 2 }); d.y -= 30;
   const top = d.y;
-  d.text("Shipper", M, 9, { color: GREY }); d.text(`${w.customer} (customer ${w.cust})`, M + 48, 10, { bold: true }); d.y -= 14;
+  d.text("Shipper", M, 9, { color: GREY }); d.text(`${sh.name} (customer ${w.cust})`, M + 48, 10, { bold: true }); d.y -= 14;
+  if (sh.phone) d.para(`Phone ${sh.phone}`, M, 300, 9.5);
   if (c?.billing) d.para(c.billing, M, 300, 9.5);
   d.y -= 4; d.text("Consignee", M, 9, { color: GREY }); d.text(consignee, M + 48, 10, { bold: true }); d.y -= 14;
   for (const l of [c?.consigneeAddress, place, phone && `Phone ${phone}`, w.email && `eMail ${w.email}`].filter(Boolean) as string[]) d.para(l, M, 300, 9.5);
   const afterLeft = d.y; d.y = top;
   d.page.drawRectangle({ x: d.W - M - 150, y: d.y - 34, width: 150, height: 34, borderColor: GREY, borderWidth: 1.5 });
   d.text("WR #", 0, 9, { color: GREY, right: d.W - M - 150 + 38 }); d.page.drawText(safe(wrCode(w)), { x: d.W - M - 108, y: d.y - 23, size: 15, font: d.bold, color: BLACK });
-  d.y -= 44; d.text(`Ship Type: ${w.ship}${w.dest ? `   To: ${w.dest}` : ""}${w.route ? `   Route: ${w.route}` : ""}`, 0, 9.5, { right: d.W - M }); d.y = Math.min(afterLeft, d.y - 14) - 10;
+  d.y -= 44; d.text(`Ship Type: ${w.ship}   Type: ${w.kind ?? "Personal"}${w.dest ? `   To: ${w.dest}` : ""}${w.route ? `   Route: ${w.route}` : ""}`, 0, 9.5, { right: d.W - M }); d.y = Math.min(afterLeft, d.y - 14) - 10;
   // pieces
   const cols = [{ w: 48, t: "Item #" }, { w: 215, t: "Description" }, { w: 55, t: "Weight", right: true }, { w: 45, t: "CUFT", right: true }, { w: CW - 363, t: "Contents" }];
   d.row(cols, 9, { head: true });
@@ -100,7 +101,7 @@ export async function receiptPdf(w: WR): Promise<Uint8Array> {
   const stats: [string, string][] = [["Total Pieces", String(w.pieces.length)], ["Gross Weight", `${gross} lbs`], ["Total Cubic ft", `${cf} cuft`], ["Total Chargeable", `${chg} lbs`]];
   stats.forEach(([k, v], i) => { const x = M + (CW / 4) * i; d.page.drawText(safe(k), { x, y: d.y - 9, size: 8.5, font: d.bold, color: GREY }); d.page.drawText(safe(v), { x, y: d.y - 24, size: 12, font: i === 3 ? d.bold : d.font, color: BLACK }); });
   d.y -= 34; d.rule(M, d.W - M, 1.4, BLACK); d.y -= 8;
-  d.text("Declared Contents", M, 9.5, { bold: true }); d.text(`Declared Value ${money(w.declared)}`, 0, 9.5, { bold: true, right: d.W - M }); d.y -= 14;
+  d.text("Declared Contents", M, 9.5, { bold: true }); d.text(`Value of the parcel ${money(w.declared)}`, 0, 9.5, { bold: true, right: d.W - M }); d.y -= 14;
   d.para(contentsOf(w) || "-", M, CW, 9.5, { gap: 4 });
   d.para(w.insurance === "Declined" ? "CUSTOMER DECLINED INSURANCE COVERAGE" : w.declared > 0 ? `INSURANCE ACCEPTED - declared value ${money(w.declared)}` : "INSURANCE ACCEPTED (no declared value)", M, CW, 10, { bold: true, gap: 2 });
   if (w.comments) d.para(`Comments: ${w.comments}`, M, CW, 9.5, { gap: 4 });

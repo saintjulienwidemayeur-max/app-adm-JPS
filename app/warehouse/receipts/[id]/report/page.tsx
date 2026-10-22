@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, freightFee, freightQty, freightDesc, contentsOf } from "@/lib/wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, freightFee, freightQty, freightDesc, contentsOf } from "@/lib/wh-store";
 import { DISCLAIMER, ESTIMATE_NOTE } from "@/lib/disclaimer";
 import { cardFees } from "@/lib/pricing";
 import { PrintButton } from "@/components/print-button";
@@ -13,9 +13,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const w = db.wrs.find((x) => x.id === id);
   if (!w) notFound();
   const c = custOf(w);
-  const consignee = c?.consignee || w.customer;
+  const sh = shipperOf(w), rc = receiverOf(w), consignee = rc.name;
   const place = [c?.consigneeCity, c?.consigneeCountry].filter(Boolean).join(", ");
-  const phone = c?.consigneePhone || c?.phone;
+  const phone = rc.phone;
   const gross = r2(w.pieces.reduce((a, p) => a + p.lbs, 0));
   const cf = r2(w.pieces.reduce((a, p) => a + cuft(p), 0));
   const chg = r2(w.pieces.reduce((a, p) => a + chargeable(p), 0));
@@ -33,7 +33,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
       <div className="mt-4 grid grid-cols-[1fr_auto] gap-4">
         <div className="space-y-0.5">
-          <div><span className="text-zinc-500">Shipper</span> <b>{w.customer}</b> <span className="text-zinc-500">(customer {w.cust})</span></div>
+          <div><span className="text-zinc-500">Shipper</span> <b>{sh.name}</b> <span className="text-zinc-500">(customer {w.cust})</span></div>
+          {sh.phone && <div><span className="text-zinc-500">Phone</span> {sh.phone}</div>}
           {c?.billing && <div className="text-zinc-700">{c.billing}</div>}
           <div className="pt-2"><span className="text-zinc-500">Consignee</span> <b>{consignee}</b></div>
           {c?.consigneeAddress && <div>{c.consigneeAddress}</div>}
@@ -44,6 +45,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <div className="text-right">
           <div className="border-2 border-zinc-500 px-4 py-2 text-lg font-bold"><span className="mr-4 text-zinc-500">WR #</span>{wrCode(w)}</div>
           <div className="mt-1 text-xs text-zinc-500">Ship Type</div><div>{w.ship}</div>
+          <div className="mt-1 text-xs text-zinc-500">Type</div><div>{w.kind ?? "Personal"}</div>
           {w.route && <><div className="mt-1 text-xs text-zinc-500">Route</div><div>{w.route}</div></>}
         </div>
       </div>
@@ -67,7 +69,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <div><dt className="font-semibold text-zinc-600">Total Chargeable</dt><dd className="text-lg font-bold">{chg} lbs</dd></div>
         </dl>
         <div className="mt-3 grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1">
-          <b>Declared Contents</b><b>Declared Value <span className="ml-3">{money(w.declared)}</span></b>
+          <b>Declared Contents</b><b>Value of the parcel <span className="ml-3">{money(w.declared)}</span></b>
           <div className="border border-zinc-300 px-2 py-1">{contentsOf(w) || "\u00a0"}</div>
         </div>
       </div>
