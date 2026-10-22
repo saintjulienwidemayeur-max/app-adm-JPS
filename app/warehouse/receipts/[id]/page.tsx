@@ -38,6 +38,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <div className="flex flex-wrap gap-2">
           <Link href={`/warehouse/receipts/${w.id}/report`} className={lnk}>View receipt</Link>
           <a href={`/warehouse/receipts/${w.id}/pdf`} target="_blank" className={lnk}>Download PDF</a>
+          {!anyLoaded && !w.invoice && <form><button formAction={switchShip.bind(null, w.id)} className={lnk}>{w.ship === "Air" ? "Change to Ocean (JPL)" : "Change to Air (JPF)"}</button></form>}
           {w.pieces.length > 0 && !w.invoice && <CompareShip current={estimateFor(w, w.ship)} other={estimateFor(w, otherShip(w))} wr={wrCode(w)} locked={anyLoaded} switchAction={switchShip.bind(null, w.id)} />}
           {loadedOn && <Link href={`/warehouse/shipments/${encodeURIComponent(loadedOn)}/poe/${w.cust}`} className={lnk}>Proof of export</Link>}
           {w.pieces.length > 0 && <Link href={`/warehouse/receipts/${w.id}/labels`} className={`${lnk} !border-brand !bg-brand !text-white`}>Print labels</Link>}
@@ -95,11 +96,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <tfoot><tr className="font-semibold"><td className={td} colSpan={4}>{w.pieces.length} piece{w.pieces.length > 1 ? "s" : ""}</td><td className={td}>{lbs}</td><td className={td} colSpan={3} /></tr></tfoot>
           </table>
         )}
-        <form action={addPiece} className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-[1fr_repeat(4,5rem)_auto]">
+        <form action={addPiece} className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-[1fr_repeat(5,5rem)_auto]">
           <input type="hidden" name="wr" value={w.id} />
           <Input name="type" placeholder="Type (BOX - OTHER)" className="col-span-4 sm:col-span-1" />
-          <Input name="contents" placeholder="Contents of this piece (required)" maxLength={120} className="col-span-4 sm:col-span-5" required />
-          {["l", "w", "h", "lbs"].map((k) => <Input key={k} name={k} type="number" step="any" min="0" placeholder={k === "lbs" ? "lb" : k.toUpperCase()} aria-label={k} required />)}
+          <Input name="contents" placeholder="Contents of this piece (required)" maxLength={120} className="col-span-4 sm:col-span-6" required />
+          {["l", "w", "h", "lbs"].map((k) => <Input key={k} name={k} type="number" step="any" min="0" placeholder={k === "lbs" ? "lb each" : k.toUpperCase()} aria-label={k === "lbs" ? "Weight of each box (lb)" : k} required />)}
+          <Input name="qty" type="number" step="1" min="1" max="100" defaultValue={1} aria-label="Number of boxes (same size and weight)" title="Number of boxes with these same measures" required />
           <Button type="submit" className="col-span-4 sm:col-span-1">Add piece</Button>
         </form>
       </section>
