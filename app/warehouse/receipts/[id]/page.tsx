@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { listDocs } from "@/lib/persist";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
 import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
@@ -107,6 +107,18 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       </section>
 
       <section className="mt-5 rounded-lg border p-3">
+        <h2 className="font-bold">Who handled it</h2>
+        <p className="text-xs text-zinc-600">Receipt opened by <b>{w.by || "–"}</b>{db.shipments.find((s) => db.loads.some((l) => l.wr === w.id && l.shipment === s.name))?.shippedBy && <> · shipped by <b>{db.shipments.find((s) => db.loads.some((l) => l.wr === w.id && l.shipment === s.name))?.shippedBy}</b></>}. Every action is also in the Activity log.</p>
+        {w.pieces.length > 0 && (
+          <table className="mt-2 w-full text-left text-sm">
+            <thead><tr>{["Piece", "Parcel scanned by", "Piece made by", "Loaded on a pallet by", "Arrived in Haiti, scanned by"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+            <tbody>{w.pieces.map((p) => { const l = db.loads.find((x) => x.no === p.no); return (
+              <tr key={p.no} className="border-b border-zinc-100"><td className={td}>{p.no}</td><td className={td}>{[...new Set(db.items.filter((i) => i.piece === p.no && i.by).map((i) => i.by))].join(", ") || "–"}</td><td className={td}>{p.by || "–"}</td><td className={td}>{l?.by || "–"}</td><td className={td}>{l?.hereBy || "–"}</td></tr>); })}</tbody>
+          </table>
+        )}
+      </section>
+
+      <section className="mt-5 rounded-lg border p-3">
         <h2 className="font-bold">Fees and credits</h2>
         <p className="text-xs text-zinc-600">The freight line (and the Ocean handling fee) is added automatically; Air is billed on the larger of the gross and volumetric weight, Ocean on cubic feet. One line per fee. Use a credit for a discount or a credit memo: it is subtracted from the total.</p>
         <datalist id="feeNames">{[...db.feeNames.charge, ...db.feeNames.credit].map((n) => <option key={n} value={n} />)}</datalist>
@@ -174,8 +186,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <F label="Route"><Input name="route" defaultValue={w.route} maxLength={12} /></F>
           <input type="hidden" name="rep" value={w.rep} />
           <F label={w.ship === "Ocean" ? "Rate per cubic foot ($)" : "Rate per lb ($)"}><Input name="rate" type="number" step="0.01" min="0" defaultValue={(w.rate ?? 0).toFixed(2)} className="text-right" /></F>
+          <F label="Type of shipment"><select name="shipKind" defaultValue={w.kind ?? "Personal"} className={sel}><option>Personal</option><option>Commercial</option></select></F>
+          <F label="Shipper name (who sends)"><Input name="shipperName" defaultValue={w.shipperName ?? ""} placeholder={w.customer} maxLength={80} /></F>
+          <F label="Shipper phone"><Input name="shipperPhone" defaultValue={w.shipperPhone ?? ""} placeholder={shipperOf(w).phone} maxLength={40} /></F>
+          <F label="Receiver name (who receives it)"><Input name="receiverName" defaultValue={w.receiverName ?? ""} placeholder={receiverOf(w).name} maxLength={80} /></F>
+          <F label="Receiver phone"><Input name="receiverPhone" defaultValue={w.receiverPhone ?? ""} placeholder={receiverOf(w).phone} maxLength={40} /></F>
           <F label="Notification email"><Input name="email" type="email" defaultValue={w.email} /></F>
-          <F label="Declared value ($)"><Input name="declared" type="number" step="0.01" min="0" defaultValue={w.declared} /></F>
+          <F label="Value of the parcel ($, commercial value)"><Input name="declared" type="number" step="0.01" min="0" defaultValue={w.declared} /></F>
           <F label="Insurance"><select name="insurance" defaultValue={w.insurance} className={sel}><option>Declined</option><option>Accepted</option></select></F>
           <label className="flex items-end gap-1.5 pb-2 text-sm sm:col-span-2"><input type="checkbox" name="estimate" value="yes" defaultChecked={w.estimate} /> Customer asked for an estimate (shown on the printed receipt)</label>
           <div className="sm:col-span-4"><F label="Comments"><Input name="comments" defaultValue={w.comments} /></F></div>

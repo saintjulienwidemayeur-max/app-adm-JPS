@@ -8,7 +8,7 @@
 // Server only. Two apps can share the same database (the warehouse app and the billing app): each one calls refresh() on every request, which
 // brings in the rows the other one changed (a row this app changed itself and has not saved yet is kept).
 import { Pool, type PoolClient } from "pg";
-import { db } from "./wh-store";
+import { db, keepOldFormulas } from "./wh-store";
 
 type Table = { name: string; key: (row: never) => string; rows: () => unknown[]; set: (rows: never[]) => void };
 type Store = {
@@ -100,6 +100,7 @@ async function load() {
       if (row.k === "blockedEmails" && Array.isArray(row.data)) db.blockedEmails = row.data as unknown as string[];
       if (row.k === "settings") Object.assign(db.settings, row.data);
     }
+    keepOldFormulas(); // saved with the next flush
     // Make sure the counters are ahead of every number already used (defence against a lost counter row).
     db.n.wr = Math.max(db.n.wr, ...db.wrs.map((w) => Number(w.id) + 1));
     db.n.piece = Math.max(db.n.piece, ...db.wrs.flatMap((w) => w.pieces.map((p) => p.no + 1)));
@@ -245,6 +246,7 @@ export async function refresh(background = false): Promise<void> {
       }
       st.seen.set(META, metaSeen);
     }
+    keepOldFormulas();
     if (reconcile) st.keysAt = Date.now();
     st.maxAt = now;
   } catch (e) {

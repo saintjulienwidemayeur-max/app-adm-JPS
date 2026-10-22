@@ -2,6 +2,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { actor } from "./actor";
 import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
@@ -35,7 +36,7 @@ const readSess = async (): Promise<Sess | null> => { try { return JSON.parse((aw
 const cleanTracking = (v: string) => extractTracking(v);
 
 export const startDelivery = act("startDelivery", async (f: F) => {
-  const carrier = s(f, "carrier").toUpperCase(), receiver = s(f, "receiver");
+  const carrier = s(f, "carrier").toUpperCase(), receiver = s(f, "receiver") || actor();
   const d = new Date(s(f, "date") + "T00:00");
   if (!carrier || isNaN(d.getTime())) back(RX, { err: "Choose the date and the carrier." });
   rememberName(db.carriers, carrier);
@@ -83,7 +84,7 @@ export const receiveItem = act("receiveItem", async (f: F) => {
   // Already received in the old system? A warning only (a customer can order again, and tracking numbers get reused).
   const oldHit = db.oldWrs.length ? oldScanIndex(db.oldWrs).get(tracking.slice(-12))?.find((h) => true) : undefined;
   const oldMsg = oldHit ? ` Careful: this tracking number was already received in the old system on ${oldHit.date || "an unknown date"} (receipt ${oldHit.wr}).` : "";
-  const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking };
+  const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking, by: actor() };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
   let pa = db.prealerts.find((x) => x.status === "Expected" && sameTracking(x.tracking, tracking));
@@ -160,7 +161,7 @@ async function assign(ids: number[], f: F) {
   let w = addToOpen ? db.wrs.find((x) => x.cust === cno && x.ship === ship && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) : undefined;
   if (!w) w = openWR(c, ship);
   const no = db.n.piece++;
-  w.pieces.push({ no, ...p });
+  w.pieces.push({ no, ...p, by: actor() });
   for (const i of items) Object.assign(i, { customer: c.name, piece: no, wr: w.id, clientId, ship });
   // Website status 0 "received in Miami": the customer gets the push + e-mail now that we know who it belongs to.
   if (clientId) for (const i of items) {
@@ -245,6 +246,7 @@ export const updateWR = act("updateWR", async (f: F) => {
   if (bad) back(wrPath(w.id), { err: bad });
   Object.assign(w, {
     declared, dest, rate: r2(rate), rep: repOf(s(f, "rep")) ? s(f, "rep") : "", insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined",
+    kind: s(f, "shipKind") === "Commercial" ? "Commercial" : "Personal", shipperName: s(f, "shipperName").slice(0, 80), shipperPhone: s(f, "shipperPhone").slice(0, 40), receiverName: s(f, "receiverName").slice(0, 80), receiverPhone: s(f, "receiverPhone").slice(0, 40),
     estimate: s(f, "estimate") === "yes", comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email"),
   });
   back(wrPath(w.id), { ok: "Receipt saved." });
@@ -392,7 +394,7 @@ function pieceInput(f: F) {
   const contents = s(f, "contents");
   if (!contents) return "Enter what is inside this piece (declared contents).";
   if (contents.length > 120) return "The contents are too long (120 characters max).";
-  return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs, contents };
+  return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs, contents, old: false };
 }
 export const addPiece = act("addPiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
@@ -401,7 +403,7 @@ export const addPiece = act("addPiece", async (f: F) => {
   if (typeof p === "string") back(wrPath(w.id), { err: p });
   else if (!Number.isFinite(qty) || qty < 1 || qty > 100) back(wrPath(w.id), { err: "Number of boxes: from 1 to 100." });
   else if (w.pieces.length + qty > 500) back(wrPath(w.id), { err: "A receipt can't have more than 500 pieces." });
-  else { for (let i = 0; i < qty; i++) w.pieces.push({ no: db.n.piece++, ...p }); queueReceiptSoon(w.id); }
+  else { for (let i = 0; i < qty; i++) w.pieces.push({ no: db.n.piece++, ...p, by: actor() }); queueReceiptSoon(w.id); }
   back(wrPath(w.id), qty > 1 ? { ok: `${qty} boxes added (each one is its own piece with its own label).` } : {});
 });
 export const updatePiece = act("updatePiece", async (f: F) => {
@@ -411,7 +413,7 @@ export const updatePiece = act("updatePiece", async (f: F) => {
   if (db.loads.some((l) => l.no === no)) back(wrPath(w.id), { err: `Piece ${no} is already loaded. Remove it from the pallet first.` });
   const p = pieceInput(f);
   if (typeof p === "string") back(wrPath(w.id), { err: p });
-  else Object.assign(piece, p);
+  else Object.assign(piece, { ...p, old: piece.old });
   back(wrPath(w.id), { ok: `Piece ${no} updated.` });
 });
 export const deletePiece = act("deletePiece", async (f: F) => {
@@ -699,7 +701,7 @@ export const estimateToReceipt = act("estimateToReceipt", async (f: F) => {
   if (inp.credit > charge) fail("The credit is more than the charges.");
   const c = findCustomer(inp.customer) ?? newCustomer(inp.customer);
   const w = openWR(c, ship, { estimate: true, ...(DESTINATIONS.includes(s(f, "dest")) && { dest: s(f, "dest") }), rate: opt.rate, declared: inp.declared, insurance: inp.insure && inp.declared > 0 ? "Accepted" : "Declined" });
-  for (const r of inp.rows) for (let k = 0; k < r.qty; k++) w.pieces.push({ no: db.n.piece++, type: "BOX - OTHER", l: r.l, w: r.w, h: r.h, lbs: r.lbs, contents: r.contents });
+  for (const r of inp.rows) for (let k = 0; k < r.qty; k++) w.pieces.push({ no: db.n.piece++, type: "BOX - OTHER", l: r.l, w: r.w, h: r.h, lbs: r.lbs, contents: r.contents, by: actor(), old: false });
   // Handling: Ocean already got its automatic line; use the amount of the estimate. Air gets one only when the estimate has it.
   const handling = ship === "Ocean" ? inp.handlingOcean : inp.handlingAir;
   const auto = w.fees.find((x) => x.auto === "handling");
@@ -761,7 +763,7 @@ export const loadPiece = act("loadPiece", async (f: F) => {
   if (!sh) { sh = { name: shipment, ship, cargoId: String(db.n.cargo++), date: nowStr() }; db.shipments.push(sh); }
   if (sh.shipped) back(PL, { ...q, err: `${shipment} was already shipped.` });
   if (hit!.w.ship !== sh.ship) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} is ${hit!.w.ship} but ${shipment} is ${sh.ship}.` });
-  db.loads.push({ shipment, pallet, wr: hit!.w.id, no, date: nowStr() });
+  db.loads.push({ shipment, pallet, wr: hit!.w.id, no, date: nowStr(), by: actor() });
   back(PL, { ...q, ship: sh.ship, ok: String(no) });
 });
 export const unloadPiece = act("unloadPiece", async (f: F) => {
@@ -775,7 +777,7 @@ export const shipCargo = act("shipCargo", async (f: F) => {
   if (!sh || sh.shipped) return;
   const loads = db.loads.filter((l) => l.shipment === sh.name);
   if (!loads.length) back(PL, { ...q, err: "Load at least one piece before shipping." });
-  sh.shipped = nowStr();
+  sh.shipped = nowStr(); sh.shippedBy = actor();
   const wrIds = new Set(loads.map((l) => l.wr));
   const mine = db.items.filter((i) => i.wr && wrIds.has(i.wr));
   mine.forEach((i) => { i.shipped = true; });
@@ -807,7 +809,7 @@ export const receiveHere = act("receiveHere", async (f: F) => {
   if (!l) back(AR, { err: `Piece "${raw}" was never loaded on a shipment. Check the label.` });
   if (!db.shipments.find((x) => x.name === l!.shipment)?.shipped) back(AR, { err: `Piece ${no} is on ${l!.shipment}, which hasn't shipped yet.` });
   if (l!.here) back(AR, { err: `Piece ${no} was already received here on ${l!.here}.` });
-  l!.here = nowStr();
+  l!.here = nowStr(); l!.hereBy = actor();
   const failed = await syncArrived([l!.wr]);
   back(AR, { ok: `Piece ${no} received.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
@@ -815,7 +817,7 @@ export const arriveShipment = act("arriveShipment", async (f: F) => {
   const name = s(f, "shipment");
   if (!db.shipments.find((x) => x.name === name)?.shipped) return;
   const touched = new Set<string>();
-  db.loads.forEach((l) => { if (l.shipment === name && !l.here) { l.here = nowStr(); touched.add(l.wr); } });
+  db.loads.forEach((l) => { if (l.shipment === name && !l.here) { l.here = nowStr(); l.hereBy = actor(); touched.add(l.wr); } });
   const failed = await syncArrived([...touched]);
   back(AR, { ok: `All pieces of ${name} are marked as here.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });

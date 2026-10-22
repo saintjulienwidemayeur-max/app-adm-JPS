@@ -21,7 +21,7 @@ for (let t = 0; t < 400; t++) {
   Object.assign(q, { declared: String(declared || ""), insure: insure ? "yes" : "", pickup: String(pickup || ""), credit: String(credit || ""), rateAir: "4.5", rateOcean: "16" });
   const inp = parseEstimate((k) => q[k]), est = estimate(inp);
   // independent
-  let air = 0, cf = 0; for (const b of boxes) { const v1 = R(b.l * b.w * b.h / 139), c1 = R(b.l * b.w * b.h / 1728), ch = Math.max(b.lbs, v1); air += R(ch * b.qty); cf += R(c1 * b.qty); }
+  let air = 0, cf = 0; for (const b of boxes) { const v1 = R(b.l * b.w * b.h / 132), c1 = R(b.l * b.w * b.h / 1788), ch = Math.max(b.lbs, v1); air += R(ch * b.qty); cf += R(c1 * b.qty); }
   const ins = insure && declared > 0 ? calcInsurance(declared).customer : 0;
   const airTot = Math.max(0, R(R(air * 4.5) + 35 + ins + pickup - credit)), oceanTot = Math.max(0, R(R(cf * 16) + 45 + ins + pickup - credit));
   eq(`est air #${t}`, est.air.total, airTot, 0.011); eq(`est ocean #${t}`, est.ocean.total, oceanTot, 0.011);
@@ -40,21 +40,21 @@ for (let t = 0; t < 400; t++) {
 }
 // D. a plain Air receipt: no automatic $35 handling (the disclaimer and the estimate say $35)
 const air = openWR(cust, "Air"); air.pieces.push({ no: db.n.piece++, type: "BOX", l: 24, w: 18, h: 16, lbs: 40, contents: "x" });
-const expectedAirFreight = R(Math.max(40, R(24 * 18 * 16 / 139)) * 4.5);
+const expectedAirFreight = R(Math.max(40, R(24 * 18 * 16 / 132)) * 4.5);
 eq("plain Air receipt freight", freightFee(air), expectedAirFreight);
 const airHasHandling = air.fees.some((f) => /handling/i.test(f.label));
 console.log("plain Air receipt has an automatic handling line:", airHasHandling, "(estimate page adds $35 for Air by default)");
 // E. credit/payment logic
 const w2 = openWR(cust, "Ocean"); w2.pieces.push({ no: db.n.piece++, type: "BOX", l: 30, w: 20, h: 20, lbs: 20, contents: "x" });
 eq("ocean handling auto line", w2.fees.find((f) => f.auto === "handling")?.amount ?? 0, OCEAN_HANDLING);
-eq("ocean cuft", cuft(w2.pieces[0]), R(30 * 20 * 20 / 1728)); eq("ocean freight", freightFee(w2), R(R(30 * 20 * 20 / 1728) * 16));
+eq("ocean cuft", cuft(w2.pieces[0]), R(30 * 20 * 20 / 1788)); eq("ocean freight", freightFee(w2), R(R(30 * 20 * 20 / 1788) * 16));
 w2.payments.push({ date: "1/1/2026", amount: 10, method: "Cash", ref: "" }); eq("balance after payment", balance(w2), R(total(w2) - 10));
 // F. other-method estimate popup vs real switch
 const w3 = openWR(cust, "Air"); w3.pieces.push({ no: db.n.piece++, type: "BOX", l: 30, w: 20, h: 20, lbs: 20, contents: "x" });
-const asOcean = estimateFor(w3, "Ocean"); eq("compare popup Ocean total", asOcean.total, R(R(R(30*20*20/1728) * 16) + 45));
+const asOcean = estimateFor(w3, "Ocean"); eq("compare popup Ocean total", asOcean.total, R(R(R(30*20*20/1788) * 16) + 45));
 console.log(`checks passed: ${pass}, failed: ${fail}`); if (bad.length) console.log(bad.slice(0, 15).join("\n"));
 // G. compare popup with a handling line typed by hand on an Air receipt ($35): Ocean must show $45, not $35+$45
 const w4 = openWR(cust, "Air"); w4.pieces.push({ no: db.n.piece++, type: "BOX", l: 30, w: 20, h: 20, lbs: 20, contents: "x" });
 w4.fees.push({ id: db.n.fee++, label: "Handling fees", amount: 35, kind: "charge" });
-eq("compare popup ignores the hand-typed Air handling", estimateFor(w4, "Ocean").total, R(R(R(30*20*20/1728) * 16) + 45));
+eq("compare popup ignores the hand-typed Air handling", estimateFor(w4, "Ocean").total, R(R(R(30*20*20/1788) * 16) + 45));
 console.log(`final: passed ${pass}, failed ${fail}`);

@@ -3,6 +3,7 @@
 import { ensureLoaded, flush, refresh } from "./persist";
 import { requireUser } from "./users";
 import { logAudit, summarize } from "./audit";
+import { runAs } from "./actor";
 
 const decode = (s: string) => { try { return decodeURIComponent(s.replace(/\+/g, " ")); } catch { return s; } };
 const words = (n: string) => n.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
@@ -12,7 +13,7 @@ export const act = <A extends unknown[]>(name: string, fn: (...a: A) => Promise<
   await refresh();
   const user = await requireUser();
   let result = "ok";
-  try { await fn(...a); }
+  try { await runAs(user.name, () => fn(...a)); }
   catch (e) {
     const digest = (e as { digest?: string })?.digest;
     if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) { const m = digest.match(/[?&]err=([^&;]*)/); result = m ? `refused: ${decode(m[1])}` : "ok"; }
