@@ -7,7 +7,8 @@ export const isOn = (path: string, href: string) => path === href || path.starts
 // The main menu, the section pages and "my account" are open to every signed-in person (the menu only lists what they may open).
 export function allowed(c: Pick<Claims, "admin" | "perms">, path: string): boolean {
   if (c.admin) return true;
-  if (path === "/" || path === "/account" || path === "/no-access" || path.startsWith("/menu/") || path.startsWith("/docs/")) return true;
+  if (path === "/" || path === "/account" || path === "/no-access" || path.startsWith("/menu/")) return true;
+  if (path.startsWith("/docs/")) return c.perms.some((p) => isOn("/warehouse/receipts", p)); // the PDFs e-mailed to customers: ids are sequential, so only people who see receipts
   if (ADMIN_ONLY.some((p) => isOn(path, p))) return false;
   return c.perms.some((p) => isOn(path, p));
 }

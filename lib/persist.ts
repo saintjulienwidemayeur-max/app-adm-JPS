@@ -47,7 +47,11 @@ const META = "wh_meta";
 const metaRows = () => ({ n: db.n, feeNames: db.feeNames, payMethods: db.payMethods, carriers: db.carriers, blockedEmails: db.blockedEmails, settings: db.settings });
 
 const rowsOf = (t: Table) => new Map(t.rows().map((r) => [t.key(r as never), JSON.stringify(r)]));
-const metaMap = () => new Map(Object.entries(metaRows()).map(([k, v]) => [k, JSON.stringify(v)]));
+// The meta rows are compared as text to tell "changed here" from "changed by the other app". The database (jsonb) returns the keys in another
+// order than the copy in memory, so the keys are sorted: otherwise the settings always looked changed here, were never refreshed from the
+// other app, and a stale copy overwrote the rates and storage fee on the next save.
+const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+const metaMap = () => new Map(Object.entries(metaRows()).map(([k, v]) => [k, canon(v)]));
 
 function makePool() {
   const url = new URL(process.env.DATABASE_URL!);
@@ -92,7 +96,7 @@ async function load() {
     const m = await c.query<{ k: string; data: Record<string, unknown> }>(`select k, data from ${META}`);
     const metaSeen = new Map<string, string>(); // only what is really in the database, so missing rows get written on the first save
     for (const row of m.rows) {
-      metaSeen.set(row.k, JSON.stringify(row.data));
+      metaSeen.set(row.k, canon(row.data));
       if (row.k === "n") Object.assign(db.n, row.data);
       if (row.k === "feeNames") Object.assign(db.feeNames, row.data);
       if (row.k === "payMethods" && Array.isArray(row.data)) db.payMethods = row.data as unknown as string[];
@@ -234,15 +238,15 @@ export async function refresh(background = false): Promise<void> {
       const metaSeen = st.seen.get(META) ?? new Map<string, string>();
       const m = await c.query<{ k: string; data: Record<string, unknown> }>(`select k, data from ${META} where updated_at > $1`, [new Date((before.get(META) ?? 0) - 10000)]);
       for (const row of m.rows) {
-        if (row.k === "n") { for (const [k, v] of Object.entries(row.data)) if (typeof v === "number") (db.n as Record<string, number>)[k] = Math.max((db.n as Record<string, number>)[k] ?? 0, v); metaSeen.set("n", JSON.stringify(row.data)); continue; }
-        const mineJson = JSON.stringify((metaRows() as Record<string, unknown>)[row.k]);
+        if (row.k === "n") { for (const [k, v] of Object.entries(row.data)) if (typeof v === "number") (db.n as Record<string, number>)[k] = Math.max((db.n as Record<string, number>)[k] ?? 0, v); metaSeen.set("n", canon(row.data)); continue; }
+        const mineJson = canon((metaRows() as Record<string, unknown>)[row.k]);
         if (mineJson !== metaSeen.get(row.k) && metaSeen.has(row.k)) continue;
         if (row.k === "feeNames") Object.assign(db.feeNames, row.data);
         if (row.k === "payMethods" && Array.isArray(row.data)) db.payMethods = row.data as unknown as string[];
         if (row.k === "carriers" && Array.isArray(row.data)) db.carriers = row.data as unknown as string[];
         if (row.k === "blockedEmails" && Array.isArray(row.data)) db.blockedEmails = row.data as unknown as string[];
         if (row.k === "settings") Object.assign(db.settings, row.data);
-        metaSeen.set(row.k, JSON.stringify(row.data));
+        metaSeen.set(row.k, canon(row.data));
       }
       st.seen.set(META, metaSeen);
     }
@@ -270,7 +274,7 @@ export async function saveDoc(d: { kind: string; ref: string; name: string; note
 }
 export async function getDoc(id: string): Promise<(DocInfo & { data: Buffer }) | null> {
   if (id.startsWith("m")) return memDocs.get(id) ?? null;
-  if (!st.pool || !st.loaded || !/^\d+$/.test(id)) return null;
+  if (!st.pool || !st.loaded || !/^\d{1,12}$/.test(id)) return null;
   const r = await st.pool.query("select id::text, kind, ref, name, coalesce(note,'') as note, created_at, data from wh_docs where id = $1", [id]);
   const x = r.rows[0];
   return x ? { id: x.id, kind: x.kind, ref: x.ref, name: x.name, note: x.note, created: new Date(x.created_at).toISOString(), data: x.data } : null;
