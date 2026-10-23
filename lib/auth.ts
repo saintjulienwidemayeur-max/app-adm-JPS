@@ -13,6 +13,7 @@ export async function login(f: FormData) {
   ensureAdmin();
   if (lockedFor(name)) { logAudit(name || "?", "sign in", "", "refused: name locked after wrong codes"); await flush(); redirect(`/login?err=locked&mins=${lockedFor(name)}`); }
   await new Promise((r) => setTimeout(r, 800)); // slows down guessing
+  if (lockedFor(name)) redirect(`/login?err=locked&mins=${lockedFor(name)}`); // many guesses sent at once: the ones that wait here are refused once the name is locked
   const u = checkLogin(name, code);
   logAudit(u ? u.name : name || "?", "sign in", "", u ? "ok" : "refused: wrong name or code");
   await flush(); // the first administrator, the last sign-in time and the log

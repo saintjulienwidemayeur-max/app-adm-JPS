@@ -6,5 +6,5 @@ const headers = async () => [{ source: "/:path*", headers: [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "same-origin" },
 ] }];
-const config: NextConfig = { experimental: { serverActions: { bodySizeLimit: "10mb" } }, headers };
+const config: NextConfig = { poweredByHeader: false, experimental: { serverActions: { bodySizeLimit: "10mb" } }, headers };
 export default config;
