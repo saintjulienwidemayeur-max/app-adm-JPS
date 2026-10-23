@@ -78,22 +78,25 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
 // The customer field of Received items: "1001 · Name" (picked from the list), a number, a name or an e-mail.
 const pickCustomer = (v: string) => { const n = v.match(/^\s*(\d+)\s*(·|$)/); return findCustomer(n ? n[1] : v); };
 type Res = Record<string, string>;
+// A parcel with no tracking number (a box somebody brings, no label to scan): the system makes one, JPS + 7 digits, written on the box with the label that is printed after saving.
+const NOTRACK = "*NOTRACK*";
+const nextNoTrack = () => `JPS${String(db.n.nt++).padStart(7, "0")}`;
 // One scanned parcel: saves it and tells who it is for. Returns what the page shows (ok / info / warn / err). `mails`: collects the direct e-mails (customers with no website account) so a batch sends one e-mail per customer.
 async function receiveOne(sess: Sess, raw: string, typed: string, mails?: Map<number, { c: Customer; t: string[] }>): Promise<Res> {
-  const tracking = cleanTracking(raw);
+  const made = raw.startsWith(NOTRACK), tracking = made ? nextNoTrack() : cleanTracking(raw);
   if (tracking.length < 6) return { err: "That doesn't look like a tracking number. Scan it again." };
-  const dup = db.items.find((i) => sameTracking(i.tracking, tracking));
+  const dup = made ? undefined : db.items.find((i) => sameTracking(i.tracking, tracking));
   if (dup) return { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` };
   const who = typed ? pickCustomer(typed) : undefined;
   if (typed && !who) return { err: `No customer matches "${typed}". Leave the field empty if you don't know it, or pick a customer from the list.` };
   // Already received in the old system? A warning only (a customer can order again, and tracking numbers get reused).
   const oldHit = db.oldWrs.length ? oldScanIndex(db.oldWrs).get(tracking.slice(-12))?.find((h) => true) : undefined;
   const oldMsg = oldHit ? ` Careful: this tracking number was already received in the old system on ${oldHit.date || "an unknown date"} (receipt ${oldHit.wr}).` : "";
-  const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking, by: actor(), ...(sess!.office && { office: sess!.office }) };
+  const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking, by: actor(), ...(made && { made: true }), ...(sess!.office && { office: sess!.office }) };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
-  let pa = db.prealerts.find((x) => x.status === "Expected" && sameTracking(x.tracking, tracking));
-  if (!pa && syncEnabled()) {
+  let pa = made ? undefined : db.prealerts.find((x) => x.status === "Expected" && sameTracking(x.tracking, tracking));
+  if (!pa && !made && syncEnabled()) {
     const r = await sitePrealerts(cleanTrackingNo(tracking)); // announced on the website but not imported yet
     if (r.rows[0]) pa = await adoptSitePrealert(r.rows[0]);
   }
@@ -105,14 +108,14 @@ async function receiveOne(sess: Sess, raw: string, typed: string, mails?: Map<nu
     if (pa.siteId) await markSitePrealertReceived(pa.siteId);
     const c = db.customers.find((x) => x.no === pa!.cust);
     const warn = await notifyReceived(item, c ?? { name: pa.customer, email: "", clientId: pa.clientId }, ship, mails);
-    return { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) };
+    return { ok: tracking, ...(made && { made: tracking }), info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) };
   }
   if (who) {
     Object.assign(item, { customer: who.name, ship: "Air" as Ship, clientId: who.clientId });
     const warn = await notifyReceived(item, who, "Air", mails);
-    return { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) };
+    return { ok: tracking, ...(made && { made: tracking }), info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) };
   }
-  return { ok: tracking, warn: `Not announced by any customer: it waits in the review queue until it is identified.${oldMsg}` };
+  return { ok: tracking, ...(made && { made: tracking }), warn: `Not announced by any customer: it waits in the review queue until it is identified.${oldMsg}` };
 }
 export const receiveItem = act("receiveItem", async (f: F) => {
   const sess = await readSess();
@@ -127,15 +130,15 @@ export const receiveBatch = act("receiveBatch", async (f: F) => {
   if (!codes.length) back(RX, { err: "Scan at least one parcel before you save." });
   if (typed && !pickCustomer(typed)) back(RX, { err: `No customer matches "${typed}". Nothing was saved.` });
   const mails = new Map<number, { c: Customer; t: string[] }>();
-  let ok = 0; const bad: string[] = [], warns: string[] = [], who = new Set<string>();
+  let ok = 0; const bad: string[] = [], warns: string[] = [], who = new Set<string>(), madeCodes: string[] = [];
   for (const code of codes) {
     const r = await receiveOne(sess!, code, typed, mails);
     if (r.err) { bad.push(`${code}: ${r.err.replace(/^DUPLICATE: /, "already received. ")}`); continue; }
-    ok++; if (r.warn) warns.push(r.warn);
+    ok++; if (r.warn) warns.push(r.warn); if (r.made) madeCodes.push(r.made);
     const m = (r.info ?? "").match(/^(?:For|Matched:) ([^(·]+?)(?: \(|$| ·)/); if (m) who.add(m[1].trim());
   }
   for (const { c, t } of mails.values()) emailParcelArrived(c, t, sess!.office);
-  back(RX, { t: String(Date.now()), ...(ok && { info: `${ok} parcel${ok === 1 ? "" : "s"} saved${typed ? ` for ${pickCustomer(typed)!.name}` : who.size ? ` (${[...who].slice(0, 4).join(", ")}${who.size > 4 ? "..." : ""})` : ""}.` }), ...(bad.length && { err: `${bad.length} not saved: ${bad.slice(0, 5).join(" · ")}${bad.length > 5 ? " ..." : ""}` }), ...(warns.length && { warn: `${warns.length} parcel${warns.length === 1 ? "" : "s"} could not be matched to a customer or notified: they wait in the review queue.` }) });
+  back(RX, { t: String(Date.now()), ...(madeCodes.length && { made: madeCodes.join(",") }), ...(ok && { info: `${ok} parcel${ok === 1 ? "" : "s"} saved${typed ? ` for ${pickCustomer(typed)!.name}` : who.size ? ` (${[...who].slice(0, 4).join(", ")}${who.size > 4 ? "..." : ""})` : ""}.` }), ...(bad.length && { err: `${bad.length} not saved: ${bad.slice(0, 5).join(" · ")}${bad.length > 5 ? " ..." : ""}` }), ...(warns.length && { warn: `${warns.length} parcel${warns.length === 1 ? "" : "s"} could not be matched to a customer or notified: they wait in the review queue.` }) });
 });
 export const updateItem = act("updateItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));

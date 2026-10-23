@@ -33,6 +33,9 @@ export function BatchScan({ action, customerListId }: { action: (fd: FormData) =
     setCodes((c) => { if (c.includes(v)) { setNote(`${v} is already on the list.`); return c; } setNote(""); return [...c, v]; });
     el.focus();
   };
+  const [nb, setNb] = useState(1);
+  const addBlank = () => setCodes((c) => { const base = c.filter((x) => x.startsWith("*NOTRACK*")).length; return [...c, ...Array.from({ length: Math.max(1, Math.min(50, nb)) }, (_, i) => `*NOTRACK*${base + i + 1}`)]; });
+  const show = (c: string) => (c.startsWith("*NOTRACK*") ? `No tracking number (JPS makes one) #${c.slice(9)}` : c);
   const onInput = () => {
     times.current.push(Date.now()); window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => { const t = times.current; if (t.length === 1 || (t.length >= 6 && (t[t.length - 1] - t[0]) / (t.length - 1) < 45)) add(); }, 160);
@@ -54,6 +57,11 @@ export function BatchScan({ action, customerListId }: { action: (fd: FormData) =
           </span>
         </span>
       </label>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-xs font-semibold text-zinc-700">A box with no tracking number (nothing to scan)?</span>
+        <input type="number" min={1} max={50} value={nb} onChange={(e) => setNb(Number(e.target.value) || 1)} aria-label="Number of boxes with no tracking number" className="h-9 w-16 rounded-md border border-zinc-300 bg-white px-2 text-right text-sm" />
+        <button type="button" onClick={addBlank} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium hover:bg-zinc-100">Add with a number made by the system</button>
+      </div>
       {note && <p role="alert" className="text-sm font-semibold text-amber-700">{note}</p>}
       <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
         <div className="flex items-center justify-between gap-2">
@@ -63,7 +71,7 @@ export function BatchScan({ action, customerListId }: { action: (fd: FormData) =
             <button type="submit" disabled={!codes.length} className="inline-flex h-9 items-center rounded-md bg-brand px-4 text-sm font-medium text-white disabled:opacity-40">Finish and save {codes.length > 0 ? codes.length : ""}</button>
           </div>
         </div>
-        {codes.length > 0 && <ul className="mt-2 grid max-h-56 gap-0.5 overflow-auto font-mono text-xs sm:grid-cols-2">{[...codes].reverse().map((c, i) => <li key={c} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-0.5"><span>{codes.length - i}. {c}</span><button type="button" onClick={() => setCodes((l) => l.filter((x) => x !== c))} aria-label={`Remove ${c}`} className="text-zinc-400 hover:text-red-700"><X size={12} /></button></li>)}</ul>}
+        {codes.length > 0 && <ul className="mt-2 grid max-h-56 gap-0.5 overflow-auto font-mono text-xs sm:grid-cols-2">{[...codes].reverse().map((c, i) => <li key={c} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-0.5"><span>{codes.length - i}. {show(c)}</span><button type="button" onClick={() => setCodes((l) => l.filter((x) => x !== c))} aria-label={`Remove ${c}`} className="text-zinc-400 hover:text-red-700"><X size={12} /></button></li>)}</ul>}
       </div>
     </form>
   );
