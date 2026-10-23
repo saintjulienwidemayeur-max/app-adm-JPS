@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, charges, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee , priced } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -449,8 +449,9 @@ export const deletePiece = act("deletePiece", async (f: F) => {
 export const createInvoice = act("createInvoice", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
-  if (!w.pieces.length) back(wrPath(w.id), { err: "Add at least one piece before invoicing." });
-  if (!w.invoice) { w.invoice = `INV-${db.n.inv++}`; w.invoiceDate = nowStr(); }
+  if (w.estimate) back(wrPath(w.id), { err: 'This receipt is marked as an estimate. Untick "estimate" in the details when the real weights are in, then invoice it.' });
+  if (!w.pieces.length && charges(w) <= 0) back(wrPath(w.id), { err: "Add at least one piece or one fee before invoicing." });
+  if (!w.invoice) { for (const p of w.pieces) p.old ??= false; /* this invoice is made with today's formulas: never switch it to the old ones */ w.invoice = `INV-${db.n.inv++}`; w.invoiceDate = nowStr(); }
   back(wrPath(w.id), { ok: `Invoice ${w.invoice} created.` });
 });
 export const addPayment = act("addPayment", async (f: F) => {
@@ -487,7 +488,7 @@ export const receivePayment = act("receivePayment", async (f: F) => {
   if (!method || method.length > 30) back(here, { err: "Choose how the customer paid (or type a new payment method)." });
   const batch = `PAY-${db.n.pay++}`, date = nowStr(), time = timeNow();
   let left = r2(amount);
-  const open = db.wrs.filter((w) => w.cust === c!.no && w.fees.length > 0 && balance(w) > 0)
+  const open = db.wrs.filter((w) => w.cust === c!.no && priced(w) && balance(w) > 0)
     .sort((a, b) => usToIso(a.date).localeCompare(usToIso(b.date)) || Number(a.id) - Number(b.id));
   for (const w of open) {
     const take = Math.min(left, balance(w));

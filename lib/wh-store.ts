@@ -235,10 +235,12 @@ export const charges = (w: WR) => r2(freightFee(w) + w.fees.filter((f) => f.kind
 export const credits = (w: WR) => r2(w.fees.filter((f) => f.kind === "credit").reduce((a, f) => a + f.amount, 0));
 export const quote = (w: WR) => calcInsurance(w.declared);
 export const insuranceFee = (w: WR) => (w.insurance === "Accepted" ? quote(w).customer : 0);
+// A receipt that has something to pay (an estimate is not a debt until it is final): a fee line, or the automatic freight / insurance (an Air receipt often has no fee line at all).
+export const priced = (w: WR) => (!w.estimate || !!w.invoice) && (w.fees.length > 0 || freightFee(w) > 0 || insuranceFee(w) > 0);
 export const total = (w: WR) => Math.max(0, r2(charges(w) + insuranceFee(w) - credits(w)));
 export const paidAmt = (w: WR) => r2(w.payments.reduce((a, p) => a + p.amount, 0));
 export const balance = (w: WR) => r2(total(w) - paidAmt(w));
-export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && w.fees.length ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
+export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && priced(w) ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
 export const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // What the same goods would cost shipped the other way (same pieces, standard rate of that method, its automatic handling fee).

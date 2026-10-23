@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, wrCode, total, paidAmt, balance, money, r2, creditOf, orderTotal, orderPaid, orderBalance } from "@/lib/wh-store";
+import { db, wrCode, total, paidAmt, balance, money, r2, creditOf, orderTotal, orderPaid, orderBalance , priced } from "@/lib/wh-store";
 import { usToday, daysSince } from "@/lib/clock";
 import { PrintButton } from "@/components/print-button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const { no } = await params, q = await searchParams;
   const c = db.customers.find((x) => x.no === Number(no));
   if (!c) notFound();
-  const rows = db.wrs.filter((w) => w.cust === c.no && (w.fees.length > 0 || w.payments.length > 0) && (!q.from || key(w.date) >= q.from) && (!q.to || key(w.date) <= q.to) && (q.show !== "open" || balance(w) > 0))
+  const rows = db.wrs.filter((w) => w.cust === c.no && (priced(w) || w.payments.length > 0) && (!q.from || key(w.date) >= q.from) && (!q.to || key(w.date) <= q.to) && (q.show !== "open" || balance(w) > 0))
     .sort((a, b) => key(a.date).localeCompare(key(b.date)) || Number(a.id) - Number(b.id));
   const orders = db.orders.filter((o) => o.cust === c.no && (!q.from || key(o.date) >= q.from) && (!q.to || key(o.date) <= q.to) && (q.show !== "open" || orderBalance(o) > 0));
   const billed = r2(rows.reduce((a, w) => a + total(w), 0) + orders.reduce((a, o) => a + orderTotal(o), 0)), paid = r2(rows.reduce((a, w) => a + paidAmt(w), 0) + orders.reduce((a, o) => a + orderPaid(o), 0));
