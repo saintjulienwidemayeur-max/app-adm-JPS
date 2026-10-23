@@ -64,9 +64,9 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
 
       <form className="mt-5 flex flex-wrap items-center gap-2">
         <Input name="find" placeholder="Search tracking, customer, receiver" defaultValue={q.find} className="max-w-64" />
-        <select name="fcarrier" defaultValue={q.fcarrier ?? ""} className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">All carriers</option>{carriers.map((c) => <option key={c}>{c}</option>)}</select>
+        <select name="fcarrier" aria-label="Carrier" defaultValue={q.fcarrier ?? ""} className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">All carriers</option>{carriers.map((c) => <option key={c}>{c}</option>)}</select>
         <Input name="date" type="date" defaultValue={q.date} className="w-40" aria-label="Date" />
-        <select name="show" defaultValue={q.show ?? ""} className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">All parcels</option><option value="open">Not consolidated yet</option></select>
+        <select name="show" aria-label="Show" defaultValue={q.show ?? ""} className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">All parcels</option><option value="open">Not consolidated yet</option></select>
         <Button type="submit" variant="outline">Filter</Button>
         <Link href="/warehouse/receiving" className="text-sm text-brand underline">Clear</Link>
       </form>

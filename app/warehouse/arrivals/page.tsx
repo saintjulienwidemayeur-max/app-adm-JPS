@@ -49,9 +49,9 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           </div>
           <table className="w-full text-left text-sm">
             <thead><tr>{["WR", "Customer", "Item", "Pallet"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
-            <tbody>{rows.slice(0, 100).map((l) => <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{code(l.wr)}</td><td className={td}>{cust(l.wr)}</td><td className={td}>{l.no}</td><td className={td}>{l.pallet}</td></tr>)}</tbody>
+            <tbody>{rows.slice(0, 40).map((l) => <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{code(l.wr)}</td><td className={td}>{cust(l.wr)}</td><td className={td}>{l.no}</td><td className={td}>{l.pallet}</td></tr>)}</tbody>
           </table>
-          {rows.length > 100 && <p className="mt-1 text-xs text-zinc-600">The first 100 of {rows.length} pieces are listed. Scan a piece label above, or use Mark all as here.</p>}
+          {rows.length > 40 && <p className="mt-1 text-xs text-zinc-600">The first 40 of {rows.length} pieces are listed. Scan a piece label above, or use Mark all as here.</p>}
         </section>
       ))}
 

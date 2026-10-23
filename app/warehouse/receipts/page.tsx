@@ -25,7 +25,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       <form action={createWR} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[1.4fr_6rem_6rem_1fr_auto]">
         <Input name="customer" list="cust" placeholder="Customer (name or number; new names are added to Customers)" required />
         <Input name="route" placeholder="Route" maxLength={12} aria-label="Route" />
-        <select name="ship" className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
+        <select name="ship" aria-label="Ship type" className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
         <Input name="comments" placeholder="Comments" />
         <Button type="submit">New receipt</Button>
         <datalist id="cust">{db.customers.map((c) => <option key={c.no} value={c.name}>{c.no}</option>)}</datalist>

@@ -124,7 +124,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <datalist id="feeNames">{[...db.feeNames.charge, ...db.feeNames.credit].map((n) => <option key={n} value={n} />)}</datalist>
         <form action={saveFees} className="mt-2">
           <input type="hidden" name="wr" value={w.id} />
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[30rem] text-left text-sm">
             <thead><tr><th className={th}>Description</th><th className={`${th} w-32`}>Type</th><th className={`${th} w-32 text-right`}>Amount ($)</th><th className={`${th} w-20`} /></tr></thead>
             <tbody>
               {freightFee(w) > 0 && (
@@ -146,7 +146,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   <td className={td}>Charge</td><td className={`${td} text-right`}>{money(ins.customer)}</td><td className={td} />
                 </tr>)}
             </tbody>
-          </table>
+          </table></div>
           {w.fees.length > 0 && <Button type="submit" className="mt-2">Save fees</Button>}
         </form>
         <form action={addFee} className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-[1fr_8rem_8rem_auto]">

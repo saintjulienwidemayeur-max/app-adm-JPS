@@ -29,7 +29,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <form method="get" className="no-print mt-3 flex flex-wrap items-center gap-2">
         <label className="text-xs text-zinc-600">From <Input name="from" type="date" defaultValue={q.from} className="w-40" /></label>
         <label className="text-xs text-zinc-600">To <Input name="to" type="date" defaultValue={q.to} className="w-40" /></label>
-        <select name="show" defaultValue={q.show ?? ""} className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">All receipts</option><option value="open">Only with a balance</option></select>
+        <select name="show" aria-label="Show" defaultValue={q.show ?? ""} className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">All receipts</option><option value="open">Only with a balance</option></select>
         <Button type="submit" variant="outline">Filter</Button>
         <Link href={`/warehouse/customers/${c.no}`} className="text-brand underline">Back to customer</Link>
       </form>
