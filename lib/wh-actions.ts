@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
+import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -55,7 +55,7 @@ export const endDelivery = act("endDelivery", async () => {
 // tracking page (status 0, "received in Miami") and the website sends the push notification and the e-mail "your parcel arrived at our office".
 async function notifyReceived(item: Item, c: { name: string; email: string; clientId?: string; box?: string } | undefined, ship: Ship, mails?: Map<number, { c: Customer; t: string[] }>): Promise<string> {
   // Received at the Haiti office (going to the USA): the website only knows the Miami -> Haiti route, so the customer is told by our own e-mail.
-  if (item.office === "Haiti") {
+  if (item.office === "Haiti" && !siteUSA()) {
     const full = c && "no" in c ? (c as Customer) : db.customers.find((x) => x.name === c?.name);
     if (full && usableEmail(full)) { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(item.tracking); mails.set(full.no, e); } else emailParcelArrived(full, [item.tracking], "Haiti"); }
     return "";
@@ -68,11 +68,11 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
   if (!clientId) {
     // No account on the website: the e-mail on file (if there is a real one) gets "your parcel arrived" from here.
     const full = c && "no" in c ? (c as Customer) : db.customers.find((x) => x.name === c?.name);
-    if (full && usableEmail(full)) { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(item.tracking); mails.set(full.no, e); } else emailParcelArrived(full, [item.tracking]); return ""; }
+    if (full && usableEmail(full)) { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(item.tracking); mails.set(full.no, e); } else emailParcelArrived(full, [item.tracking], item.office === "Haiti" ? "Haiti" : undefined); return ""; }
     return `${c?.name ?? "This customer"} has no account on the website and no usable e-mail: no tracking and no notification.`;
   }
   item.clientId = clientId;
-  const e = await pushStatus({ tracking: item.tracking, status: 0, clientId, type: ship, description: "Received at the Miami warehouse" });
+  const usa = item.office === "Haiti", e = await pushStatus({ tracking: item.tracking, status: 0, clientId, type: ship, description: usa ? "Received at the Haiti office" : "Received at the Miami warehouse", ...(usa && { direction: "US" as const }) });
   return e ? `The website update failed: ${e}` : "";
 }
 // The customer field of Received items: "1001 · Name" (picked from the list), a number, a name or an e-mail.
@@ -194,12 +194,12 @@ async function assign(ids: number[], f: F) {
   let w = addToOpen ? db.wrs.find((x) => x.cust === cno && x.ship === ship && toUSA(x) === toUSA({ dest: dest ?? destOf(c) }) && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) : undefined;
   if (!w) w = openWR(c, ship, dest ? { dest } : {});
   const no = db.n.piece++;
-  w.pieces.push({ no, ...p, by: actor(), old: false });
+  w.pieces.push({ no, ...p, by: actor(), old: false, rd: 0 });
   const usa = toUSA(w);
   for (const i of items) Object.assign(i, { customer: c.name, piece: no, wr: w.id, clientId, ship });
   // Website status 0 "received in Miami": the customer gets the push + e-mail now that we know who it belongs to.
-  if (clientId && !usa) for (const i of items) {
-    const e = await pushStatus({ tracking: i.tracking, status: 0, clientId, type: ship, description: `JP's ${no}` });
+  if (clientId && (!usa || siteUSA())) for (const i of items) {
+    const e = await pushStatus({ tracking: i.tracking, status: 0, clientId, type: ship, description: `JP's ${no}`, ...(usa && { direction: "US" as const }) });
     if (e) warn = `Piece created, but the website update failed: ${e}`;
   }
   queueReceiptSoon(w.id); // the receipt goes to the customer by e-mail by itself (a few minutes after the last piece)
@@ -256,6 +256,17 @@ export const notifyEmail = act("notifyEmail", async (wr: string, kind: string, r
   if (err) back(to, { err: `Not sent: ${err}` });
   back(to, { ok: "E-mail sent to the customer." });
 });
+// Administrator only (it is not in the rights table of act()): a cargo shipped by mistake goes back to "open", so pieces can be unloaded, moved or added and the cargo shipped again.
+// Refused once a piece was received at the destination. The customers' "in transit" e-mails and the website tracking cannot be taken back.
+export const reopenShipment = act("reopenShipment", async (name: string) => {
+  const sh = db.shipments.find((x) => x.name === name), to = `/warehouse/shipments/${encodeURIComponent(name)}`;
+  if (!sh?.shipped) back(to, { err: "This shipment has not shipped." });
+  if (db.loads.some((l) => l.shipment === name && l.here)) back(to, { err: "Some pieces were already received at the destination. On the arrivals page use \"Scanned a piece by mistake?\" for each of them first." });
+  sh!.shipped = undefined; sh!.shippedBy = undefined;
+  const ids = new Set(db.loads.filter((l) => l.shipment === name).map((l) => l.wr));
+  db.items.forEach((i) => { if (i.wr && ids.has(i.wr)) i.shipped = false; });
+  back(to, { ok: `${name} is open again: you can unload, move or add pieces, then ship it again. The customers who were told "in transit" keep that e-mail.` });
+});
 // "Notify by e-mail" on a shipment: tells every customer on it that it left Miami.
 export const notifyShipmentEmail = act("notifyShipmentEmail", async (name: string) => {
   const to = `/warehouse/shipments/${encodeURIComponent(name)}`;
@@ -266,6 +277,8 @@ export const notifyShipmentEmail = act("notifyShipmentEmail", async (name: strin
   for (const id of ids) { const w = db.wrs.find((x) => x.id === id); if (!w) continue; (await emailStatus(w, "shipped")) ? bad++ : ok++; }
   back(to, bad ? { err: `${ok} e-mail(s) sent, ${bad} could not be sent (no usable e-mail or the mail service refused).` } : { ok: `${ok} e-mail(s) sent: the customers know the shipment left ${shToUSA(db.shipments.find((x) => x.name === name)) ? "Haiti" : "Miami"}.` });
 });
+// Once a receipt has an invoice, what the invoice is made of cannot change by itself: cancel the invoice first (payments are not affected).
+const invoiceLock = (w: WR, what: string) => (w.invoice ? `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change ${what}.` : "");
 export const updateWR = act("updateWR", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
@@ -279,6 +292,10 @@ export const updateWR = act("updateWR", async (f: F) => {
   const rate = s(f, "rate") === "" || (destChanged && num(f, "rate") === r2(w.rate ?? 0)) ? rateFor(custOf(w), ship, dest) : num(f, "rate");
   if (!Number.isFinite(rate) || rate < 0 || rate > 1000) back(wrPath(w.id), { err: "Enter a rate of 0 or more." });
   if (destChanged && toUSA({ dest }) !== toUSA(w) && w.pieces.some((p) => db.loads.some((l) => l.no === p.no))) back(wrPath(w.id), { err: "Some pieces are already loaded on a shipment, so the direction (to Haiti / to Miami) can't change." });
+  if (w.invoice) {
+    const changed = r2(rate) !== r2(w.rate ?? 0) || declared !== w.declared || (s(f, "insurance") === "Accepted" ? "Accepted" : "Declined") !== w.insurance || (s(f, "estimate") === "yes") !== !!w.estimate;
+    if (changed) back(wrPath(w.id), { err: invoiceLock(w, "the rate, the value, the insurance or the estimate mark") });
+  }
   const bad = applyShip(w, ship);
   if (bad) back(wrPath(w.id), { err: bad });
   Object.assign(w, {
@@ -308,6 +325,7 @@ const feeProblem = (label: string, amount: number) => {
 export const addFee = act("addFee", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
+  if (w.invoice) back(wrPath(w.id), { err: invoiceLock(w, "its fees") });
   const label = s(f, "label"), amount = num(f, "amount"), kind = feeKind(s(f, "kind"));
   const bad = feeProblem(label, amount);
   if (bad) back(wrPath(w.id), { err: bad });
@@ -321,6 +339,7 @@ export const addFee = act("addFee", async (f: F) => {
 export const saveFees = act("saveFees", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
+  if (w.invoice) back(wrPath(w.id), { err: invoiceLock(w, "its fees") });
   const next: Fee[] = [];
   for (const fee of w.fees) {
     const label = s(f, `label_${fee.id}`), amount = num(f, `amount_${fee.id}`), kind = feeKind(s(f, `kind_${fee.id}`));
@@ -337,6 +356,7 @@ export const saveFees = act("saveFees", async (f: F) => {
 export const deleteFee = act("deleteFee", async (wr: string, fee: number) => {
   const w = db.wrs.find((x) => x.id === wr);
   if (!w) return;
+  if (w.invoice) back(wrPath(w.id), { err: invoiceLock(w, "its fees") });
   const next = w.fees.filter((x) => x.id !== fee);
   if (tooMuchCredit(w, next)) back(wrPath(w.id), { err: "Remove the credit first: it would be more than the remaining charges." });
   w.fees = next;
@@ -431,7 +451,7 @@ function pieceInput(f: F) {
   const contents = s(f, "contents");
   if (!contents) return "Enter what is inside this piece (declared contents).";
   if (contents.length > 120) return "The contents are too long (120 characters max).";
-  return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs, contents, old: false };
+  return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs, contents, old: false, rd: 0 };
 }
 // A piece can't be added, changed or deleted once the receipt is invoiced: the invoice amount would change by itself.
 const invoicedPieces = (w: WR) => `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change its pieces.`;
@@ -488,7 +508,7 @@ export const createInvoice = act("createInvoice", async (f: F) => {
   if (!w) return;
   if (w.estimate) back(wrPath(w.id), { err: 'This receipt is marked as an estimate. Untick "estimate" in the details when the real weights are in, then invoice it.' });
   if (!w.pieces.length && charges(w) <= 0) back(wrPath(w.id), { err: "Add at least one piece or one fee before invoicing." });
-  if (!w.invoice) { for (const p of w.pieces) p.old ??= false; /* this invoice is made with today's formulas: never switch it to the old ones */ w.invoice = `INV-${db.n.inv++}`; w.invoiceDate = nowStr(); }
+  if (!w.invoice) { for (const p of w.pieces) { p.old ??= false; p.rd ??= 0; } /* this invoice is made with today's formulas: never switch it to the old ones */ w.invoice = `INV-${db.n.inv++}`; w.invoiceDate = nowStr(); }
   back(wrPath(w.id), { ok: `Invoice ${w.invoice} created.` });
 });
 export const addPayment = act("addPayment", async (f: F) => {
@@ -761,7 +781,7 @@ export const estimateToReceipt = act("estimateToReceipt", async (f: F) => {
   if (inp.credit > charge) fail("The credit is more than the charges.");
   const c = findCustomer(inp.customer) ?? newCustomer(inp.customer);
   const w = openWR(c, ship, { estimate: true, ...(DESTINATIONS.includes(s(f, "dest")) && { dest: s(f, "dest") }), rate: opt.rate, declared: inp.declared, insurance: inp.insure && inp.declared > 0 ? "Accepted" : "Declined" });
-  for (const r of inp.rows) for (let k = 0; k < r.qty; k++) w.pieces.push({ no: db.n.piece++, type: "BOX - OTHER", l: r.l, w: r.w, h: r.h, lbs: r.lbs, contents: r.contents, by: actor(), old: false });
+  for (const r of inp.rows) for (let k = 0; k < r.qty; k++) w.pieces.push({ no: db.n.piece++, type: "BOX - OTHER", l: r.l, w: r.w, h: r.h, lbs: r.lbs, contents: r.contents, by: actor(), old: false, rd: 0 });
   // Handling: Ocean already got its automatic line; use the amount of the estimate. Air gets one only when the estimate has it.
   const handling = ship === "Ocean" ? inp.handlingOcean : inp.handlingAir;
   const auto = w.fees.find((x) => x.auto === "handling");
@@ -846,7 +866,7 @@ export const shipCargo = act("shipCargo", async (f: F) => {
   mine.forEach((i) => { i.shipped = true; });
   // Tracking website: status 1 "in transit / customs" for every linked parcel of these receipts.
   let failed = 0;
-  if (!shToUSA(sh)) for (const i of mine) if (i.clientId && await pushStatus({ tracking: i.tracking, status: 1, clientId: i.clientId })) failed++; // the website only knows Miami -> Haiti
+  if (!shToUSA(sh) || siteUSA()) for (const i of mine) if (i.clientId && await pushStatus({ tracking: i.tracking, status: 1, clientId: i.clientId, ...(shToUSA(sh) && { direction: "US" as const }) })) failed++; // Haiti -> Miami only when the website knows that direction
   // E-mails by themselves: the receipt (PDF) to every customer of this shipment, and "in transit" to the customers with no website account.
   for (const id of wrIds) { const w = db.wrs.find((x) => x.id === id); if (!w) continue; queueMail(() => emailReceipt(w, `shipment ${sh.name} shipped`)); emailHaiti(w, "shipped"); }
   back(PL, { ...q, ok: `${sh.name} shipped (Cargo ID ${sh.cargoId}).`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
@@ -862,7 +882,7 @@ async function syncArrived(wrIds: string[]) {
   for (const id of wrIds) {
     const w = db.wrs.find((x) => x.id === id);
     if (!w || !w.pieces.length || !w.pieces.every((p) => db.loads.some((l) => l.no === p.no && l.here))) continue;
-    if (!toUSA(w)) for (const i of db.items) if (i.wr === id && i.clientId && await pushStatus({ tracking: i.tracking, status: 2, clientId: i.clientId })) failed++;
+    if (!toUSA(w) || siteUSA()) for (const i of db.items) if (i.wr === id && i.clientId && await pushStatus({ tracking: i.tracking, status: 2, clientId: i.clientId, ...(toUSA(w) && { direction: "US" as const }) })) failed++;
     emailHaiti(w, "arrived"); // customers with no website account (the others get the website's push + e-mail), and always for cargo arriving in Miami
     if (syncEnabled() || mailEnabled()) w.hereNotified = true; // the customer is told by itself: nothing to press
   }
@@ -910,7 +930,7 @@ export const markReady = act("markReady", async (f: F) => {
   if (!w) return;
   w.ready = true;
   let failed = 0;
-  if (!toUSA(w)) for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId })) failed++;
+  if (!toUSA(w) || siteUSA()) for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId, ...(toUSA(w) && { direction: "US" as const }) })) failed++;
   emailHaiti(w, "ready");
   back(arPath(toUSA(w)), { ok: `${wrCode(w)} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });

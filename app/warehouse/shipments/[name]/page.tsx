@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { db, openBooking, cargoOf, wrCode, r2, shToUSA, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
-import { saveBooking, notifyShipmentEmail } from "@/lib/wh-actions";
+import { currentUser } from "@/lib/users";
+import { ConfirmSubmit } from "@/components/confirm-submit";
+import { saveBooking, notifyShipmentEmail, reopenShipment } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -30,6 +32,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <Link href={`${base}/bol`} className={lnk}>Bill of Lading</Link>
           <Link href={`${base}/sli`} className={lnk}>Letter of Instruction</Link>
           <Link href={`${base}/cargo`} className={lnk}>Cargo list</Link>
+          {sh.shipped && (await currentUser())?.admin && <form><ConfirmSubmit formAction={reopenShipment.bind(null, name)} message={`Reopen ${name}? Use this only for a cargo shipped by mistake. Customers already told "in transit" keep that e-mail.`} className="!bg-white !text-zinc-800 border border-zinc-300">Reopen (shipped by mistake)</ConfirmSubmit></form>}
           {sh.shipped && <form><button formAction={notifyShipmentEmail.bind(null, name)} className={`${lnk} !border-brand !bg-brand !text-white`}>Notify by e-mail</button></form>}
         </div>
       </div>
