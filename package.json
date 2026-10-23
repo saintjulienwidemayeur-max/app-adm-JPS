@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "audit": "npx tsx docs/audit-calculs.ts && npx tsx docs/audit-documents.mts",
+    "check": "npm run typecheck && npm run audit"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",

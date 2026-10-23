@@ -6,7 +6,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
 import { DISCLAIMER, ESTIMATE_NOTE } from "./disclaimer";
 import { COMPANY, HAITI } from "./company";
 import { cardFees } from "./pricing";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, docLines, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
 
 const MAP: Record<string, string> = { "−": "-", "–": "-", "—": "-", "·": "-", "•": "*", "‘": "'", "’": "'", "“": '"', "”": '"', "…": "...", "→": "->", "×": "x", "≥": ">=", "€": "EUR", " ": " " };
 const safe = (s: unknown) => String(s ?? "").normalize("NFC").replace(/[^\x20-\x7e¡-ÿ]/g, (c) => MAP[c] ?? (c === "\n" ? " " : "?"));
@@ -106,21 +106,21 @@ export async function receiptPdf(w: WR): Promise<Uint8Array> {
   d.para(contentsOf(w) || "-", M, CW, 9.5, { gap: 4 });
   d.para(w.insurance === "Declined" ? "CUSTOMER DECLINED INSURANCE COVERAGE" : w.declared > 0 ? `INSURANCE ACCEPTED - declared value ${money(w.declared)}` : "INSURANCE ACCEPTED (no declared value)", M, CW, 10, { bold: true, gap: 2 });
   if (w.comments) d.para(`Comments: ${w.comments}`, M, CW, 9.5, { gap: 4 });
-  if (w.estimate) {
-    d.y -= 4; d.para("Estimate", M, CW, 13, { bold: true, color: BLUE, gap: 2 });
-    const rows: [string, string][] = [];
-    if (freightFee(w) > 0) rows.push([`${freightDesc(w)} (${freightQty(w)} x ${money(w.rate ?? 0)})`, money(freightFee(w))]);
-    for (const f of w.fees) rows.push([f.label, `${f.kind === "credit" ? "-" : ""}${money(f.amount)}`]);
-    if (insuranceFee(w) > 0) rows.push(["Certificate of insurance", money(quote(w).customer)]);
-    for (const [k, v] of rows) d.row([{ w: CW - 90, t: k }, { w: 90, t: v, right: true }], 9);
+  // Charges and credits on every receipt (not only estimates): the same lines as the invoice.
+  {
+    d.y -= 4; d.para(w.estimate ? "Estimate" : "Charges and credits", M, CW, 13, { bold: true, color: BLUE, gap: 2 });
+    const dl = docLines(w);
+    if (!dl.length) d.para("No fees on this receipt yet.", M, CW, 9, { color: GREY, gap: 2 });
+    for (const l of dl) d.row([{ w: CW - 90, t: l.qty !== undefined ? `${l.desc} (${l.qty} x ${money(l.rate ?? 0)})` : l.desc }, { w: 90, t: `${l.amount < 0 ? "-" : ""}${money(Math.abs(l.amount))}`, right: true }], 9);
     d.y -= 4;
     const sum: [string, string, boolean?][] = [];
     if (credits(w) > 0) sum.push(["Charges", money(charges(w) + insuranceFee(w))], ["Credits", `-${money(credits(w))}`]);
-    sum.push(["Total", money(total(w)), true], ["Paid", money(paidAmt(w))], ["Balance", money(balance(w))], ["Status", payStatus(w)]);
+    sum.push([w.estimate ? "Estimated total" : "Total", money(total(w)), true], ["Paid", money(paidAmt(w))], ["Balance", money(balance(w))], ["Status", payStatus(w)]);
     for (const [k, v, b] of sum) { d.need(14); d.text(k, d.W - M - 190, 10, { bold: !!b }); d.text(v, 0, 10, { bold: !!b, right: d.W - M }); d.y -= 14; }
-    if (balance(w) > 0) { const card = cardFees(balance(w)); d.y -= 4; d.para(`If paying with credit card: card present ${money(card.present.total)} - pay online ${money(card.invoice.total)}`, M, CW, 9, { color: GREY, gap: 4 }); }
-    d.para(ESTIMATE_NOTE, M, CW, 8.5, { gap: 4 });
-  } else d.para("This receipt confirms what JP's received. The final invoice is issued when the shipment has cleared customs and been delivered to our destination office.", M, CW, 8.5, { color: GREY, gap: 4 });
+    if (balance(w) > 0) { const card = cardFees(balance(w)); d.y -= 4; d.para(`If paying with credit card: card present ${money(card.present.total)} - pay online ${money(card.invoice.total)}`, M, CW, 9, { gap: 2 }); }
+    if (w.estimate) d.para(ESTIMATE_NOTE, M, CW, 8.5, { gap: 4 });
+    else d.para("This receipt confirms what JP's received. The final invoice is issued when the shipment has cleared customs and been delivered to our destination office.", M, CW, 8.5, { color: GREY, gap: 4 });
+  }
   d.y -= 6; d.need(30); d.text("THANK YOU FOR YOUR BUSINESS", 0, 13, { bold: true, color: GREY, right: d.W / 2 + d.width("THANK YOU FOR YOUR BUSINESS", 13, true) / 2 }); d.y -= 22;
   d.para("***** Disclaimer *****", M, CW, 10, { bold: true, color: GREY, gap: 2 });
   for (const t of DISCLAIMER) d.para("- " + t, M, CW, 7.6, { color: GREY });
@@ -133,12 +133,7 @@ export async function invoicePdf(w: WR): Promise<Uint8Array> {
   const lbs = r2(w.pieces.reduce((a, p) => a + p.lbs, 0));
   const shipment = db.loads.find((l) => l.wr === w.id)?.shipment ?? "";
   const ref = ` - Ref. WR: ${w.id} - (${lbs} lbs) - Number Of Pieces: ${w.pieces.length}`;
-  type Line = { desc: string; amount: number; qty?: number; rate?: number };
-  const lines: Line[] = [
-    ...(freightFee(w) > 0 ? [{ desc: freightDesc(w), amount: freightFee(w), qty: freightQty(w), rate: w.rate }] : []),
-    ...w.fees.map((f) => ({ desc: f.label + (/freight/i.test(f.label) ? ref : ""), amount: f.kind === "credit" ? -f.amount : f.amount })),
-    ...(insuranceFee(w) > 0 ? [{ desc: `Certificate of insurance - Ref. WR: ${w.id} - declared value ${money(w.declared)}`, amount: quote(w).customer }] : []),
-  ];
+  const lines = docLines(w);
   d.header([COMPANY.name, `${COMPANY.address}, ${COMPANY.city}`, COMPANY.phone]);
   d.text(`Invoice ${w.invoice ?? ""}`, 0, 20, { bold: true, color: BLUE, right: d.W - M }); d.y -= 30;
   const meta: [string, string][] = [["Invoice date", w.invoiceDate ?? w.date], ["Shipment ID", shipment || "-"], ["Receipt", wrCode(w)], ["Type", w.ship], ["Status", payStatus(w)], ["Representative", repOf(w.rep)?.initials ?? "-"]];

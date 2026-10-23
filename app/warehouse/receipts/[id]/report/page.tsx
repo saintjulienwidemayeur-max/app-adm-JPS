@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, freightFee, freightQty, freightDesc, contentsOf } from "@/lib/wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, docLines, custOf, shipperOf, receiverOf, freightFee, freightQty, freightDesc, contentsOf } from "@/lib/wh-store";
 import { DISCLAIMER, ESTIMATE_NOTE } from "@/lib/disclaimer";
 import { cardFees } from "@/lib/pricing";
 import { PrintButton } from "@/components/print-button";
@@ -20,7 +20,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const cf = r2(w.pieces.reduce((a, p) => a + cuft(p), 0));
   const chg = r2(w.pieces.reduce((a, p) => a + chargeable(p), 0));
   const ins = quote(w);
-  const card = cardFees(balance(w));
+  const card = cardFees(balance(w)), lines = docLines(w);
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 text-sm">
       <div className="no-print mb-3 flex gap-4"><Link href={`/warehouse/receipts/${w.id}`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 font-medium hover:bg-zinc-100">← Back to the receipt</Link><Link href="/warehouse/receipts" className="inline-flex h-9 items-center text-brand underline">All receipts</Link></div>
@@ -80,37 +80,33 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       </p>
       {w.comments && <p className="mt-1 text-center"><b>Comments:</b> {w.comments}</p>}
 
-      {w.estimate ? (
-        <section className="mt-4">
-          <h2 className="text-center text-lg font-bold">Estimate</h2>
-      {(w.fees.length > 0 || insuranceFee(w) > 0 || freightFee(w) > 0) && (
-        <table className="ml-auto mt-4 w-full max-w-sm">
-          <tbody>
-            {freightFee(w) > 0 && <tr><td className="px-2 py-0.5">{freightDesc(w)} <span className="text-xs text-zinc-500">({freightQty(w)} × {money(w.rate ?? 0)})</span></td><td className="px-2 py-0.5 text-right">{money(freightFee(w))}</td></tr>}
-            {w.fees.map((f) => <tr key={f.id}><td className="px-2 py-0.5">{f.label}</td><td className="px-2 py-0.5 text-right">{f.kind === "credit" ? "−" : ""}{money(f.amount)}</td></tr>)}
-            {insuranceFee(w) > 0 && <tr><td className="px-2 py-0.5">Certificate of insurance</td><td className="px-2 py-0.5 text-right">{money(ins.customer)}</td></tr>}
-          </tbody>
-        </table>
-      )}
-      <dl className="ml-auto mt-2 grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1 border-t-2 border-black px-2 pt-2">
-        {credits(w) > 0 && <><dt>Charges</dt><dd className="text-right">{money(charges(w) + insuranceFee(w))}</dd><dt>Credits</dt><dd className="text-right">−{money(credits(w))}</dd></>}
-        <dt className="font-bold">Total</dt><dd className="text-right font-bold">{money(total(w))}</dd>
-        <dt>Paid</dt><dd className="text-right">{money(paidAmt(w))}</dd>
-        <dt>Balance</dt><dd className="text-right">{money(balance(w))}</dd>
-        <dt>Status</dt><dd className="text-right">{payStatus(w)}</dd>
-      </dl>
-
-      {balance(w) > 0 && (
-        <div className="ml-auto mt-4 max-w-xs border-2 border-black p-2">
-          <div className="text-center font-semibold">If Paying with Credit Card</div>
-          <div className="flex justify-between"><span>Card Present</span><b>{money(card.present.total)}</b></div>
-          <div className="flex justify-between"><span>Pay Online</span><b>{money(card.invoice.total)}</b></div>
-        </div>
-      )}
-
-          <p className="mt-3 border border-zinc-400 p-2 text-xs font-medium">{ESTIMATE_NOTE}</p>
-        </section>
-      ) : <p className="mt-4 text-center text-xs text-zinc-600">This receipt confirms what JP&apos;s received. The final invoice is issued when the shipment has cleared customs and been delivered to our destination office.</p>}
+      <section className="mt-4">
+        <h2 className="text-center text-lg font-bold">{w.estimate ? "Estimate" : "Charges and credits"}</h2>
+        {lines.length > 0 ? (
+          <table className="ml-auto mt-3 w-full">
+            <tbody>
+              {lines.map((l, i) => <tr key={i} className="border-b border-zinc-200"><td className="px-2 py-0.5">{l.desc}{l.qty !== undefined && <span className="text-xs text-zinc-500"> ({l.qty} × {money(l.rate ?? 0)})</span>}</td><td className="px-2 py-0.5 text-right">{l.amount < 0 ? "−" : ""}{money(Math.abs(l.amount))}</td></tr>)}
+            </tbody>
+          </table>
+        ) : <p className="mt-2 text-center text-xs text-zinc-600">No fees on this receipt yet.</p>}
+        <dl className="ml-auto mt-2 grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1 border-t-2 border-black px-2 pt-2">
+          {credits(w) > 0 && <><dt>Charges</dt><dd className="text-right">{money(charges(w) + insuranceFee(w))}</dd><dt>Credits</dt><dd className="text-right">−{money(credits(w))}</dd></>}
+          <dt className="font-bold">{w.estimate ? "Estimated total" : "Total"}</dt><dd className="text-right font-bold">{money(total(w))}</dd>
+          <dt>Paid</dt><dd className="text-right">{money(paidAmt(w))}</dd>
+          <dt>Balance</dt><dd className="text-right">{money(balance(w))}</dd>
+          <dt>Status</dt><dd className="text-right">{payStatus(w)}</dd>
+        </dl>
+        {balance(w) > 0 && (
+          <div className="ml-auto mt-4 max-w-xs border-2 border-black p-2">
+            <div className="text-center font-semibold">If Paying with Credit Card</div>
+            <div className="flex justify-between"><span>Card Present</span><b>{money(card.present.total)}</b></div>
+            <div className="flex justify-between"><span>Pay Online</span><b>{money(card.invoice.total)}</b></div>
+          </div>
+        )}
+        {w.estimate
+          ? <p className="mt-3 border border-zinc-400 p-2 text-xs font-medium">{ESTIMATE_NOTE}</p>
+          : <p className="mt-3 text-center text-xs text-zinc-600">This receipt confirms what JP&apos;s received. The final invoice is issued when the shipment has cleared customs and been delivered to our destination office.</p>}
+      </section>
 
       <p className="mt-8 text-center text-xl font-bold text-zinc-700">THANK YOU FOR YOUR BUSINESS</p>
       <h2 className="mt-3 text-center text-lg font-bold text-zinc-700">***** Disclaimer *****</h2>

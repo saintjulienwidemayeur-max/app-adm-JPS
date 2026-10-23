@@ -99,3 +99,8 @@ Type the customer on Received items (optional): the parcel is created on the cus
 - A receipt with an invoice cannot change its rate, value, insurance, estimate mark, fees or pieces: cancel the invoice first (payments are not affected).
 - Administrators can **Reopen** a shipped cargo (shipment page) while no piece has been received at the destination.
 - Website direction for parcels going to the USA: run SQL section 16 of the website schema, deploy the new `send-notifications` function and website page, then tick the box in Fees & rates.
+
+## Checks (run them before every merge)
+- `npm run check`: type check + calculation audit (`docs/audit-calculs.ts`) + document audit (`docs/audit-documents.mts`: every fee, credit and the total must appear on the receipt and invoice PDFs). The same runs on every pull request (`.github/workflows/check.yml`).
+- `BASE=... node docs/smoke.mjs`: opens every page of the menu on a running app and fails on a blank page, an error page or an empty one.
+- Receipts and invoices show their lines from ONE function, `docLines(w)` in `lib/wh-store.ts` (receipt page, receipt PDF, invoice page, invoice PDF): add a new kind of line there and every document follows.

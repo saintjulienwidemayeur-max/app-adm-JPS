@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { markInvoiceSent, cancelInvoice } from "@/lib/wh-actions";
-import { db, custOf, repOf, wrCode, total, paidAmt, balance, payStatus, money, insuranceFee, quote, r2, freightFee, freightQty, freightDesc } from "@/lib/wh-store";
+import { db, docLines, custOf, repOf, wrCode, total, paidAmt, balance, payStatus, money, insuranceFee, quote, r2, freightFee, freightQty, freightDesc } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
 import { shortDate } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
@@ -16,13 +16,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const shipment = db.loads.find((l) => l.wr === w.id)?.shipment ?? "";
   // Freight lines say which receipt, weight and pieces they are for, like the old invoice.
   const ref = ` - Ref. WR: ${w.id} - (${lbs} lbs) - Number Of Pieces: ${w.pieces.length}`;
-  type Line = { desc: string; amount: number; qty?: number; rate?: number };
-  const lines: Line[] = [
-    // The freight line is automatic: Air = chargeable lbs x rate, Ocean = cubic feet x rate.
-    ...(freightFee(w) > 0 ? [{ desc: freightDesc(w), amount: freightFee(w), qty: freightQty(w), rate: w.rate }] : []),
-    ...w.fees.map((f) => ({ desc: f.label + (/freight/i.test(f.label) ? ref : ""), amount: f.kind === "credit" ? -f.amount : f.amount })),
-    ...(insuranceFee(w) > 0 ? [{ desc: `Certificate of insurance - Ref. WR: ${w.id} - declared value ${money(w.declared)}`, amount: quote(w).customer }] : []),
-  ];
+  const lines = docLines(w);
   const card = cardFees(balance(w));
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 text-sm">
