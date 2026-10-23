@@ -219,10 +219,15 @@ export const createWR = act("createWR", async (f: F) => {
   if (!name) back("/warehouse/receipts", { err: "Choose or enter the customer." });
   const like = !findCustomer(name) && s(f, "newcust") !== "yes" ? similarCustomers(name) : [];
   if (like.length) back("/warehouse/receipts", { err: `There is no customer "${name}". Did you mean ${like.map((x) => `${x.name} (${x.no})`).join(" or ")}? Fix the name, or tick "New customer" to create "${name}" as a different person.` });
+  // The first boxes can be typed here too (same size and weight, Qty of them): checked BEFORE anything is created.
+  const withBoxes = ["l", "w", "h", "lbs", "contents"].some((k) => s(f, k)), box = withBoxes ? pieceInput(f) : undefined, qty = Math.round(num(f, "qty") || 1);
+  if (typeof box === "string") back("/warehouse/receipts", { err: `${box} (or leave the boxes empty to add them on the receipt page).` });
+  if (withBoxes && (!Number.isFinite(qty) || qty < 1 || qty > 100)) back("/warehouse/receipts", { err: "Number of boxes: from 1 to 100." });
   const c = findCustomer(name) ?? newCustomer(name);
   const route = s(f, "route").toUpperCase();
   const w = openWR(c, shipOf(s(f, "ship")), { comments: s(f, "comments"), ...(route && { route }), ...(s(f, "dest") === US_DEST && { dest: US_DEST }) });
-  back(wrPath(w.id));
+  if (box && typeof box !== "string") { for (let i = 0; i < qty; i++) w.pieces.push({ no: db.n.piece++, ...box, by: actor(), old: false, rd: 0 }); queueReceiptSoon(w.id); }
+  back(wrPath(w.id), box && typeof box !== "string" ? { ok: `Receipt created with ${qty} box${qty === 1 ? "" : "es"}.` } : {});
 });
 // Changes the ship type of a receipt (JPF <-> JPL). Ocean gets its standard handling fee automatically; going back to Air removes it
 // (only the automatic line: a fee staff edited stays) and the standard rate of the new method applies.

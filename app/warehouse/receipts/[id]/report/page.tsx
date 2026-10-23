@@ -24,6 +24,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 text-sm">
       <div className="no-print mb-3 flex gap-4"><Link href={`/warehouse/receipts/${w.id}`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 font-medium hover:bg-zinc-100">← Back to the receipt</Link><Link href="/warehouse/receipts" className="inline-flex h-9 items-center text-brand underline">All receipts</Link></div>
+      {w.pieces.length === 0 && <p role="alert" className="no-print mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-900">This receipt has no pieces yet. <Link href={`/warehouse/receipts/${w.id}#pieces`} className="underline">Add the boxes on the receipt page</Link>, then come back here.</p>}
       <div className="flex items-start justify-between gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="JP's Logistics & More" className="h-16 w-auto" />
