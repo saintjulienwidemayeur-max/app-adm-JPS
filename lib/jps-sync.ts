@@ -40,18 +40,18 @@ export async function findClientId(who: string): Promise<{ id?: string; name?: s
 
 // Creates the shipment (status 0) or moves it forward. Never moves a parcel backwards.
 // Returns an error message, or null when it worked.
-export async function pushStatus(a: { tracking: string; status: Status; clientId?: string; type?: "Air" | "Ocean"; description?: string }): Promise<string | null> {
+export async function pushStatus(a: { tracking: string; status: Status; clientId?: string; type?: "Air" | "Ocean"; description?: string; direction?: "US" }): Promise<string | null> {
   const c = client();
   if (!c) return null;
   const ex = await c.from("shipments").select("id,status").eq("tracking_number", a.tracking).maybeSingle();
   if (ex.error) return ex.error.message;
   if (ex.data) {
     if (ex.data.status >= a.status) return null;
-    const u = await c.from("shipments").update({ status: a.status, updated_at: new Date().toISOString() }).eq("id", ex.data.id);
+    const u = await c.from("shipments").update({ status: a.status, updated_at: new Date().toISOString(), ...(a.direction && { direction: a.direction }) }).eq("id", ex.data.id);
     return u.error?.message ?? null;
   }
   if (!a.clientId) return "no client linked";
-  const i = await c.from("shipments").insert({ client_id: a.clientId, tracking_number: a.tracking, type: a.type === "Ocean" ? "Mer" : "Air", description: a.description ?? null, status: a.status });
+  const i = await c.from("shipments").insert({ client_id: a.clientId, tracking_number: a.tracking, type: a.type === "Ocean" ? "Mer" : "Air", description: a.description ?? null, status: a.status, ...(a.direction && { direction: a.direction }) });
   return i.error?.message ?? null;
 }
 

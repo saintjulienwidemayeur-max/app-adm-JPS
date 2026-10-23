@@ -4,7 +4,7 @@ import { estimate, parseEstimate } from "../lib/estimate";
 
 let pass = 0, fail = 0; const bad: string[] = [];
 const eq = (name: string, a: number, b: number, tol = 0.005) => { if (Math.abs(a - b) <= tol) pass++; else { fail++; bad.push(`${name}: got ${a}, expected ${b}`); } };
-const R = (n: number) => Math.round(n * 100) / 100;
+const R = (n: number) => Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-7) / 100; // half a cent rounds up
 
 // A. insurance
 for (const [d, want] of [[0, 0], [100, 50], [1000, 50], [2000, 50], [2213, 50], [2214, 77.49], [5000, 175], [10000, 350]] as const) eq(`insurance(${d})`, calcInsurance(d).customer, want);
@@ -117,4 +117,14 @@ eq("compare popup ignores the hand-typed Air handling", estimateFor(w4, "Ocean")
   w.declared = 3000; eq("total = freight + insurance", total(w), R(freightFee(w) + 105));
   w.fees.push({ id: db.n.fee++, label: "Discount", amount: 5000, kind: "credit" }); eq("credits cannot make the total negative", total(w), 0);
 }
+// ---- Rounding: half a cent rounds up; invoiced (legacy) pieces keep the old rounding ----
+{
+  const wNew = openWR(db.customers[0] ?? newCustomer("Rounding test"), "Air", { rate: 4.5 });
+  wNew.pieces.push({ no: 990001, type: "BOX", l: 1, w: 1, h: 1, lbs: 1.13, contents: "x", old: false, rd: 0 });
+  eq("5.085 rounds up to 5.09 (new receipt)", freightFee(wNew), 5.09);
+  const wOld = openWR(db.customers[0] ?? newCustomer("Rounding test"), "Air", { rate: 4.5 });
+  wOld.pieces.push({ no: 990002, type: "BOX", l: 1, w: 1, h: 1, lbs: 1.13, contents: "x", old: false, rd: 1 });
+  eq("5.085 stays 5.08 on an already invoiced receipt (rd=1)", freightFee(wOld), 5.08);
+}
+
 console.log(`final: passed ${pass}, failed ${fail}`); if (bad.length) console.log(bad.slice(0, 20).join("\n"));

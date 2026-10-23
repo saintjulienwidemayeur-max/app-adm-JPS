@@ -28,3 +28,10 @@ export const saveRates = act("saveRates", async (f: FormData) => {
   db.settings.rates = rates;
   redirect(`${PAGE}?ok=${encodeURIComponent("Rates saved. They apply to the receipts made from now on and when a receipt's destination or ship type is changed. Receipts already made keep their rate.")}`);
 });
+
+// Haiti -> Miami on the website: when ticked, parcels going to the USA get their tracking (status and push) on the website like the others.
+export const saveSiteDirection = act("saveSiteDirection", async (f: FormData) => {
+  await requireAdmin();
+  db.settings.siteDirection = f.get("siteDirection") === "on";
+  redirect(`${PAGE}?ok=${encodeURIComponent(db.settings.siteDirection ? "Saved: parcels going to the USA now appear on the website's tracking." : "Saved: parcels going to the USA are only e-mailed from here.")}`);
+});

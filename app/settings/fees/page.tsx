@@ -1,6 +1,6 @@
 import { db, money, DESTINATIONS, destLabel, AIR_RATE, OCEAN_RATE } from "@/lib/wh-store";
 import { requireAdmin } from "@/lib/users";
-import { saveFeeSettings, saveRates } from "@/lib/settings-actions";
+import { saveFeeSettings, saveRates, saveSiteDirection } from "@/lib/settings-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -26,6 +26,12 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <td className="px-2 py-1"><Input name={`air_${i}`} type="number" step="0.01" min="0.01" required defaultValue={(s.rates?.[d]?.air ?? AIR_RATE).toFixed(2)} className="ml-auto w-28 text-right" aria-label={`${d} Air rate`} /></td>
               <td className="px-2 py-1"><Input name={`ocean_${i}`} type="number" step="0.01" min="0.01" required defaultValue={(s.rates?.[d]?.ocean ?? OCEAN_RATE).toFixed(2)} className="ml-auto w-28 text-right" aria-label={`${d} Ocean rate`} /></td></tr>))}</tbody></table>
         <div className="mt-3"><Button type="submit">Save the rates</Button></div>
+      </form>
+      <h2 className="mt-6 font-bold">Website tracking for parcels going to the USA</h2>
+      <p className="text-sm text-zinc-600">By default customers whose parcels go from Haiti to Miami are only told by e-mail from here. Tick this ONLY after the website has been updated for that direction (SQL section 16 of the website, the new <i>send-notifications</i> function and the new page): their parcels then appear on the website&apos;s tracking page with the right steps (received at the Haiti office, in transit, arrived in Miami, ready for pickup).</p>
+      <form action={saveSiteDirection} className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border bg-white p-4">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="siteDirection" defaultChecked={s.siteDirection === true} /> The website knows the Haiti → Miami direction</label>
+        <Button type="submit">Save</Button>
       </form>
       <h2 className="mt-6 font-bold">Storage fee</h2>
       <p className="text-sm text-zinc-600">The terms on every receipt say a storage fee applies after 30 days in the warehouse. The app adds it by itself, as a &quot;Storage fee&quot; line on the receipts whose pieces are still in Miami and that are not invoiced yet. It grows as the days pass and stops when the pieces ship.</p>

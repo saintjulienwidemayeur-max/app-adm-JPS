@@ -93,3 +93,9 @@ Type the customer on Received items (optional): the parcel is created on the cus
 
 ## Documentation
 `docs/guides/` has three printable guides, each in Haitian Creole and in English (6 PDFs): Operations, Platform administration and the Billing system, with screenshots and arrows made from a simulated operation in both apps. `docs/JPS-Rapo-Odit.pdf` is the audit of the calculations and of what the operation needs. `docs/audit-calculs.ts` is the automated check of the calculations (run it with `npx tsx docs/audit-calculs.ts`: 1,618 checks).
+
+## Rounding, invoice lock, reopening a shipment, website direction
+- Cents round half up (1.13 lb × $4.50 = 5.085 → **5.09**). Pieces already invoiced (`rd: 1`) and purchase orders keep the old rounding so nothing billed before moves by a cent; new pieces get `rd: 0`.
+- A receipt with an invoice cannot change its rate, value, insurance, estimate mark, fees or pieces: cancel the invoice first (payments are not affected).
+- Administrators can **Reopen** a shipped cargo (shipment page) while no piece has been received at the destination.
+- Website direction for parcels going to the USA: run SQL section 16 of the website schema, deploy the new `send-notifications` function and website page, then tick the box in Fees & rates.

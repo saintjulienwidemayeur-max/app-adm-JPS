@@ -9,7 +9,7 @@ export const EST_AIR_RATE = 4.5, EST_OCEAN_RATE = 16;
 export const EST_AIR_HANDLING = 35, EST_OCEAN_HANDLING = 45; // minimums printed in the disclaimer
 export const EST_MAX_ROWS = 20;
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
+import { r2 } from "./wh-store";
 export type EstRow = { qty: number; l: number; w: number; h: number; lbs: number; contents: string };
 export type EstInput = {
   customer: string; rows: EstRow[]; incomplete: number[]; rateAir: number; rateOcean: number; handlingAir: number; handlingOcean: number;

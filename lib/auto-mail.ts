@@ -4,7 +4,7 @@
 //     get these from the website: push + e-mail, see jps-sync.pushStatus);
 //   - the invoice (PDF) is sent by the billing app when the invoice is made.
 // Each e-mail is logged (Administration > Email customers > history) and the PDF that was sent is kept (wh_docs).
-import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, paidAmt, money, toUSA, type WR, type Customer } from "./wh-store";
+import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, paidAmt, money, toUSA, siteUSA, type WR, type Customer } from "./wh-store";
 import { flush, saveDoc } from "./persist";
 import { mailOne, mailTo, mailEnabled, findClientId, type MailFile } from "./jps-sync";
 import { usableEmail } from "./mailrules";
@@ -108,7 +108,7 @@ export function emailParcelArrived(c: Customer | undefined, trackings: string[],
 }
 export function emailHaiti(w: WR, kind: "shipped" | "arrived" | "ready") {
   const c = custOf(w);
-  if ((hasAccount(w) && !toUSA(w)) || !c || !usableEmail(c)) return; // cargo to Miami is not on the website's route: always from here
+  if ((hasAccount(w) && (!toUSA(w) || siteUSA())) || !c || !usableEmail(c)) return; // cargo to Miami: from here, unless the website knows that direction
   queueMail(() => emailStatus(w, kind));
 }
 // The same e-mail on demand ("Notify by e-mail" button): sent even if the customer has a website account. Returns an error text, or "".
