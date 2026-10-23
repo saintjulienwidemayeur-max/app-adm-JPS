@@ -57,6 +57,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           {q.err && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{q.err}</p>}
           {q.ok && <p className="mt-2 font-mono text-xs text-green-700">{q.ok} accepted</p>}
           {q.info && <p className="mt-1 text-sm font-semibold text-green-700">{q.info}</p>}
+          {q.made && <p className="mt-1 text-sm font-semibold text-brand">Numbers made for boxes with no tracking: <span className="font-mono">{q.made.split(",").join(", ")}</span> · <Link href={`/warehouse/receiving/labels?codes=${encodeURIComponent(q.made)}`} className="underline">Print their labels</Link> and stick one on each box.</p>}
           {q.warn && <p role="alert" className="mt-1 text-sm font-semibold text-amber-700">{q.warn} <Link href="/warehouse/prealerts" className="underline">Review queue</Link></p>}
         </section>
       )}
@@ -78,7 +79,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           <tbody>{rows.map((i) => (
             <tr key={i.id} className="border-b border-zinc-100">
               <td className={td}>{i.date}</td><td className={td}>{i.receiver || "–"}</td><td className={td}>{i.by || "–"}</td><td className={td}>{i.carrier}</td>
-              <td className={`${td} font-mono text-xs`}>{i.tracking}</td>
+              <td className={`${td} font-mono text-xs`}>{i.tracking}{i.made && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-sans text-amber-900">made here</span>}</td>
               <td className={td}>{i.customer ?? <span className="text-zinc-400">–</span>}{i.customer && !i.clientId && <span className="ml-1 text-xs text-amber-700">· not on website</span>}</td>
               <td className={td}>{i.piece ?? <span className="text-zinc-400">–</span>}</td><td className={td}>{i.shipped ? "Yes" : "No"}</td>
               <td className={td}><details><summary className="cursor-pointer text-brand underline">Edit</summary>

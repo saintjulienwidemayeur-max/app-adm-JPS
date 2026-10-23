@@ -122,6 +122,7 @@ async function load() {
     db.n.mail = top(db.n.mail, db.maillog.map((m) => m.id + 1));
     db.n.user = top(db.n.user, db.users.map((u) => Number(u.id.replace(/\D/g, "")) + 1));
     db.n.audit = top(db.n.audit, db.audit.map((a) => a.id + 1));
+    db.n.nt = top(db.n.nt ?? 1, db.items.filter((i) => i.made).map((i) => Number(i.tracking.replace(/\D/g, "")) + 1));
     db.n.cust = top(db.n.cust, db.customers.map((x) => x.no + 1));
     seen.set(META, metaSeen);
     st.seen = seen;
