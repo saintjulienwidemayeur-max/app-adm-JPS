@@ -74,7 +74,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         ) : <p className="mt-1 text-zinc-600">No customer record.</p>}
       </section>
 
-      <section className="mt-5 rounded-lg border p-3">
+      <section id="pieces" className="mt-5 rounded-lg border p-3">
         <div className="flex items-center justify-between"><h2 className="font-bold">Pieces</h2>
         </div>
         {w.pieces.length > 0 && (
@@ -100,6 +100,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         )}
         <datalist id="custMove">{db.customers.slice(0, 3000).map((c) => <option key={c.no} value={`${c.no}`}>{c.name}</option>)}</datalist>
         {w.invoice && <p className="mt-2 text-xs text-amber-700">Invoiced ({w.invoice}): pieces can't be added or changed. Cancel the invoice first.</p>}
+        {w.pieces.length === 0 && <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">No pieces yet: type the first box below (size, weight, contents and how many) and click &quot;Add piece&quot;. The receipt and its price need at least one piece.</p>}
         <form action={addPiece} className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-[1fr_repeat(5,5rem)_auto]">
           <input type="hidden" name="wr" value={w.id} />
           <Input name="type" placeholder="Type (BOX - OTHER)" className="col-span-4 sm:col-span-1" />

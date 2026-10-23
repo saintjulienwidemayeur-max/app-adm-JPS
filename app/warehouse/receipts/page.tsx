@@ -34,6 +34,13 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
         <select name="dest" aria-label="Going to" className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">To Haiti</option><option value="Miami">To Miami</option></select>
         <Input name="comments" placeholder="Comments" />
         <Button type="submit">New receipt</Button>
+        <div className="col-span-full mt-1 grid gap-2 border-t pt-2 sm:grid-cols-[1fr_1.4fr_repeat(4,4.5rem)_4.5rem]">
+          <p className="col-span-full text-xs text-zinc-600">Optional: type the first boxes now (same size and weight, Qty of them). Otherwise open the receipt and use &quot;Add piece&quot;.</p>
+          <Input name="type" placeholder="Type (BOX - OTHER)" aria-label="Type" />
+          <Input name="contents" placeholder="Contents of the box" maxLength={120} aria-label="Contents" />
+          {["l", "w", "h", "lbs"].map((k) => <Input key={k} name={k} type="number" step="any" min="0" placeholder={k === "lbs" ? "lb each" : k.toUpperCase()} aria-label={k === "lbs" ? "Weight of each box (lb)" : k} />)}
+          <Input name="qty" type="number" step="1" min="1" max="100" defaultValue={1} aria-label="Number of boxes" title="Number of boxes with these measures" />
+        </div>
         <label className="flex items-center gap-1.5 text-xs text-zinc-600 sm:col-span-5"><input type="checkbox" name="newcust" value="yes" /> New customer (tick only if the name is really a new person: a name close to an existing customer is refused, to avoid typos)</label>
         <datalist id="cust">{db.customers.map((c) => <option key={c.no} value={c.name}>{c.no}</option>)}</datalist>
       </form>
