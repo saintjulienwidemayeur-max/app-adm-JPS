@@ -8,12 +8,16 @@ import { Button } from "@/components/ui/button";
 export const metadata = { title: "Warehouse receipts · JP's Logistics" };
 type SP = Promise<Record<string, string | undefined>>;
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
+const PER = 50; // thousands of receipts build up: the page and the table stay light
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
   const needle = (q.q ?? "").trim().toLowerCase();
   const rows = db.wrs.filter((w) => (!q.ship || w.ship === q.ship)
     && (!needle || w.customer.toLowerCase().includes(needle) || String(w.cust) === needle || wrCode(w).toLowerCase().includes(needle)));
+  const pages = Math.max(1, Math.ceil(rows.length / PER)), page = Math.min(pages, Math.max(1, Number(q.page) || 1));
+  const shown = rows.slice((page - 1) * PER, page * PER);
+  const link = (p: number) => `/warehouse/receipts?${new URLSearchParams({ ...(q.q && { q: q.q }), ...(q.ship && { ship: q.ship }), page: String(p) })}`;
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>Warehouse receipts</h1>
@@ -31,13 +35,20 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       {rows.length === 0 ? <p className="mt-6 text-sm text-zinc-600">{db.wrs.length ? "No receipt matches the filter." : "No receipts yet. Create one for a customer above."}</p> : (
         <table className="mt-5 w-full text-left text-sm">
           <thead><tr>{["Receipt", "Date", "Customer", "Ship", "Rep", "Pieces", "Total", "Payment", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
-          <tbody>{rows.map((w) => (
+          <tbody>{shown.map((w) => (
             <tr key={w.id} className="border-b border-zinc-100">
               <td className={`${td} font-semibold`}>{wrCode(w)}</td><td className={td}>{w.date}</td><td className={td}>{w.customer} <span className="text-xs text-zinc-500">#{w.cust}</span></td><td className={td}>{w.ship}</td>
               <td className={td}>{repLabel(w.rep) || "–"}</td><td className={td}>{w.pieces.length}</td><td className={td}>{money(total(w))}</td><td className={td}>{payStatus(w)}</td>
               <td className={td}><Link href={`/warehouse/receipts/${w.id}`} className="text-brand underline">Open</Link></td>
             </tr>))}</tbody>
         </table>
+      )}
+      {pages > 1 && (
+        <div className="mt-3 flex items-center justify-center gap-4 text-sm">
+          {page > 1 ? <Link href={link(page - 1)} className="py-2 text-brand underline">Previous</Link> : <span className="py-2 text-zinc-400">Previous</span>}
+          <span>Page {page} of {pages} ({rows.length.toLocaleString("en-US")} receipts)</span>
+          {page < pages ? <Link href={link(page + 1)} className="py-2 text-brand underline">Next</Link> : <span className="py-2 text-zinc-400">Next</span>}
+        </div>
       )}
     </main>
   );

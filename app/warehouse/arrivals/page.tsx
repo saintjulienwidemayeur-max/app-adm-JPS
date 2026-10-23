@@ -12,14 +12,19 @@ const lnk = "inline-flex h-8 items-center rounded-md border border-zinc-300 bg-w
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
-  const shipped = db.shipments.filter((x) => x.shipped);
-  const loads = db.loads.filter((l) => shipped.some((x) => x.name === l.shipment));
-  const cust = (wr: string) => db.wrs.find((w) => w.id === wr)?.customer ?? "";
-  const code = (wr: string) => { const w = db.wrs.find((x) => x.id === wr); return w ? wrCode(w) : wr; };
-  const expected = shipped.map((sh) => ({ sh, rows: loads.filter((l) => l.shipment === sh.name && !l.here) })).filter((g) => g.rows.length);
-  const hereWrs = [...new Set(loads.filter((l) => l.here).map((l) => l.wr))].map((id) => {
-    const w = db.wrs.find((x) => x.id === id)!;
-    const mine = loads.filter((l) => l.wr === id);
+  const shipped = new Set(db.shipments.filter((x) => x.shipped).map((x) => x.name));
+  const loads = db.loads.filter((l) => shipped.has(l.shipment));
+  // Looked up once: the history holds thousands of receipts and pieces.
+  const wrById = new Map(db.wrs.map((w) => [w.id, w]));
+  const cust = (wr: string) => wrById.get(wr)?.customer ?? "";
+  const code = (wr: string) => { const w = wrById.get(wr); return w ? wrCode(w) : wr; };
+  const byShip = new Map<string, typeof loads>(), byWr = new Map<string, typeof loads>();
+  for (const l of loads) { (byShip.get(l.shipment) ?? byShip.set(l.shipment, []).get(l.shipment)!).push(l); (byWr.get(l.wr) ?? byWr.set(l.wr, []).get(l.wr)!).push(l); }
+  const expected = db.shipments.filter((x) => x.shipped).map((sh) => ({ sh, rows: (byShip.get(sh.name) ?? []).filter((l) => !l.here) })).filter((g) => g.rows.length);
+  const allHere = [...byWr].filter(([id, mine]) => wrById.has(id) && mine.some((l) => l.here));
+  const SHOWN = 100; // the receipts that arrived long ago stay in the history, not on this screen
+  const hereWrs = (q.all === "1" ? allHere : allHere.slice(-SHOWN)).reverse().map(([id, mine]) => {
+    const w = wrById.get(id)!;
     return { w, here: mine.filter((l) => l.here).length, total: mine.length, by: [...new Set(mine.filter((l) => l.here && l.hereBy).map((l) => l.hereBy!))].join(", ") };
   });
   const nExpected = expected.reduce((a, g) => a + g.rows.length, 0);
@@ -44,12 +49,14 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           </div>
           <table className="w-full text-left text-sm">
             <thead><tr>{["WR", "Customer", "Item", "Pallet"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
-            <tbody>{rows.map((l) => <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{code(l.wr)}</td><td className={td}>{cust(l.wr)}</td><td className={td}>{l.no}</td><td className={td}>{l.pallet}</td></tr>)}</tbody>
+            <tbody>{rows.slice(0, 100).map((l) => <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{code(l.wr)}</td><td className={td}>{cust(l.wr)}</td><td className={td}>{l.no}</td><td className={td}>{l.pallet}</td></tr>)}</tbody>
           </table>
+          {rows.length > 100 && <p className="mt-1 text-xs text-zinc-600">The first 100 of {rows.length} pieces are listed. Scan a piece label above, or use Mark all as here.</p>}
         </section>
       ))}
 
-      <h2 className="mt-8 font-bold">Here ({hereWrs.length} receipts)</h2>
+      <h2 className="mt-8 font-bold">Here ({allHere.length} receipts{allHere.length > hereWrs.length ? `, the latest ${hereWrs.length} shown` : ""})</h2>
+      {allHere.length > hereWrs.length && <p className="text-xs"><a href="/warehouse/arrivals?all=1" className="text-brand underline">Show all</a></p>}
       {hereWrs.length === 0 ? <p className="mt-1 text-sm text-zinc-600">No pieces received here yet.</p> : (
         <table className="mt-2 w-full text-left text-sm">
           <thead><tr>{["WR", "Customer", "Pieces here", "Received by", "Balance", "Customer notified", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
