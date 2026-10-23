@@ -2,11 +2,10 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { db } from "@/lib/wh-store";
 import { isoToUs, isoToday } from "@/lib/clock";
-import { receiveItem, startDelivery, endDelivery, updateItem, deleteItem } from "@/lib/wh-actions";
+import { receiveBatch, startDelivery, endDelivery, updateItem, deleteItem } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScanField } from "@/components/scan-field";
-import { CameraScan } from "@/components/camera-scan";
+import { BatchScan } from "@/components/batch-scan";
 
 export const metadata = { title: "Received items · JP's Logistics" };
 type SP = Promise<Record<string, string | undefined>>;
@@ -34,7 +33,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>Received items</h1>
       <datalist id="rcvcust">{db.customers.slice(0, 3000).map((c) => <option key={c.no} value={`${c.no} · ${c.name}`} />)}</datalist>
-      <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once, then scan each parcel. If you know whose parcel it is, type the customer (optional): the customer gets a push notification and an e-mail that the parcel arrived at the office, and it shows on the website's tracking page. A tracking number the customer announced (Pre-alerts) is matched right away; any other parcel waits in the review queue until it is identified.</p>
+      <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once. Then pick the customer (optional) and scan all their parcels (50 or more): they go on a list, and "Finish and save" records them all at once. The customer gets a push notification and an e-mail that the parcels arrived at the office (one e-mail for the whole list when they have no website account), and they show on the website's tracking page. A tracking number the customer announced (Pre-alerts) is matched right away; any other parcel waits in the review queue until it is identified.</p>
 
       {!sess ? (
         <form action={startDelivery} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
@@ -52,18 +51,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <div className="text-center"><div className="text-4xl font-extrabold leading-none text-brand" aria-live="polite">{count}</div><div className="text-xs text-zinc-600">parcel{count === 1 ? "" : "s"} accepted</div></div>
-            <form action={receiveItem} className="grid min-w-72 flex-1 gap-2">
-              <label className="grid gap-1 text-xs font-semibold text-zinc-700">Whose parcel is it? <span className="font-normal text-zinc-500">(optional: type a name or a number and pick the customer. Choose it BEFORE you scan; leave it empty if you don&apos;t know)</span>
-                <Input name="customer" list="rcvcust" placeholder="Customer: name or number" autoComplete="off" className="max-w-xl" />
-              </label>
-              <label className="grid gap-1 text-xs font-semibold text-zinc-700">Tracking number
-                <span className="flex gap-1">
-                  <ScanField id="tracking" name="tracking" placeholder="Scan tracking number" />
-                  <CameraScan target="tracking" submit />
-                  <Button type="submit" variant="outline" title="Not needed: a scan is added by itself">Add</Button>
-                </span>
-              </label>
-            </form>
+            <div className="min-w-72 flex-1"><BatchScan action={receiveBatch} customerListId="rcvcust" /></div>
           </div>
           {q.err && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{q.err}</p>}
           {q.ok && <p className="mt-2 font-mono text-xs text-green-700">{q.ok} accepted</p>}
