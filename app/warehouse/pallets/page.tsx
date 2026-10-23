@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { isoToday } from "@/lib/clock";
-import { db, findPiece, chargeable, r2, wrCode } from "@/lib/wh-store";
+import { db, findPiece, chargeable, r2, wrCode, shToUSA } from "@/lib/wh-store";
 import { loadPiece, unloadPiece, shipCargo } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -17,15 +17,17 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
   const d = new Date(`${isoToday()}T12:00`), ship = q.ship === "Ocean" ? "Ocean" : "Air";
   const stamp = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}-${d.getFullYear()}`;
-  const shipment = q.shipment || (ship === "Air" ? `PL-AIR-${stamp}` : `CT-OCEAN-${stamp}`);
+  const usa = shToUSA(db.shipments.find((x) => x.name === q.shipment)) || (!q.shipment && q.dir === "USA"); // Haiti -> Miami: the first piece loaded makes the shipment go that way
+  const shipment = q.shipment || (usa ? (ship === "Air" ? `PL-AIR-HT-${stamp}` : `CT-OCEAN-HT-${stamp}`) : ship === "Air" ? `PL-AIR-${stamp}` : `CT-OCEAN-${stamp}`);
   const pallet = q.pallet || (ship === "Air" ? "Pallet 1" : "Container 1");
   const sh = db.shipments.find((x) => x.name === shipment);
-  const rows = db.loads.filter((l) => l.shipment === shipment).map((l) => ({ l, p: findPiece(l.no)!.p }));
+  const rows = db.loads.filter((l) => l.shipment === shipment).flatMap((l) => { const hit = findPiece(l.no); return hit ? [{ l, p: hit.p }] : []; }).reverse(); // the last scanned piece is on top
   const lbs = r2(rows.reduce((a, r) => a + r.p.lbs, 0));
   const chg = r2(rows.reduce((a, r) => a + chargeable(r.p), 0));
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
       <h1>Load pallet or container</h1>
+      <p className="text-sm text-zinc-600">Cargo going {usa ? <b>Haiti → Miami</b> : <b>Miami → Haiti</b>}. <Link href={`/warehouse/pallets?${new URLSearchParams({ ship, ...(!usa && { dir: "USA" }) })}`} className="text-brand underline">Switch to {usa ? "Miami → Haiti" : "Haiti → Miami"}</Link> (pieces of receipts going to Miami can only be loaded on a Haiti → Miami shipment).</p>
       <form action={loadPiece} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[6rem_1.2fr_1fr_1.5fr_auto]">
         <select name="ship" defaultValue={sh?.ship ?? ship} aria-label="Ship type" className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
         <Input name="shipment" list="shipments" defaultValue={shipment} aria-label="Shipment" />
@@ -41,11 +43,11 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       {rows.length === 0 ? <p className="mt-6 text-sm text-zinc-600">Nothing loaded on {shipment} yet. Scan a piece label to start.</p> : (
         <>
           <table className="mt-3 w-full text-left text-sm">
-            <thead><tr>{["Loaded", "Loaded by", "WR – item", "Weight (lb)", "Chargeable (lb)", "Pallet", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["Loaded", "Loaded by", "WR – item", "Customer", "Weight (lb)", "Chargeable (lb)", "Pallet", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
             <tbody>{rows.map(({ l, p }) => (
-              <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{l.date}</td><td className={td}>{l.by || "–"}</td><td className={td}>{wrOf(l.wr)} – {l.no}</td><td className={td}>{p.lbs}</td><td className={td}>{chargeable(p)}</td><td className={td}>{l.pallet}</td>
+              <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{l.date}</td><td className={td}>{l.by || "–"}</td><td className={td}>{wrOf(l.wr)} – {l.no}</td><td className={td}>{db.wrs.find((x) => x.id === l.wr)?.customer}</td><td className={td}>{p.lbs}</td><td className={td}>{chargeable(p)}</td><td className={td}>{l.pallet}</td>
                 <td className={td}>{!sh?.shipped && <form action={unloadPiece}><input type="hidden" name="no" value={l.no} /><button className="text-red-700 underline" aria-label={`Remove ${l.no}`}>Remove</button></form>}</td></tr>))}</tbody>
-            <tfoot><tr className="font-semibold"><td className={td}>{rows.length} pieces</td><td /><td /><td className={td}>{lbs}</td><td className={td}>{chg}</td><td className={td} colSpan={2}>{r2(lbs * 0.45359)} KG</td></tr></tfoot>
+            <tfoot><tr className="font-semibold"><td className={td}>{rows.length} pieces</td><td /><td /><td /><td className={td}>{lbs}</td><td className={td}>{chg}</td><td className={td} colSpan={2}>{r2(lbs * 0.45359)} KG</td></tr></tfoot>
           </table>
           <div className="mt-4 flex gap-2">
             <Link href={`/warehouse/pallets/labels?shipment=${encodeURIComponent(shipment)}`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-4 text-sm font-medium hover:bg-zinc-100">Print pallet labels</Link>

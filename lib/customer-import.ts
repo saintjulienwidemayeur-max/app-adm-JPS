@@ -34,7 +34,7 @@ export function readLines(text: string): { lines: ImportLine[]; problems: string
   const lines: ImportLine[] = [], seen = new Set<number>();
   rows.slice(1).forEach((r, idx) => {
     const line = idx + 2, no = Math.round(Number(at(r, "customer_no"))), name = sp(at(r, "name"));
-    if (!Number.isInteger(no) || no < 1) return void problems.push(`Line ${line}: customer number "${at(r, "customer_no")}" is not a number.`);
+    if (!Number.isInteger(no) || no < 1 || no > 9_999_999) return void problems.push(`Line ${line}: customer number "${at(r, "customer_no")}" is not a number.`);
     if (!name) return void problems.push(`Line ${line}: customer ${no} has no name.`);
     if (seen.has(no)) return void problems.push(`Line ${line}: customer number ${no} appears twice (the first one is kept).`);
     seen.add(no);
@@ -84,7 +84,7 @@ export function importLines(lines: ImportLine[], overwrite: boolean, dryRun: boo
   }
   if (!dryRun) {
     db.customers.sort((a, b) => a.no - b.no);
-    db.n.cust = Math.max(db.n.cust, ...db.customers.map((c) => c.no + 1));
+    db.n.cust = db.customers.reduce((m, c) => Math.max(m, c.no + 1), db.n.cust);
   }
   return res;
 }

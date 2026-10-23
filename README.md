@@ -52,6 +52,12 @@ Every page needs a sign-in with a **name and a code**. The first administrator i
 
 Pages: Estimate, Pre-alerts, Received items, Consolidate, Warehouse receipts (+ detail, report, labels), Load pallet (+ pallet labels), Shipments (+ booking, Bill of Lading, Letter of Instruction, cargo list), Loading sheet, Arrivals PV, Invoices (+ printable invoice), Pickups, Customers, Reps.
 
+## Parcels sent from Haiti to the USA (Haiti -> Miami)
+The Haiti office also takes parcels for the USA. The direction is not a new setting on every record: a **receipt with destination "Miami"** (rates: Fees & rates > Miami) goes to the USA, and a **shipment created as "Haiti -> Miami"** carries only those receipts (the Load pallet page refuses a piece going the other way, and a new shipment made by the first piece loaded takes its direction). Everything saved before keeps working as Miami -> Haiti.
+- **Received items**: choose "Haiti office (to the USA)" when starting the delivery; Consolidate then proposes "To Miami" (shipper = the customer in Haiti, receiver = the consignee on the customer page or typed on the receipt, with a receiver address). Labels say TO MIAMI.
+- **Shipments**: the booking (BOL, Letter of Instruction, cargo list, proof of export) starts with origin PAP HAITI, destination MIA FL USA, shipper JP's Haiti, consignee JP's Miami, airports PAP -> MIA.
+- **Arrivals Miami** (Receiving & Dispatching) scans the pieces that arrive in Miami and marks them "Ready for pickup" (Arrivals PV only shows Haiti-bound cargo). The website tracking only knows Miami -> Haiti, so these customers get our own e-mails (received at the Haiti office, left Haiti, arrived in Miami, ready for pickup in Miami) in their language.
+
 ## How receipts, customers and fees work
 - **Customer number**: every customer gets a number (1001, 1002, ...). It is the first part of every label: `1001|JPF-11018|20032` = customer | receipt | piece.
 - **Receipt number**: `JPF-` for air, `JPL-` for boat (ocean). Changing the ship type on a receipt renames it (not possible once a piece is loaded on a shipment).

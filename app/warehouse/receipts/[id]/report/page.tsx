@@ -37,7 +37,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           {sh.phone && <div><span className="text-zinc-500">Phone</span> {sh.phone}</div>}
           {c?.billing && <div className="text-zinc-700">{c.billing}</div>}
           <div className="pt-2"><span className="text-zinc-500">Consignee</span> <b>{consignee}</b></div>
-          {c?.consigneeAddress && <div>{c.consigneeAddress}</div>}
+          {rc.address && <div>{rc.address}</div>}
           {place && <div>{place}</div>}
           {phone && <div><span className="text-zinc-500">Phone</span> {phone}</div>}
           {w.email && <div><span className="text-zinc-500">eMailAddress</span> {w.email}</div>}

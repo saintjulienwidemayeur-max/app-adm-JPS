@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { listDocs } from "@/lib/persist";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
-import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
+import { updateWR, addPiece, updatePiece, deletePiece, movePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -13,7 +13,7 @@ type SP = Promise<Record<string, string | undefined>>;
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 const lnk = "inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium hover:bg-zinc-100";
 const sel = "h-9 w-full rounded-md border bg-white px-2 text-sm";
-const F = ({ label, children }: { label: string; children: ReactNode }) => <label className="grid gap-1 text-xs font-medium text-zinc-600">{label}{children}</label>;
+const F = ({ label, children, span }: { label: string; children: ReactNode; span?: string }) => <label className={`grid gap-1 text-xs font-medium text-zinc-600 ${span ?? ""}`}>{label}{children}</label>;
 
 export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -34,7 +34,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/receipts" className="text-sm text-brand underline">All receipts</Link>
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-        <h1>{code} · {w.customer} <span className="text-base font-normal text-zinc-600">· {w.ship} · {w.date}{w.route && ` · ${w.route}`}</span></h1>
+        <h1>{code} · {w.customer} <span className="text-base font-normal text-zinc-600">· {w.ship} · {w.date}{w.route && ` · ${w.route}`}</span>{toUSA(w) && <span className="ml-2 rounded bg-sky-100 px-2 py-0.5 align-middle text-xs font-semibold text-sky-800">Haiti → Miami</span>}</h1>
         <div className="flex flex-wrap gap-2">
           <Link href={`/warehouse/receipts/${w.id}/report`} className={lnk}>View receipt</Link>
           <a href={`/warehouse/receipts/${w.id}/pdf`} target="_blank" className={lnk}>Download PDF</a>
@@ -45,7 +45,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </div>
       </div>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
-      {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
+      {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}{q.label && <> <Link href={`/warehouse/receipts/${w.id}/labels?only=${q.label}`} className="underline">Print the label of piece {q.label}</Link></>}</p>}
 
       <section className="mt-4 rounded-lg border p-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">Customer notification</h2>
@@ -67,8 +67,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <div><dt className="text-xs text-zinc-500">Phone</dt><dd>{cust.phone || "–"}</dd></div>
             <div><dt className="text-xs text-zinc-500">Email</dt><dd>{cust.email || "–"}</dd></div>
             <div><dt className="text-xs text-zinc-500">Billing address</dt><dd>{cust.billing || "–"}</dd></div>
-            <div><dt className="text-xs text-zinc-500">Consignee</dt><dd>{cust.consignee || cust.name}</dd></div>
-            <div><dt className="text-xs text-zinc-500">Destination</dt><dd>{[cust.consigneeCity, cust.consigneeCountry].filter(Boolean).join(", ") || "–"}</dd></div>
+            <div><dt className="text-xs text-zinc-500">{toUSA(w) ? "Receiver in the USA" : "Consignee"}</dt><dd>{toUSA(w) ? receiverOf(w).name : cust.consignee || cust.name}</dd></div>
+            <div><dt className="text-xs text-zinc-500">Destination</dt><dd>{toUSA(w) ? [receiverOf(w).address, "Miami (USA)"].filter(Boolean).join(", ") : [cust.consigneeCity, cust.consigneeCountry].filter(Boolean).join(", ") || "–"}</dd></div>
             <div><dt className="text-xs text-zinc-500">Representative</dt><dd>{db.reps.find((r) => r.id === w.rep)?.name ?? "–"}</dd></div>
           </dl>
         ) : <p className="mt-1 text-zinc-600">No customer record.</p>}
@@ -83,19 +83,23 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <tbody>{w.pieces.map((p) => (
               <tr key={p.no} className="border-b border-zinc-100 align-top">
                 <td className={td}>{p.no}</td><td className={td}>{p.type}</td><td className={td}>{p.contents || <span className="text-red-700">Required</span>}</td><td className={td}>{p.l}×{p.w}×{p.h}</td><td className={td}>{p.lbs}</td><td className={td}>{vol(p)}</td><td className={td}>{cuft(p)}</td>
-                <td className={td}>{loaded.has(p.no) ? <span className="text-zinc-500">Loaded</span> : (
-                  <details><summary className="cursor-pointer text-brand underline">Edit</summary>
+                <td className={td}><Link href={`/warehouse/receipts/${w.id}/labels?only=${p.no}`} className="mr-2 text-brand underline">Label</Link>{loaded.has(p.no) ? <span className="text-zinc-500">Loaded</span> : w.invoice ? <span className="text-xs text-zinc-500">Invoiced</span> : (
+                  <details className="inline-block align-top"><summary className="cursor-pointer text-brand underline">Edit</summary>
                     <form action={updatePiece} className="mt-1 flex flex-wrap gap-1"><input type="hidden" name="wr" value={w.id} /><input type="hidden" name="no" value={p.no} />
                       <Input name="type" defaultValue={p.type} className="w-32" aria-label="Type" />
                       <Input name="contents" defaultValue={p.contents} placeholder="Contents (required)" maxLength={120} className="w-56" aria-label="Contents" required />
                       {(["l", "w", "h", "lbs"] as const).map((k) => <Input key={k} name={k} type="number" step="any" min="0" defaultValue={p[k]} className="w-16" aria-label={k} required />)}
                       <Button type="submit">Save</Button></form>
+                    <form action={movePiece} className="mt-1 flex flex-wrap items-center gap-1"><input type="hidden" name="wr" value={w.id} /><input type="hidden" name="no" value={p.no} />
+                      <Input name="customer" list="custMove" placeholder="Wrong customer? Move this piece to…" className="w-64" aria-label="Move to customer" required /><Button type="submit" variant="outline">Move</Button></form>
                     <form action={deletePiece} className="mt-1"><input type="hidden" name="wr" value={w.id} /><input type="hidden" name="no" value={p.no} /><button className="text-red-700 underline">Delete piece</button></form>
                   </details>)}</td>
               </tr>))}</tbody>
             <tfoot><tr className="font-semibold"><td className={td} colSpan={4}>{w.pieces.length} piece{w.pieces.length > 1 ? "s" : ""}</td><td className={td}>{lbs}</td><td className={td} colSpan={3} /></tr></tfoot>
           </table>
         )}
+        <datalist id="custMove">{db.customers.slice(0, 3000).map((c) => <option key={c.no} value={`${c.no}`}>{c.name}</option>)}</datalist>
+        {w.invoice && <p className="mt-2 text-xs text-amber-700">Invoiced ({w.invoice}): pieces can't be added or changed. Cancel the invoice first.</p>}
         <form action={addPiece} className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-[1fr_repeat(5,5rem)_auto]">
           <input type="hidden" name="wr" value={w.id} />
           <Input name="type" placeholder="Type (BOX - OTHER)" className="col-span-4 sm:col-span-1" />
@@ -111,7 +115,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <p className="text-xs text-zinc-600">Receipt opened by <b>{w.by || "–"}</b>{db.shipments.find((s) => db.loads.some((l) => l.wr === w.id && l.shipment === s.name))?.shippedBy && <> · shipped by <b>{db.shipments.find((s) => db.loads.some((l) => l.wr === w.id && l.shipment === s.name))?.shippedBy}</b></>}. Every action is also in the Activity log.</p>
         {w.pieces.length > 0 && (
           <table className="mt-2 w-full text-left text-sm">
-            <thead><tr>{["Piece", "Parcel scanned by", "Piece made by", "Loaded on a pallet by", "Arrived in Haiti, scanned by"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["Piece", "Parcel scanned by", "Piece made by", "Loaded on a pallet by", toUSA(w) ? "Arrived in Miami, scanned by" : "Arrived in Haiti, scanned by"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
             <tbody>{w.pieces.map((p) => { const l = db.loads.find((x) => x.no === p.no); return (
               <tr key={p.no} className="border-b border-zinc-100"><td className={td}>{p.no}</td><td className={td}>{[...new Set(db.items.filter((i) => i.piece === p.no && i.by).map((i) => i.by))].join(", ") || "–"}</td><td className={td}>{p.by || "–"}</td><td className={td}>{l?.by || "–"}</td><td className={td}>{l?.hereBy || "–"}</td></tr>); })}</tbody>
           </table>
@@ -124,7 +128,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <datalist id="feeNames">{[...db.feeNames.charge, ...db.feeNames.credit].map((n) => <option key={n} value={n} />)}</datalist>
         <form action={saveFees} className="mt-2">
           <input type="hidden" name="wr" value={w.id} />
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[30rem] text-left text-sm">
             <thead><tr><th className={th}>Description</th><th className={`${th} w-32`}>Type</th><th className={`${th} w-32 text-right`}>Amount ($)</th><th className={`${th} w-20`} /></tr></thead>
             <tbody>
               {freightFee(w) > 0 && (
@@ -146,7 +150,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   <td className={td}>Charge</td><td className={`${td} text-right`}>{money(ins.customer)}</td><td className={td} />
                 </tr>)}
             </tbody>
-          </table>
+          </table></div>
           {w.fees.length > 0 && <Button type="submit" className="mt-2">Save fees</Button>}
         </form>
         <form action={addFee} className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-[1fr_8rem_8rem_auto]">
@@ -191,6 +195,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <F label="Shipper phone"><Input name="shipperPhone" defaultValue={w.shipperPhone ?? ""} placeholder={shipperOf(w).phone} maxLength={40} /></F>
           <F label="Receiver name (who receives it)"><Input name="receiverName" defaultValue={w.receiverName ?? ""} placeholder={receiverOf(w).name} maxLength={80} /></F>
           <F label="Receiver phone"><Input name="receiverPhone" defaultValue={w.receiverPhone ?? ""} placeholder={receiverOf(w).phone} maxLength={40} /></F>
+          <F label="Receiver address (street, city, state, zip)" span="sm:col-span-2"><Input name="receiverAddress" defaultValue={w.receiverAddress ?? ""} placeholder={receiverOf(w).address} maxLength={160} /></F>
           <F label="Notification email"><Input name="email" type="email" defaultValue={w.email} /></F>
           <F label="Value of the parcel ($, commercial value)"><Input name="declared" type="number" step="0.01" min="0" defaultValue={w.declared} /></F>
           <F label="Insurance"><select name="insurance" defaultValue={w.insurance} className={sel}><option>Declined</option><option>Accepted</option></select></F>

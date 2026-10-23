@@ -8,7 +8,8 @@ import { COMPANY, HAITI, ORIGIN, DESTINATION, AIRLINE, COMPANY_EMAILS, BLOCKED_E
 export type Ship = "Air" | "Ocean";
 // Set by lib/actor.ts: the name of the person doing the current action.
 export const actorRef: { get: () => string } = { get: () => "" };
-export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string; prealert?: string; by?: string };
+// `office`: "Haiti" when the parcel was received at the Haiti office (to be sent to the USA); absent = the Miami warehouse.
+export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string; prealert?: string; by?: string; office?: "Haiti" };
 // `by`: who made the piece. `old`: made before the 132 / 1788 formulas (measured with 139 / 1728), kept so that old invoices do not change.
 export type Piece = { no: number; type: string; l: number; w: number; h: number; lbs: number; contents?: string; by?: string; old?: boolean };
 export type Payment = { date: string; time?: string; amount: number; method: string; ref: string; batch?: string };
@@ -38,7 +39,7 @@ export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
 };
 // A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
 export type OrderItem = { desc: string; qty: number; unit: number };
@@ -67,7 +68,8 @@ export type Prealert = {
   siteId?: string; clientId?: string; // set when the customer announced it on the website
 };
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string; by?: string; hereBy?: string };
-export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string; shippedBy?: string };
+// `dir`: "USA" = goes from Haiti to Miami (absent = Miami to Haiti, as before).
+export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string; shippedBy?: string; dir?: "USA" };
 
 // Booking info of a shipment (the old "Shipment Booking Info" form). It feeds the Bill of Lading,
 // the Shipper's Letter of Instruction and the cargo list.
@@ -105,13 +107,26 @@ export const defaultRate = (ship: Ship) => (ship === "Ocean" ? OCEAN_RATE : AIR_
 export const DESTINATIONS = ["Port-au-Prince", "Cap Haitien", "Miragoane", "Cayes", "St Marc", "Hinche", "Jeremie", "Saint Domingue", "Miami"];
 export const DEFAULT_DEST = "Port-au-Prince";
 export const destLabel = (d: string) => (d === "Miami" ? "Miami (from Haiti)" : d);
+// Direction: a receipt whose destination is Miami was taken in Haiti and goes to the USA; a shipment made for those receipts has dir "USA".
+// Everything else (and every record saved before this existed) goes from Miami to Haiti.
+export const US_DEST = "Miami";
+export const toUSA = (w: { dest?: string }) => w.dest === US_DEST;
+export const shToUSA = (sh: { dir?: string } | undefined) => sh?.dir === "USA";
 const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "");
-const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "Port-au-Prince", capehaitien: "Cap Haitien", caphaitien: "Cap Haitien", cap: "Cap Haitien", lescayes: "Cayes", cayes: "Cayes", stmarc: "St Marc", saintmarc: "St Marc", jeremie: "Jeremie", santodomingo: "Saint Domingue", saintdomingue: "Saint Domingue", stdomingue: "Saint Domingue", miragoane: "Miragoane", hinche: "Hinche", miami: "Miami" };
+const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "Port-au-Prince", capehaitien: "Cap Haitien", caphaitien: "Cap Haitien", cap: "Cap Haitien", lescayes: "Cayes", cayes: "Cayes", stmarc: "St Marc", saintmarc: "St Marc", jeremie: "Jeremie", santodomingo: "Saint Domingue", saintdomingue: "Saint Domingue", stdomingue: "Saint Domingue", miragoane: "Miragoane", hinche: "Hinche", miami: "Miami", miamifl: "Miami", miamiflorida: "Miami" };
 // The destination a customer's consignee city points to (the usual one when it is not recognised).
 export const destOf = (c: { consigneeCity?: string } | undefined) => ALIASES[norm(c?.consigneeCity ?? "")] ?? DEFAULT_DEST;
 export const destRate = (dest: string | undefined, ship: Ship) => { const r = db.settings.rates?.[dest ?? ""]?.[ship === "Ocean" ? "ocean" : "air"]; return r && r > 0 ? r : defaultRate(ship); };
 // The rate of this customer (from the old system or typed on the customer page), else the rate of the destination, else the standard one.
-export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : destRate(dest, ship); };
+// A customer's own rate for a destination that has its own price list in the old system (Cap-Air, Cap-Ocean, SDQ, DR Ocean) comes first.
+const routeRate = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => {
+  const r = c?.rates;
+  return dest === "Cap Haitien" ? (ship === "Ocean" ? r?.capo : r?.capa) : dest === "Saint Domingue" ? (ship === "Ocean" ? r?.droc : r?.sdq) : undefined;
+};
+export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => {
+  const own = routeRate(c, ship, dest), r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air;
+  return own && own > 0 ? own : r && r > 0 ? r : destRate(dest, ship);
+};
 
 // Settings the administrator can change (Administration > Fees & rates).
 // Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
@@ -151,6 +166,18 @@ export const findCustomer = (q: string) => {
   if (t.includes("@")) return COMPANY_EMAILS.includes(t) ? undefined : db.customers.find((c) => c.email.toLowerCase() === t) ?? db.customers.find((c) => c.emailMore && c.emailMore.toLowerCase().split(/[;,\s]+/).includes(t));
   return db.customers.find((c) => c.name.toLowerCase() === t);
 };
+// Customers whose name is almost the same as the one typed (a typo like "Marie Josef"), so a new customer is not created by mistake.
+const letters = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const distance = (a: string, b: string) => {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) { const next = [i]; for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); row = next; }
+  return row[b.length];
+};
+export const similarCustomers = (name: string, max = 3): Customer[] => {
+  const t = letters(name);
+  if (t.length < 4 || /^\d+$/.test(name.trim()) || name.includes("@")) return [];
+  return db.customers.filter((c) => { const n = letters(c.name); return n === t || (Math.abs(n.length - t.length) <= 2 && distance(n, t) <= (t.length > 8 ? 2 : 1)); }).slice(0, max);
+};
 export const newCustomer = (name: string, init: Partial<Customer> = {}): Customer => {
   const c: Customer = {
     no: db.n.cust++, name, phone: "", email: "", billing: "", consignee: "", consigneePhone: "", consigneeAddress: "", consigneeCity: "",
@@ -161,7 +188,7 @@ export const newCustomer = (name: string, init: Partial<Customer> = {}): Custome
 };
 // Who sends and who receives this receipt: what was typed on the receipt, else the customer (shipper) and the customer's consignee (receiver).
 export const shipperOf = (w: WR) => { const c = custOf(w); return { name: w.shipperName || w.customer, phone: w.shipperPhone || c?.phone || "" }; };
-export const receiverOf = (w: WR) => { const c = custOf(w); return { name: w.receiverName || c?.consignee || w.customer, phone: w.receiverPhone || c?.consigneePhone || c?.phone || "" }; };
+export const receiverOf = (w: WR) => { const c = custOf(w); return { name: w.receiverName || c?.consignee || w.customer, phone: w.receiverPhone || c?.consigneePhone || c?.phone || "", address: w.receiverAddress || c?.consigneeAddress || "" }; };
 export const creditOf = (c: Customer | undefined) => r2((c?.creditLog ?? []).reduce((a, e) => a + e.amount, 0));
 export const custOf = (w: WR) => db.customers.find((c) => c.no === w.cust);
 export const repOf = (id: string) => db.reps.find((r) => r.id === id);
@@ -185,15 +212,16 @@ export { isoToday };
 export const openBooking = (sh: Shipment): Booking => {
   const ex = bookingOf(sh.name);
   if (ex) return ex;
-  const air = sh.ship === "Air";
+  const air = sh.ship === "Air", usa = shToUSA(sh); // Haiti -> Miami: origin, destination, shipper and consignee are swapped
   const b: Booking = {
-    shipment: sh.name, line: air ? AIRLINE : "", awb: "", bol: "", sailDate: isoToday(), origin: ORIGIN, destination: DESTINATION, vessel: air ? AIRLINE : "",
+    shipment: sh.name, line: air ? AIRLINE : "", awb: "", bol: "", sailDate: isoToday(), origin: usa ? DESTINATION : ORIGIN, destination: usa ? ORIGIN : DESTINATION, vessel: air ? AIRLINE : "",
     blCost: 0, freightPayableAt: "", declared: 0,
-    shipperName: COMPANY.name, shipperAddress: COMPANY.address, shipperCity: COMPANY.city, shipperContact: COMPANY.phone,
-    consigneeName: HAITI.name, consigneeAddress: HAITI.address, consigneeCity: HAITI.city, consigneeContact: HAITI.phone,
-    receiver: "", notify: "JP's Logistics Team", notifyContact: HAITI.email,
+    shipperName: usa ? HAITI.name : COMPANY.name, shipperAddress: usa ? HAITI.address : COMPANY.address, shipperCity: usa ? HAITI.city : COMPANY.city, shipperContact: usa ? HAITI.phone : COMPANY.phone,
+    consigneeName: usa ? COMPANY.name : HAITI.name, consigneeAddress: usa ? COMPANY.address : HAITI.address, consigneeCity: usa ? COMPANY.city : HAITI.city, consigneeContact: usa ? COMPANY.phone : HAITI.phone,
+    receiver: "", notify: "JP's Logistics Team", notifyContact: usa ? COMPANY.phone : HAITI.email,
     pieceType: "BOXES", commodity: "", sed: "NO", refrigeration: "NO", hazmat: "NO",
     containerSize: "", spotDate: "", spotTime: "", containerId: "", seal: "", tag: "", arrivalDate: "",
+    ...(usa && { airportDep: "PAP", airportArr: "MIA" }),
     notes: "", signer: "", contents: [{ label: "Boxes", value: 0 }, { label: "Cargo", value: 0 }, { label: "", value: 0 }], pallets: {},
   };
   db.bookings.push(b);
@@ -220,8 +248,18 @@ export const cuft = (p: Piece) => r2((p.l * p.w * p.h) / (p.old ? 1728 : CUFT_DI
 // Once, when the data is loaded: the pieces of invoiced receipts keep the old formulas, so an invoice never changes by itself.
 export function keepOldFormulas() { for (const w of db.wrs) if (w.invoice) for (const p of w.pieces) if (p.old === undefined) p.old = true; }
 export const chargeable = (p: Piece) => Math.max(p.lbs, vol(p));
+// Looked up by number all the time (a shipment lists thousands of pieces): an index of the receipts, rebuilt when the list changes.
+// A hit is checked before it is trusted (the piece may have been deleted or moved), else the receipts are searched.
+let pieceIndex: { wrs: WR[]; len: number; map: Map<number, { w: WR; p: Piece }> } | null = null;
 export const findPiece = (no: number) => {
-  for (const w of db.wrs) { const p = w.pieces.find((x) => x.no === no); if (p) return { w, p }; }
+  if (!pieceIndex || pieceIndex.wrs !== db.wrs || pieceIndex.len !== db.wrs.length) {
+    const map = new Map<number, { w: WR; p: Piece }>();
+    for (const w of db.wrs) for (const p of w.pieces) map.set(p.no, { w, p });
+    pieceIndex = { wrs: db.wrs, len: db.wrs.length, map };
+  }
+  const hit = pieceIndex.map.get(no);
+  if (hit && hit.w.pieces.includes(hit.p)) return hit;
+  for (const w of db.wrs) { const p = w.pieces.find((x) => x.no === no); if (p) { pieceIndex.map.set(no, { w, p }); return { w, p }; } }
 };
 
 // ---------- Money ----------
@@ -235,16 +273,20 @@ export const charges = (w: WR) => r2(freightFee(w) + w.fees.filter((f) => f.kind
 export const credits = (w: WR) => r2(w.fees.filter((f) => f.kind === "credit").reduce((a, f) => a + f.amount, 0));
 export const quote = (w: WR) => calcInsurance(w.declared);
 export const insuranceFee = (w: WR) => (w.insurance === "Accepted" ? quote(w).customer : 0);
+// A receipt that has something to pay (an estimate is not a debt until it is final): a fee line, or the automatic freight / insurance (an Air receipt often has no fee line at all).
+export const priced = (w: WR) => (!w.estimate || !!w.invoice) && (w.fees.length > 0 || freightFee(w) > 0 || insuranceFee(w) > 0);
 export const total = (w: WR) => Math.max(0, r2(charges(w) + insuranceFee(w) - credits(w)));
 export const paidAmt = (w: WR) => r2(w.payments.reduce((a, p) => a + p.amount, 0));
 export const balance = (w: WR) => r2(total(w) - paidAmt(w));
-export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && w.fees.length ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
+export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && priced(w) ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
+// Same helper as `priced` (a receipt that has something to pay, also when it only has the automatic freight line): kept under the name the audit uses.
+export const hasCharges = priced;
 export const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // What the same goods would cost shipped the other way (same pieces, standard rate of that method, its automatic handling fee).
 export const otherShip = (w: WR): Ship => (w.ship === "Air" ? "Ocean" : "Air");
 export const estimateFor = (w: WR, ship: Ship) => {
-  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship);
+  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship, w.dest);
   const freight = r2(qty * rate), handling = ship === "Ocean" ? OCEAN_HANDLING : 0;
   const isHandling = (f: Fee) => f.auto === "handling" || f.label.trim().toLowerCase() === HANDLING_LABEL.toLowerCase(); // a handling line typed by hand counts as handling too
   const extra = r2(w.fees.filter((f) => f.kind === "charge" && !isHandling(f)).reduce((a, f) => a + f.amount, 0));
