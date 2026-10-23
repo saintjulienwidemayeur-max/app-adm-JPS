@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { db, openBooking, cargoOf, cuft, vol, r2, money, wrCode } from "@/lib/wh-store";
+import { db, openBooking, cargoOf, cuft, vol, r2, money, wrCode, receiverOf, shToUSA } from "@/lib/wh-store";
 import { COMPANY } from "@/lib/company";
 import { shortDate } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
@@ -33,7 +33,8 @@ export default async function Page({ params }: { params: Promise<{ name: string;
   });
   const [mm, dd, yy] = shortDate(b.sailDate).split("/");
   const docNo = `PL-${air ? "AIR" : "SEA"}-${(mm ?? "").padStart(2, "0")}-${(dd ?? "").padStart(2, "0")}-${yy ?? ""}`;
-  const place = [cust.consigneeCity, cust.consigneeCountry].filter(Boolean).join(", ");
+  // Miami -> Haiti: the customer's consignee in Haiti. Haiti -> Miami: the receiver typed on the receipt (address in the USA).
+  const usa = shToUSA(sh), rc = receiverOf(wrs[0]), place = usa ? "USA" : [cust.consigneeCity, cust.consigneeCountry].filter(Boolean).join(", ");
   const shipperCity = cust.billing || "";
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
@@ -47,8 +48,8 @@ export default async function Page({ params }: { params: Promise<{ name: string;
       <div className="mt-1 grid grid-cols-2">
         <div>
           <Box n="2" title="Shipper/Exporter (Embarcador/Remitente)">{cust.name}<br />{shipperCity}</Box>
-          <Box n="3" title="Consignee (Consignatario)">{cust.consignee || cust.name}<br />{[cust.consigneeAddress, place].filter(Boolean).join(", ")}</Box>
-          <Box n="4" title="Notify party (Dirigir Notificacion de Llegada a)">{cust.consignee || cust.name}{cust.consigneePhone && <><br />{cust.consigneePhone}</>}</Box>
+          <Box n="3" title="Consignee (Consignatario)">{rc.name}<br />{[rc.address, place].filter(Boolean).join(", ")}</Box>
+          <Box n="4" title="Notify party (Dirigir Notificacion de Llegada a)">{rc.name}{rc.phone && <><br />{rc.phone}</>}</Box>
         </div>
         <div>
           <div className="grid grid-cols-2"><Box n="5" title="Booking no. (No. Reservacion)">{b.awb}</Box><Box n="5A" title="B/L no. (No. Conocimiento)">{b.bol || b.awb}</Box></div>

@@ -21,6 +21,7 @@ export function CustomerFields({ c }: { c?: Customer }) {
       </fieldset>
       <fieldset className="mt-4 grid gap-2 sm:grid-cols-2">
         <legend className="mb-1 text-sm font-semibold">Consignee (who receives the cargo)</legend>
+        <p className="text-xs text-zinc-600 sm:col-span-2">A customer in Haiti who sends to the USA: put the person in the USA here (city Miami, or the receiver typed on each receipt). Receipts with destination Miami go on Haiti → Miami shipments.</p>
         <F label="Consignee name"><Input name="consignee" defaultValue={c?.consignee} placeholder="Leave empty if it is the customer" /></F>
         <F label="Consignee phone"><Input name="consigneePhone" type="tel" defaultValue={c?.consigneePhone} /></F>
         <F label="Address" wide><Input name="consigneeAddress" defaultValue={c?.consigneeAddress} /></F>

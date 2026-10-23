@@ -15,7 +15,7 @@ const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
   const jar = await cookies();
-  let sess: { batch: string; date: string; carrier: string; receiver: string } | null = null;
+  let sess: { batch: string; date: string; carrier: string; receiver: string; office?: string } | null = null;
   try { sess = JSON.parse(jar.get("rcv")?.value ?? "null"); } catch { sess = null; }
   const carriers = [...new Set([...db.carriers, ...db.items.map((i) => i.carrier)])].sort();
   const count = sess ? db.items.filter((i) => i.batch === sess.batch).length : 0;
@@ -36,17 +36,18 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       <p className="text-sm text-zinc-600">One delivery at a time: set the date and carrier once. Then pick the customer (optional) and scan all their parcels (50 or more): they go on a list, and "Finish and save" records them all at once. The customer gets a push notification and an e-mail that the parcels arrived at the office (one e-mail for the whole list when they have no website account), and they show on the website's tracking page. A tracking number the customer announced (Pre-alerts) is matched right away; any other parcel waits in the review queue until it is identified.</p>
 
       {!sess ? (
-        <form action={startDelivery} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
+        <form action={startDelivery} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[10rem_1fr_1fr_11rem_auto]">
           <Input name="date" type="date" defaultValue={isoToday()} aria-label="Date received" required />
           <Input name="carrier" list="carriers" placeholder="Carrier: pick one or type a new one (it is saved)" required />
           <Input name="receiver" placeholder="Received by (optional)" defaultValue={jar.get("rcv_name")?.value} />
+          <select name="office" aria-label="Received at" className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">Miami warehouse</option><option value="Haiti">Haiti office (to the USA)</option></select>
           <Button type="submit">Start scanning</Button>
           <datalist id="carriers">{carriers.map((c) => <option key={c} value={c} />)}</datalist>
         </form>
       ) : (
         <section className="mt-4 rounded-lg border p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-zinc-700"><b>{sess.carrier}</b> · {sess.date} · {sess.receiver && <>received by <b>{sess.receiver}</b></>}</div>
+            <div className="text-sm text-zinc-700"><b>{sess.carrier}</b> · {sess.date} · {sess.office === "Haiti" && <b className="text-brand">Haiti office, going to the USA · </b>} {sess.receiver && <>received by <b>{sess.receiver}</b></>}</div>
             <form action={endDelivery}><Button type="submit" variant="outline">Finish delivery</Button></form>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4">

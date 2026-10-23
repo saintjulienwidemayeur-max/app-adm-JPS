@@ -15,6 +15,7 @@ function Fields({ focus, item }: { focus?: boolean; item?: Item }) {
     <>
       <Input name="customer" list="cust" placeholder="Customer (name, number 1001, box JPS-1234 or e-mail)" defaultValue={item?.customer} className="min-w-56 flex-1" autoFocus={focus} required />
       <select name="ship" aria-label="Ship type" defaultValue={item?.ship ?? "Air"} className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
+      <select name="dest" aria-label="Going to" defaultValue={item?.office === "Haiti" ? "Miami" : ""} className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">To Haiti</option><option value="Miami">To Miami (from Haiti)</option></select>
       <Input name="type" placeholder="Type (BOX - OTHER)" className="w-40" />
       <Input name="contents" placeholder="Contents of this piece (required)" maxLength={120} className="min-w-56 flex-1" required />
       {["l", "w", "h", "lbs"].map((k) => <Input key={k} name={k} type="number" step="any" min="0" placeholder={k === "lbs" ? "lb" : k.toUpperCase()} aria-label={k} className="w-16" required />)}

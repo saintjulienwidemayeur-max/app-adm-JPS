@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { db, openBooking, cargoOf, wrCode, r2, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
+import { db, openBooking, cargoOf, wrCode, r2, shToUSA, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
 import { saveBooking, notifyShipmentEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const q = await searchParams;
   const sh = db.shipments.find((x) => x.name === name);
   if (!sh) notFound();
-  const b = openBooking(sh), c = cargoOf(name), air = sh.ship === "Air", base = `/warehouse/shipments/${encodeURIComponent(name)}`;
+  const b = openBooking(sh), c = cargoOf(name), air = sh.ship === "Air", usa = shToUSA(sh), base = `/warehouse/shipments/${encodeURIComponent(name)}`;
   const byCust = new Map<number, { no: number; name: string; wrs: Set<string>; pieces: number; lbs: number }>();
   for (const { w, p } of c.rows) { const e = byCust.get(w.cust) ?? { no: w.cust, name: w.customer, wrs: new Set<string>(), pieces: 0, lbs: 0 }; e.wrs.add(wrCode(w)); e.pieces++; e.lbs = r2(e.lbs + p.lbs); byCust.set(w.cust, e); }
   const poe = [...byCust.values()].map((e) => ({ ...e, wrs: [...e.wrs] })).sort((a, b) => a.name.localeCompare(b.name));
@@ -25,7 +25,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/shipments" className="text-sm text-brand underline">All shipments</Link>
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-        <h1>{name} <span className="text-base font-normal text-zinc-600">· {sh.ship} · Cargo ID {sh.cargoId}{sh.shipped ? ` · shipped ${sh.shipped}` : ""}</span></h1>
+        <h1>{name} <span className="text-base font-normal text-zinc-600">· {sh.ship} · {usa ? "Haiti → Miami" : "Miami → Haiti"} · Cargo ID {sh.cargoId}{sh.shipped ? ` · shipped ${sh.shipped}` : ""}</span></h1>
         <div className="flex flex-wrap gap-2">
           <Link href={`${base}/bol`} className={lnk}>Bill of Lading</Link>
           <Link href={`${base}/sli`} className={lnk}>Letter of Instruction</Link>
@@ -160,10 +160,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <div className="mt-3 grid gap-2 sm:grid-cols-4">
             <F label="Shipper account"><Input name="shipperAccount" defaultValue={b.shipperAccount} /></F>
             <F label="Shipper email" span="sm:col-span-2"><Input name="shipperEmail" type="email" defaultValue={b.shipperEmail} /></F>
-            <F label="Airport of departure"><Input name="airportDep" defaultValue={b.airportDep} placeholder="MIA" /></F>
+            <F label="Airport of departure"><Input name="airportDep" defaultValue={b.airportDep} placeholder={usa ? "PAP" : "MIA"} /></F>
             <F label="Consignee account"><Input name="consigneeAccount" defaultValue={b.consigneeAccount} /></F>
             <F label="Consignee email" span="sm:col-span-2"><Input name="consigneeEmail" type="email" defaultValue={b.consigneeEmail} /></F>
-            <F label="Airport of arrival"><Input name="airportArr" defaultValue={b.airportArr} placeholder="PAP" /></F>
+            <F label="Airport of arrival"><Input name="airportArr" defaultValue={b.airportArr} placeholder={usa ? "MIA" : "PAP"} /></F>
             <F label="Payment (freight charges)"><select name="payment" defaultValue={b.payment ?? ""} className={sel}><option value="">Not set</option>{SLI_PAYMENTS.map((p) => <option key={p}>{p}</option>)}</select></F>
             <F label="Insure this shipment?"><select name="insure" defaultValue={b.insure ?? ""} className={sel}><option value="">Not set</option><option>Yes</option><option>No</option></select></F>
             <F label="Insured amount ($)"><Input name="insureAmount" type="number" step="0.01" min="0" defaultValue={b.insureAmount ?? 0} className="text-right" /></F>

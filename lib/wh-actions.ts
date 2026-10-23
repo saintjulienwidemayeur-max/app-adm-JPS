@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
-import { db, charges, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, similarCustomers, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, priced } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -31,7 +31,7 @@ const wrPath = (id: string) => `/warehouse/receipts/${id}`;
 const RX = "/warehouse/receiving", PL = "/warehouse/pallets";
 
 // ---------- Received items: one delivery = one scanning session ----------
-type Sess = { batch: string; date: string; carrier: string; receiver: string };
+type Sess = { batch: string; date: string; carrier: string; receiver: string; office?: "Haiti" };
 const readSess = async (): Promise<Sess | null> => { try { return JSON.parse((await cookies()).get("rcv")?.value ?? "null"); } catch { return null; } };
 const cleanTracking = (v: string) => extractTracking(v);
 
@@ -41,7 +41,7 @@ export const startDelivery = act("startDelivery", async (f: F) => {
   if (!carrier || isNaN(d.getTime())) back(RX, { err: "Choose the date and the carrier." });
   rememberName(db.carriers, carrier);
   const jar = await cookies();
-  jar.set("rcv", JSON.stringify({ batch: String(db.n.batch++), date: isoToUs(s(f, "date")), carrier, receiver }), { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 16 });
+  jar.set("rcv", JSON.stringify({ batch: String(db.n.batch++), date: isoToUs(s(f, "date")), carrier, receiver, ...(s(f, "office") === "Haiti" && { office: "Haiti" }) }), { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 16 });
   jar.set("rcv_name", receiver, { path: "/", maxAge: 60 * 60 * 24 * 365 });
   back(RX);
 });
@@ -54,6 +54,12 @@ export const endDelivery = act("endDelivery", async () => {
 // The customer of a parcel is known (announced, typed at the scan, or set later): tell the website. That creates the parcel on the customer's
 // tracking page (status 0, "received in Miami") and the website sends the push notification and the e-mail "your parcel arrived at our office".
 async function notifyReceived(item: Item, c: { name: string; email: string; clientId?: string; box?: string } | undefined, ship: Ship, mails?: Map<number, { c: Customer; t: string[] }>): Promise<string> {
+  // Received at the Haiti office (going to the USA): the website only knows the Miami -> Haiti route, so the customer is told by our own e-mail.
+  if (item.office === "Haiti") {
+    const full = c && "no" in c ? (c as Customer) : db.customers.find((x) => x.name === c?.name);
+    if (full && usableEmail(full)) { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(item.tracking); mails.set(full.no, e); } else emailParcelArrived(full, [item.tracking], "Haiti"); }
+    return "";
+  }
   if (!syncEnabled()) return "";
   let clientId = item.clientId ?? c?.clientId;
   if (!clientId && c) {
@@ -83,7 +89,7 @@ async function receiveOne(sess: Sess, raw: string, typed: string, mails?: Map<nu
   // Already received in the old system? A warning only (a customer can order again, and tracking numbers get reused).
   const oldHit = db.oldWrs.length ? oldScanIndex(db.oldWrs).get(tracking.slice(-12))?.find((h) => true) : undefined;
   const oldMsg = oldHit ? ` Careful: this tracking number was already received in the old system on ${oldHit.date || "an unknown date"} (receipt ${oldHit.wr}).` : "";
-  const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking, by: actor() };
+  const item: Item = { id: db.n.item++, date: sess!.date, carrier: sess!.carrier, receiver: sess!.receiver, batch: sess!.batch, tracking, by: actor(), ...(sess!.office && { office: sess!.office }) };
   db.items.push(item);
   // The scan is matched to what the customer announced: it already knows the customer and the shipping choice.
   let pa = db.prealerts.find((x) => x.status === "Expected" && sameTracking(x.tracking, tracking));
@@ -128,7 +134,7 @@ export const receiveBatch = act("receiveBatch", async (f: F) => {
     ok++; if (r.warn) warns.push(r.warn);
     const m = (r.info ?? "").match(/^(?:For|Matched:) ([^(·]+?)(?: \(|$| ·)/); if (m) who.add(m[1].trim());
   }
-  for (const { c, t } of mails.values()) emailParcelArrived(c, t);
+  for (const { c, t } of mails.values()) emailParcelArrived(c, t, sess!.office);
   back(RX, { t: String(Date.now()), ...(ok && { info: `${ok} parcel${ok === 1 ? "" : "s"} saved${typed ? ` for ${pickCustomer(typed)!.name}` : who.size ? ` (${[...who].slice(0, 4).join(", ")}${who.size > 4 ? "..." : ""})` : ""}.` }), ...(bad.length && { err: `${bad.length} not saved: ${bad.slice(0, 5).join(" · ")}${bad.length > 5 ? " ..." : ""}` }), ...(warns.length && { warn: `${warns.length} parcel${warns.length === 1 ? "" : "s"} could not be matched to a customer or notified: they wait in the review queue.` }) });
 });
 export const updateItem = act("updateItem", async (f: F) => {
@@ -164,7 +170,7 @@ const CO = "/warehouse/consolidate";
 async function assign(ids: number[], f: F) {
   const items = db.items.filter((i) => ids.includes(i.id) && !i.piece);
   const customer = s(f, "customer"), ship = shipOf(s(f, "ship"));
-  const addToOpen = s(f, "receipt") === "open";
+  const addToOpen = s(f, "receipt") === "open", dest = s(f, "dest") === US_DEST || (items.length > 0 && items.every((i) => i.office === "Haiti")) ? US_DEST : undefined; // "Miami": taken in Haiti, goes to the USA
   if (!items.length) return back(CO, { err: "Select at least one parcel that is not assigned yet." });
   if (!customer) return back(CO, { err: "Enter the customer." });
   const p = pieceInput(f);
@@ -185,13 +191,14 @@ async function assign(ids: number[], f: F) {
   // Every piece gets its own new warehouse receipt, unless staff chose to add it to the customer's open one
   // (same ship type, not invoiced, nothing loaded yet).
   const cno = c.no;
-  let w = addToOpen ? db.wrs.find((x) => x.cust === cno && x.ship === ship && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) : undefined;
-  if (!w) w = openWR(c, ship);
+  let w = addToOpen ? db.wrs.find((x) => x.cust === cno && x.ship === ship && toUSA(x) === toUSA({ dest: dest ?? destOf(c) }) && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) : undefined;
+  if (!w) w = openWR(c, ship, dest ? { dest } : {});
   const no = db.n.piece++;
   w.pieces.push({ no, ...p, by: actor() });
+  const usa = toUSA(w);
   for (const i of items) Object.assign(i, { customer: c.name, piece: no, wr: w.id, clientId, ship });
   // Website status 0 "received in Miami": the customer gets the push + e-mail now that we know who it belongs to.
-  if (clientId) for (const i of items) {
+  if (clientId && !usa) for (const i of items) {
     const e = await pushStatus({ tracking: i.tracking, status: 0, clientId, type: ship, description: `JP's ${no}` });
     if (e) warn = `Piece created, but the website update failed: ${e}`;
   }
@@ -211,7 +218,7 @@ export const createWR = act("createWR", async (f: F) => {
   if (like.length) back("/warehouse/receipts", { err: `There is no customer "${name}". Did you mean ${like.map((x) => `${x.name} (${x.no})`).join(" or ")}? Fix the name, or tick "New customer" to create "${name}" as a different person.` });
   const c = findCustomer(name) ?? newCustomer(name);
   const route = s(f, "route").toUpperCase();
-  const w = openWR(c, shipOf(s(f, "ship")), { comments: s(f, "comments"), ...(route && { route }) });
+  const w = openWR(c, shipOf(s(f, "ship")), { comments: s(f, "comments"), ...(route && { route }), ...(s(f, "dest") === US_DEST && { dest: US_DEST }) });
   back(wrPath(w.id));
 });
 // Changes the ship type of a receipt (JPF <-> JPL). Ocean gets its standard handling fee automatically; going back to Air removes it
@@ -257,7 +264,7 @@ export const notifyShipmentEmail = act("notifyShipmentEmail", async (name: strin
   const ids = [...new Set(db.loads.filter((l) => l.shipment === name).map((l) => l.wr))];
   let ok = 0, bad = 0;
   for (const id of ids) { const w = db.wrs.find((x) => x.id === id); if (!w) continue; (await emailStatus(w, "shipped")) ? bad++ : ok++; }
-  back(to, bad ? { err: `${ok} e-mail(s) sent, ${bad} could not be sent (no usable e-mail or the mail service refused).` } : { ok: `${ok} e-mail(s) sent: the customers know the shipment left Miami.` });
+  back(to, bad ? { err: `${ok} e-mail(s) sent, ${bad} could not be sent (no usable e-mail or the mail service refused).` } : { ok: `${ok} e-mail(s) sent: the customers know the shipment left ${shToUSA(db.shipments.find((x) => x.name === name)) ? "Haiti" : "Miami"}.` });
 });
 export const updateWR = act("updateWR", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
@@ -271,11 +278,12 @@ export const updateWR = act("updateWR", async (f: F) => {
   // A new destination brings its rate, unless a different rate was typed on purpose.
   const rate = s(f, "rate") === "" || (destChanged && num(f, "rate") === r2(w.rate ?? 0)) ? rateFor(custOf(w), ship, dest) : num(f, "rate");
   if (!Number.isFinite(rate) || rate < 0 || rate > 1000) back(wrPath(w.id), { err: "Enter a rate of 0 or more." });
+  if (destChanged && toUSA({ dest }) !== toUSA(w) && w.pieces.some((p) => db.loads.some((l) => l.no === p.no))) back(wrPath(w.id), { err: "Some pieces are already loaded on a shipment, so the direction (to Haiti / to Miami) can't change." });
   const bad = applyShip(w, ship);
   if (bad) back(wrPath(w.id), { err: bad });
   Object.assign(w, {
     declared, dest, rate: r2(rate), rep: repOf(s(f, "rep")) ? s(f, "rep") : "", insurance: s(f, "insurance") === "Accepted" ? "Accepted" : "Declined",
-    kind: s(f, "shipKind") === "Commercial" ? "Commercial" : "Personal", shipperName: s(f, "shipperName").slice(0, 80), shipperPhone: s(f, "shipperPhone").slice(0, 40), receiverName: s(f, "receiverName").slice(0, 80), receiverPhone: s(f, "receiverPhone").slice(0, 40),
+    kind: s(f, "shipKind") === "Commercial" ? "Commercial" : "Personal", shipperName: s(f, "shipperName").slice(0, 80), shipperPhone: s(f, "shipperPhone").slice(0, 40), receiverName: s(f, "receiverName").slice(0, 80), receiverPhone: s(f, "receiverPhone").slice(0, 40), receiverAddress: s(f, "receiverAddress").slice(0, 160),
     estimate: s(f, "estimate") === "yes", comments: s(f, "comments"), route: s(f, "route").toUpperCase(), email: s(f, "email"),
   });
   back(wrPath(w.id), { ok: "Receipt saved." });
@@ -772,7 +780,7 @@ export const createShipment = act("createShipment", async (f: F) => {
   const name = s(f, "name").replace(/\s+/g, " ");
   if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(name)) back(SH, { err: "Name the shipment with letters, numbers, spaces, dots, dashes or underscores (40 characters max), for example PL-AIR-10-06-2026." });
   if (db.shipments.some((x) => x.name.toLowerCase() === name.toLowerCase())) back(SH, { err: `${name} already exists.` });
-  const sh = { name, ship: shipOf(s(f, "ship")), cargoId: String(db.n.cargo++), date: nowStr() };
+  const sh: Shipment = { name, ship: shipOf(s(f, "ship")), cargoId: String(db.n.cargo++), date: nowStr(), ...(s(f, "dir") === "USA" && { dir: "USA" as const }) };
   db.shipments.push(sh);
   openBooking(sh);
   back(shipPath(name), { ok: `Shipment ${name} created (Cargo ID ${sh.cargoId}).` });
@@ -814,9 +822,10 @@ export const loadPiece = act("loadPiece", async (f: F) => {
   let sh = db.shipments.find((x) => x.name === shipment);
   // A shipment is made on its own page, or by the first piece on the suggested name of the day. Any other unknown name is a typo (it would open a second shipment).
   if (!sh && db.shipments.some((x) => !x.shipped && x.ship === ship) && !/^(PL-AIR|CT-OCEAN)-\d\d-\d\d-\d{4}$/.test(shipment)) back(PL, { ...q, err: `There is no shipment named "${shipment}". Open shipments: ${db.shipments.filter((x) => !x.shipped && x.ship === ship).map((x) => x.name).join(", ")}. Pick one from the list, or create a new one on the Shipments page.` });
-  if (!sh) { sh = { name: shipment, ship, cargoId: String(db.n.cargo++), date: nowStr() }; db.shipments.push(sh); }
+  if (!sh) { sh = { name: shipment, ship, cargoId: String(db.n.cargo++), date: nowStr(), ...(toUSA(hit!.w) && { dir: "USA" as const }) }; db.shipments.push(sh); }
   if (sh.shipped) back(PL, { ...q, err: `${shipment} was already shipped.` });
   if (hit!.w.ship !== sh.ship) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} is ${hit!.w.ship} but ${shipment} is ${sh.ship}.` });
+  if (toUSA(hit!.w) !== shToUSA(sh)) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} goes ${toUSA(hit!.w) ? "to Miami" : "to Haiti"} but ${shipment} goes ${shToUSA(sh) ? "Haiti -> Miami" : "Miami -> Haiti"}. Use a ${toUSA(hit!.w) ? "Haiti -> Miami" : "Miami -> Haiti"} shipment.` });
   db.loads.push({ shipment, pallet, wr: hit!.w.id, no, date: nowStr(), by: actor() });
   back(PL, { ...q, ship: sh.ship, ok: String(no) });
 });
@@ -837,69 +846,73 @@ export const shipCargo = act("shipCargo", async (f: F) => {
   mine.forEach((i) => { i.shipped = true; });
   // Tracking website: status 1 "in transit / customs" for every linked parcel of these receipts.
   let failed = 0;
-  for (const i of mine) if (i.clientId && await pushStatus({ tracking: i.tracking, status: 1, clientId: i.clientId })) failed++;
+  if (!shToUSA(sh)) for (const i of mine) if (i.clientId && await pushStatus({ tracking: i.tracking, status: 1, clientId: i.clientId })) failed++; // the website only knows Miami -> Haiti
   // E-mails by themselves: the receipt (PDF) to every customer of this shipment, and "in transit" to the customers with no website account.
   for (const id of wrIds) { const w = db.wrs.find((x) => x.id === id); if (!w) continue; queueMail(() => emailReceipt(w, `shipment ${sh.name} shipped`)); emailHaiti(w, "shipped"); }
   back(PL, { ...q, ok: `${sh.name} shipped (Cargo ID ${sh.cargoId}).`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
 
-// ---------- Arrivals in Pétion-Ville ----------
-const AR = "/warehouse/arrivals";
-// Website status 2 "arrived in Haiti" once EVERY piece of a receipt is here (a partial arrival changes nothing).
+// ---------- Arrivals in Pétion-Ville (cargo from Miami) and in Miami (cargo from Haiti) ----------
+const AR = "/warehouse/arrivals", ARM = "/warehouse/arrivals-miami";
+const arPath = (usa: boolean) => (usa ? ARM : AR);
+// Website status 2 "arrived in Haiti" once EVERY piece of a receipt is here (a partial arrival changes nothing). Cargo that arrives in Miami
+// is not on the website's route: those customers get our own e-mail instead.
 async function syncArrived(wrIds: string[]) {
   let failed = 0;
   for (const id of wrIds) {
     const w = db.wrs.find((x) => x.id === id);
     if (!w || !w.pieces.length || !w.pieces.every((p) => db.loads.some((l) => l.no === p.no && l.here))) continue;
-    for (const i of db.items) if (i.wr === id && i.clientId && await pushStatus({ tracking: i.tracking, status: 2, clientId: i.clientId })) failed++;
-    emailHaiti(w, "arrived"); // customers with no website account (the others get the website's push + e-mail)
+    if (!toUSA(w)) for (const i of db.items) if (i.wr === id && i.clientId && await pushStatus({ tracking: i.tracking, status: 2, clientId: i.clientId })) failed++;
+    emailHaiti(w, "arrived"); // customers with no website account (the others get the website's push + e-mail), and always for cargo arriving in Miami
     if (syncEnabled() || mailEnabled()) w.hereNotified = true; // the customer is told by itself: nothing to press
   }
   return failed;
 }
 export const receiveHere = act("receiveHere", async (f: F) => {
-  const raw = s(f, "code"), no = Number(raw.split("|").pop());
+  const raw = s(f, "code"), no = Number(raw.split("|").pop()), page = arPath(s(f, "dir") === "USA");
   const l = db.loads.find((x) => x.no === no);
-  if (!l) back(AR, { err: `Piece "${raw}" was never loaded on a shipment. Check the label.` });
-  if (!db.shipments.find((x) => x.name === l!.shipment)?.shipped) back(AR, { err: `Piece ${no} is on ${l!.shipment}, which hasn't shipped yet.` });
-  if (l!.here) back(AR, { err: `Piece ${no} was already received here on ${l!.here}.` });
+  if (!l) back(page, { err: `Piece "${raw}" was never loaded on a shipment. Check the label.` });
+  const sh = db.shipments.find((x) => x.name === l!.shipment), usa = shToUSA(sh);
+  if (usa !== (page === ARM)) back(page, { err: `Piece ${no} is on ${l!.shipment}, which goes ${usa ? "Haiti -> Miami: scan it on Arrivals Miami" : "Miami -> Haiti: scan it on Arrivals PV"}.` });
+  if (!sh?.shipped) back(page, { err: `Piece ${no} is on ${l!.shipment}, which hasn't shipped yet.` });
+  if (l!.here) back(page, { err: `Piece ${no} was already received here on ${l!.here}.` });
   l!.here = nowStr(); l!.hereBy = actor();
   const failed = await syncArrived([l!.wr]);
-  back(AR, { ok: `Piece ${no} received.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+  back(page, { ok: `Piece ${no} received.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
 // A piece scanned here by mistake: takes it back to "expected" (only while the receipt is not marked ready for pickup).
 export const undoReceiveHere = act("undoReceiveHere", async (f: F) => {
   const no = Number(s(f, "code").split("|").pop()), l = db.loads.find((x) => x.no === no && x.here);
-  if (!l) back(AR, { err: `Piece "${s(f, "code")}" is not marked as received here.` });
+  if (!l) back(arPath(s(f, "dir") === "USA"), { err: `Piece "${s(f, "code")}" is not marked as received here.` });
   const w = db.wrs.find((x) => x.id === l!.wr);
-  if (w?.ready) back(AR, { err: `${wrCode(w)} is already marked ready for pickup: the customer was told.` });
+  if (w?.ready) back(arPath(w ? toUSA(w) : false), { err: `${wrCode(w)} is already marked ready for pickup: the customer was told.` });
   l!.here = undefined; l!.hereBy = undefined;
-  back(AR, { ok: `Piece ${no} is back in the expected list.`, ...(w?.hereNotified && { warn: "The customer was already told that everything arrived; they are not told again." }) });
+  back(arPath(w ? toUSA(w) : false), { ok: `Piece ${no} is back in the expected list.`, ...(w?.hereNotified && { warn: "The customer was already told that everything arrived; they are not told again." }) });
 });
 export const arriveShipment = act("arriveShipment", async (f: F) => {
-  const name = s(f, "shipment");
-  if (!db.shipments.find((x) => x.name === name)?.shipped) return;
+  const name = s(f, "shipment"), sh = db.shipments.find((x) => x.name === name);
+  if (!sh?.shipped) return;
   const touched = new Set<string>();
   db.loads.forEach((l) => { if (l.shipment === name && !l.here) { l.here = nowStr(); l.hereBy = actor(); touched.add(l.wr); } });
   const failed = await syncArrived([...touched]);
-  back(AR, { ok: `All pieces of ${name} are marked as here.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+  back(arPath(shToUSA(sh)), { ok: `All pieces of ${name} are marked as here.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
 export const markHereNotified = act("markHereNotified", async (f: F) => {
   // Email sending is not wired yet: this only records that the customer was told.
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (w) w.hereNotified = true;
-  revalidatePath(AR);
+  revalidatePath(AR); revalidatePath(ARM);
 });
 
-// Website status 3 "ready for pickup".
+// Website status 3 "ready for pickup" (Haiti), or the e-mail "ready for pickup in Miami" for cargo that came from Haiti.
 export const markReady = act("markReady", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   w.ready = true;
   let failed = 0;
-  for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId })) failed++;
+  if (!toUSA(w)) for (const i of db.items) if (i.wr === w.id && i.clientId && await pushStatus({ tracking: i.tracking, status: 3, clientId: i.clientId })) failed++;
   emailHaiti(w, "ready");
-  back(AR, { ok: `${wrCode(w)} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+  back(arPath(toUSA(w)), { ok: `${wrCode(w)} is ready for pickup.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
 
 // ---------- Estimate requests from the website ----------

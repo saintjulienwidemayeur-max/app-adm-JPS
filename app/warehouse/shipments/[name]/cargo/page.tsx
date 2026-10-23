@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, openBooking, cargoOf, custOf, vol, cuft, chargeable, wrCode, r2 } from "@/lib/wh-store";
+import { db, openBooking, cargoOf, receiverOf, cuft, chargeable, wrCode, r2, shToUSA } from "@/lib/wh-store";
 import { shortDate } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
 
@@ -21,7 +21,7 @@ export default async function Page({ params }: { params: Promise<{ name: string 
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
         <div><dt className="text-xs text-zinc-500">Shipment</dt><dd className="font-semibold"><Link href={`/warehouse/shipments/${encodeURIComponent(name)}`} className="text-brand underline print:no-underline">{name}</Link></dd></div>
-        <div><dt className="text-xs text-zinc-500">Ship type</dt><dd>{sh.ship}</dd></div>
+        <div><dt className="text-xs text-zinc-500">Ship type</dt><dd>{sh.ship} · {shToUSA(sh) ? "Haiti → Miami" : "Miami → Haiti"}</dd></div>
         <div><dt className="text-xs text-zinc-500">{sh.ship === "Air" ? "Airline" : "Shipping line"}</dt><dd>{b.line || "–"}</dd></div>
         <div><dt className="text-xs text-zinc-500">{sh.ship === "Air" ? "Flight date" : "Sailing date"}</dt><dd>{shortDate(b.sailDate) || "–"}</dd></div>
       </dl>
@@ -30,7 +30,7 @@ export default async function Page({ params }: { params: Promise<{ name: string 
           <thead className="border-b-2 border-black"><tr>{["Pallet", "Consignee", "WR", "Item", "Type", "L×W×H (in)", "Lbs", "Chargeable", "Cuft"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
           <tbody>{rows.map(({ l, w, p }) => (
             <tr key={p.no} className="border-b border-zinc-300">
-              <td className={td}>{l.pallet}</td><td className={td}>{custOf(w)?.consignee || w.customer}</td><td className={td}>{wrCode(w)}</td><td className={td}>{p.no}</td><td className={td}>{p.type}</td>
+              <td className={td}>{l.pallet}</td><td className={td}>{receiverOf(w).name}</td><td className={td}>{wrCode(w)}</td><td className={td}>{p.no}</td><td className={td}>{p.type}</td>
               <td className={td}>{p.l}×{p.w}×{p.h}</td><td className={td}>{p.lbs}</td><td className={td}>{r2(chargeable(p))}</td><td className={td}>{cuft(p)}</td>
             </tr>))}</tbody>
           <tfoot><tr className="border-t-2 border-black font-semibold"><td className={td} colSpan={6}>{rows.length} piece{rows.length === 1 ? "" : "s"} on {c.pallets.length} pallet{c.pallets.length === 1 ? "" : "s"}</td><td className={td}>{c.lbs}</td><td className={td}>{c.chargeable}</td><td className={td}>{c.cuft}</td></tr>
