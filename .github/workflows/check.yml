@@ -1,0 +1,19 @@
+# Runs on every pull request and every push to main: type check, the calculation and document audits, and a production build.
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: yarn }
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - run: yarn install --frozen-lockfile
+      - run: npx tsc --noEmit
+      - run: npx tsx docs/audit-calculs.ts
+      - run: npx tsx docs/audit-documents.mts
+      - run: npx next build

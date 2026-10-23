@@ -279,6 +279,17 @@ export const charges = (w: WR) => r2(freightFee(w) + w.fees.filter((f) => f.kind
 export const credits = (w: WR) => r2(w.fees.filter((f) => f.kind === "credit").reduce((a, f) => a + f.amount, 0));
 export const quote = (w: WR) => calcInsurance(w.declared);
 export const insuranceFee = (w: WR) => (w.insurance === "Accepted" ? quote(w).customer : 0);
+// The lines of a receipt or an invoice: ONE list used by the receipt page, the receipt PDF, the invoice page and the invoice PDF, so they can never disagree.
+// Automatic freight (Air: chargeable lb x rate, Ocean: cubic feet x rate), then every fee, every credit (negative) and the insurance.
+export type DocLine = { desc: string; amount: number; qty?: number; rate?: number };
+export const docLines = (w: WR): DocLine[] => {
+  const lbs = r2(w.pieces.reduce((a, p) => a + p.lbs, 0)), ref = ` - Ref. WR: ${w.id} - (${lbs} lbs) - Number Of Pieces: ${w.pieces.length}`;
+  return [
+    ...(freightFee(w) > 0 ? [{ desc: freightDesc(w), amount: freightFee(w), qty: freightQty(w), rate: w.rate }] : []),
+    ...w.fees.map((f) => ({ desc: f.label + (/freight/i.test(f.label) ? ref : ""), amount: f.kind === "credit" ? -f.amount : f.amount })),
+    ...(insuranceFee(w) > 0 ? [{ desc: `Certificate of insurance - Ref. WR: ${w.id} - declared value ${money(w.declared)}`, amount: quote(w).customer }] : []),
+  ];
+};
 // A receipt that has something to pay (an estimate is not a debt until it is final): a fee line, or the automatic freight / insurance (an Air receipt often has no fee line at all).
 export const priced = (w: WR) => (!w.estimate || !!w.invoice) && (w.fees.length > 0 || freightFee(w) > 0 || insuranceFee(w) > 0);
 export const total = (w: WR) => Math.max(0, r2(charges(w) + insuranceFee(w) - credits(w)));
