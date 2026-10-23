@@ -270,7 +270,7 @@ export async function saveDoc(d: { kind: string; ref: string; name: string; note
 }
 export async function getDoc(id: string): Promise<(DocInfo & { data: Buffer }) | null> {
   if (id.startsWith("m")) return memDocs.get(id) ?? null;
-  if (!st.pool || !st.loaded || !/^\d+$/.test(id)) return null;
+  if (!st.pool || !st.loaded || !/^\d{1,12}$/.test(id)) return null;
   const r = await st.pool.query("select id::text, kind, ref, name, coalesce(note,'') as note, created_at, data from wh_docs where id = $1", [id]);
   const x = r.rows[0];
   return x ? { id: x.id, kind: x.kind, ref: x.ref, name: x.name, note: x.note, created: new Date(x.created_at).toISOString(), data: x.data } : null;

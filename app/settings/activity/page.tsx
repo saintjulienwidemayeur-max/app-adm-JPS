@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/wh-store";
+import { AUDIT_KEEP } from "@/lib/audit";
 import { requireAdmin } from "@/lib/users";
 import { AutoForm } from "@/components/auto-form";
 import { Input } from "@/components/ui/input";
@@ -24,7 +25,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
       <h1>Activity log</h1>
-      <p className="text-sm text-zinc-600">Everything each person does in the app: who, when, which action, with what, and how it ended. Sign-ins (and wrong codes), every change, imports, e-mails and invitations are listed. Codes and passwords are never written. The last {db.audit.length.toLocaleString("en-US")} entries are kept.</p>
+      <p className="text-sm text-zinc-600">Everything each person does in the app: who, when, which action, with what, and how it ended. Sign-ins (and wrong codes), every change, imports, e-mails and invitations are listed. Codes and passwords are never written. The last {AUDIT_KEEP.toLocaleString("en-US")} entries are kept ({db.audit.length.toLocaleString("en-US")} now).</p>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[...last].slice(0, 8).map(([name, e]) => (
           <Link key={name} href={`/settings/activity?user=${encodeURIComponent(name)}`} className="rounded-xl border border-[#dfe4f0] bg-white px-3 py-2 shadow-sm hover:border-brand">
