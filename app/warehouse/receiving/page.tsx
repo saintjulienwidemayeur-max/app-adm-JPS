@@ -82,7 +82,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               <td className={td}>{i.piece ?? <span className="text-zinc-400">–</span>}</td><td className={td}>{i.shipped ? "Yes" : "No"}</td>
               <td className={td}><details><summary className="cursor-pointer text-brand underline">Edit</summary>
                 <form action={updateItem} className="mt-1 grid gap-1"><input type="hidden" name="id" value={i.id} />
-                  <Input name="tracking" defaultValue={i.tracking} aria-label="Tracking" /><Input name="carrier" defaultValue={i.carrier} aria-label="Carrier" />{!i.customer && <Input name="customer" list="rcvcust" placeholder="Customer: name or number (tells them)" aria-label="Customer" />}
+                  <Input name="tracking" defaultValue={i.tracking} aria-label="Tracking" /><Input name="carrier" defaultValue={i.carrier} aria-label="Carrier" />{!i.piece && <Input name="customer" list="rcvcust" placeholder={i.customer ? `Wrong customer? Type the right one (now: ${i.customer})` : "Customer: name or number (tells them)"} aria-label="Customer" />}
                   <Button type="submit">Save</Button></form>
                 {!i.piece && <form action={deleteItem} className="mt-1"><input type="hidden" name="id" value={i.id} /><button className="text-red-700 underline">Delete parcel</button></form>}
               </details></td>
