@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, similarCustomers, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -129,23 +129,26 @@ export const receiveBatch = act("receiveBatch", async (f: F) => {
     const m = (r.info ?? "").match(/^(?:For|Matched:) ([^(·]+?)(?: \(|$| ·)/); if (m) who.add(m[1].trim());
   }
   for (const { c, t } of mails.values()) emailParcelArrived(c, t);
-  back(RX, { ...(ok && { info: `${ok} parcel${ok === 1 ? "" : "s"} saved${typed ? ` for ${pickCustomer(typed)!.name}` : who.size ? ` (${[...who].slice(0, 4).join(", ")}${who.size > 4 ? "..." : ""})` : ""}.` }), ...(bad.length && { err: `${bad.length} not saved: ${bad.slice(0, 5).join(" · ")}${bad.length > 5 ? " ..." : ""}` }), ...(warns.length && { warn: `${warns.length} parcel${warns.length === 1 ? "" : "s"} could not be matched to a customer or notified: they wait in the review queue.` }) });
+  back(RX, { t: String(Date.now()), ...(ok && { info: `${ok} parcel${ok === 1 ? "" : "s"} saved${typed ? ` for ${pickCustomer(typed)!.name}` : who.size ? ` (${[...who].slice(0, 4).join(", ")}${who.size > 4 ? "..." : ""})` : ""}.` }), ...(bad.length && { err: `${bad.length} not saved: ${bad.slice(0, 5).join(" · ")}${bad.length > 5 ? " ..." : ""}` }), ...(warns.length && { warn: `${warns.length} parcel${warns.length === 1 ? "" : "s"} could not be matched to a customer or notified: they wait in the review queue.` }) });
 });
 export const updateItem = act("updateItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));
   if (!it) return;
   if (tracking.length < 6) back(RX, { err: "The tracking number is too short." });
-  if (db.items.some((i) => i.tracking === tracking && i.id !== it.id)) back(RX, { err: `${tracking} already exists.` });
+  if (db.items.some((i) => sameTracking(i.tracking, tracking) && i.id !== it.id)) back(RX, { err: `${tracking} already exists.` });
   it.tracking = tracking;
   it.carrier = s(f, "carrier").toUpperCase() || it.carrier;
   // Identifying the customer later (for a parcel that arrived unannounced) tells them and puts the parcel on their tracking page.
+  // A wrong customer on a parcel that is not in a piece yet can be changed here too (the website tracking page follows the new customer).
   const typed = s(f, "customer");
-  if (typed && !it.customer) {
+  if (typed && (!it.customer || (!it.piece && !sameName(it.customer, pickCustomer(typed)?.name ?? "")))) {
     const who = pickCustomer(typed);
     if (!who) back(RX, { err: `No customer matches "${typed}".` });
-    Object.assign(it, { customer: who!.name, ship: it.ship ?? "Air", clientId: it.clientId ?? who!.clientId });
+    if (it.piece) back(RX, { err: `${tracking} is part of piece ${it.piece}. Delete that piece first, or move it to the right customer.` });
+    const changed = !!it.customer;
+    Object.assign(it, { customer: who!.name, ship: it.ship ?? "Air", clientId: changed ? who!.clientId : it.clientId ?? who!.clientId, prealert: changed ? undefined : it.prealert });
     const warn = await notifyReceived(it, who, it.ship ?? "Air");
-    back(RX, { ok: tracking, info: `For ${who!.name} (customer ${who!.no}).`, ...(warn && { warn }) });
+    back(RX, { ok: tracking, info: `For ${who!.name} (customer ${who!.no}).${changed ? " The customer was changed." : ""}`, ...(warn && { warn }) });
   }
   back(RX, { ok: tracking });
 });
@@ -174,6 +177,8 @@ async function assign(ids: number[], f: F) {
   }
   // Our own customer record (number 1001, 1002, ...): found by number, e-mail or name, otherwise created now.
   let c = findCustomer(customer) ?? (site.name ? findCustomer(site.name) : undefined);
+  const like = !c && s(f, "newcust") !== "yes" ? similarCustomers(customer) : [];
+  if (like.length) return back(CO, { err: `There is no customer "${customer}". Did you mean ${like.map((x) => `${x.name} (${x.no})`).join(" or ")}? Fix the name, or tick "New customer" to create "${customer}" as a different person.`, ...(items.length && { pick: items.map((i) => i.id).join(",") }) });
   const created = !c;
   if (!c) c = newCustomer(site.name ?? customer, { email: site.email ?? "" });
   else if (!c.email && site.email) c.email = site.email;
@@ -202,6 +207,8 @@ const emailOk = (e: string) => !e || /^\S+@\S+\.\S+$/.test(e);
 export const createWR = act("createWR", async (f: F) => {
   const name = s(f, "customer");
   if (!name) back("/warehouse/receipts", { err: "Choose or enter the customer." });
+  const like = !findCustomer(name) && s(f, "newcust") !== "yes" ? similarCustomers(name) : [];
+  if (like.length) back("/warehouse/receipts", { err: `There is no customer "${name}". Did you mean ${like.map((x) => `${x.name} (${x.no})`).join(" or ")}? Fix the name, or tick "New customer" to create "${name}" as a different person.` });
   const c = findCustomer(name) ?? newCustomer(name);
   const route = s(f, "route").toUpperCase();
   const w = openWR(c, shipOf(s(f, "ship")), { comments: s(f, "comments"), ...(route && { route }) });
@@ -311,7 +318,7 @@ export const saveFees = act("saveFees", async (f: F) => {
     const label = s(f, `label_${fee.id}`), amount = num(f, `amount_${fee.id}`), kind = feeKind(s(f, `kind_${fee.id}`));
     const bad = feeProblem(label, amount);
     if (bad) back(wrPath(w.id), { err: `${fee.label}: ${bad}` });
-    next.push({ id: fee.id, label, amount: r2(amount), kind });
+    next.push({ id: fee.id, label, amount: r2(amount), kind, ...(fee.auto && kind === "charge" && { auto: fee.auto }) }); // the automatic handling line stays automatic (Ocean -> Air removes it)
   }
   if (tooMuchCredit(w, next)) back(wrPath(w.id), { err: "Credits can't be more than the charges on this receipt." });
   w.fees = next;
@@ -418,9 +425,12 @@ function pieceInput(f: F) {
   if (contents.length > 120) return "The contents are too long (120 characters max).";
   return { type: s(f, "type").toUpperCase() || "BOX - OTHER", l, w, h, lbs, contents, old: false };
 }
+// A piece can't be added, changed or deleted once the receipt is invoiced: the invoice amount would change by itself.
+const invoicedPieces = (w: WR) => `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change its pieces.`;
 export const addPiece = act("addPiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
+  if (w.invoice) back(wrPath(w.id), { err: invoicedPieces(w) });
   const p = pieceInput(f), qty = Math.round(num(f, "qty") || 1);
   if (typeof p === "string") back(wrPath(w.id), { err: p });
   else if (!Number.isFinite(qty) || qty < 1 || qty > 100) back(wrPath(w.id), { err: "Number of boxes: from 1 to 100." });
@@ -432,19 +442,38 @@ export const updatePiece = act("updatePiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
   const piece = w?.pieces.find((x) => x.no === no);
   if (!w || !piece) return;
+  if (w.invoice) back(wrPath(w.id), { err: invoicedPieces(w) });
   if (db.loads.some((l) => l.no === no)) back(wrPath(w.id), { err: `Piece ${no} is already loaded. Remove it from the pallet first.` });
   const p = pieceInput(f);
   if (typeof p === "string") back(wrPath(w.id), { err: p });
   else Object.assign(piece, { ...p, old: piece.old });
-  back(wrPath(w.id), { ok: `Piece ${no} updated.` });
+  back(wrPath(w.id), { ok: `Piece ${no} updated. If its label was already printed, print it again: the label shows the weight and the size.`, label: String(no) });
 });
 export const deletePiece = act("deletePiece", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
   if (!w) return;
+  if (w.invoice) back(wrPath(w.id), { err: invoicedPieces(w) });
   if (db.loads.some((l) => l.no === no)) back(wrPath(w.id), { err: `Piece ${no} is already loaded. Remove it from the pallet first.` });
   db.items.forEach((i) => { if (i.piece === no) Object.assign(i, { piece: undefined, wr: undefined, customer: undefined, clientId: undefined }); });
   w.pieces = w.pieces.filter((x) => x.no !== no);
   back(wrPath(w.id), { ok: `Piece ${no} deleted.` });
+});
+// Wrong customer on a piece: moves it to the open receipt of the right customer (same ship type), or to a new one.
+export const movePiece = act("movePiece", async (f: F) => {
+  const w = db.wrs.find((x) => x.id === s(f, "wr")), no = num(f, "no");
+  const piece = w?.pieces.find((x) => x.no === no);
+  if (!w || !piece) return;
+  if (w.invoice) back(wrPath(w.id), { err: invoicedPieces(w) });
+  if (db.loads.some((l) => l.no === no)) back(wrPath(w.id), { err: `Piece ${no} is already loaded. Remove it from the pallet first.` });
+  const typed = s(f, "customer"), c = findCustomer(typed);
+  if (!c) back(wrPath(w.id), { err: `No customer matches "${typed}". Type the name or the number of an existing customer.` });
+  if (c!.no === w.cust) back(wrPath(w.id), { err: `Piece ${no} already belongs to ${c!.name}.` });
+  const to = db.wrs.find((x) => x.cust === c!.no && x.ship === w.ship && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) ?? openWR(c!, w.ship);
+  w.pieces = w.pieces.filter((x) => x !== piece);
+  to.pieces.push(piece);
+  db.items.forEach((i) => { if (i.piece === no) Object.assign(i, { customer: c!.name, wr: to.id, clientId: c!.clientId }); });
+  queueReceiptSoon(to.id);
+  back(wrPath(w.id), { ok: `Piece ${no} moved to ${c!.name} (customer ${c!.no}, ${wrCode(to)}). Print its label again: the label carries the receipt and the customer number.` });
 });
 export const createInvoice = act("createInvoice", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
@@ -782,6 +811,8 @@ export const loadPiece = act("loadPiece", async (f: F) => {
   if (!hit) back(PL, { ...q, err: `Piece "${s(f, "code")}" not found. Scan the piece label.` });
   if (db.loads.some((l) => l.no === no)) back(PL, { ...q, err: `Piece ${no} is already loaded.` });
   let sh = db.shipments.find((x) => x.name === shipment);
+  // A shipment is made on its own page, or by the first piece on the suggested name of the day. Any other unknown name is a typo (it would open a second shipment).
+  if (!sh && db.shipments.some((x) => !x.shipped && x.ship === ship) && !/^(PL-AIR|CT-OCEAN)-\d\d-\d\d-\d{4}$/.test(shipment)) back(PL, { ...q, err: `There is no shipment named "${shipment}". Open shipments: ${db.shipments.filter((x) => !x.shipped && x.ship === ship).map((x) => x.name).join(", ")}. Pick one from the list, or create a new one on the Shipments page.` });
   if (!sh) { sh = { name: shipment, ship, cargoId: String(db.n.cargo++), date: nowStr() }; db.shipments.push(sh); }
   if (sh.shipped) back(PL, { ...q, err: `${shipment} was already shipped.` });
   if (hit!.w.ship !== sh.ship) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} is ${hit!.w.ship} but ${shipment} is ${sh.ship}.` });
@@ -834,6 +865,15 @@ export const receiveHere = act("receiveHere", async (f: F) => {
   l!.here = nowStr(); l!.hereBy = actor();
   const failed = await syncArrived([l!.wr]);
   back(AR, { ok: `Piece ${no} received.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+});
+// A piece scanned here by mistake: takes it back to "expected" (only while the receipt is not marked ready for pickup).
+export const undoReceiveHere = act("undoReceiveHere", async (f: F) => {
+  const no = Number(s(f, "code").split("|").pop()), l = db.loads.find((x) => x.no === no && x.here);
+  if (!l) back(AR, { err: `Piece "${s(f, "code")}" is not marked as received here.` });
+  const w = db.wrs.find((x) => x.id === l!.wr);
+  if (w?.ready) back(AR, { err: `${wrCode(w)} is already marked ready for pickup: the customer was told.` });
+  l!.here = undefined; l!.hereBy = undefined;
+  back(AR, { ok: `Piece ${no} is back in the expected list.`, ...(w?.hereNotified && { warn: "The customer was already told that everything arrived; they are not told again." }) });
 });
 export const arriveShipment = act("arriveShipment", async (f: F) => {
   const name = s(f, "shipment");
