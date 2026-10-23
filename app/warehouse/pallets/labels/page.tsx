@@ -1,4 +1,4 @@
-import { db, findPiece, chargeable, r2 } from "@/lib/wh-store";
+import { db, findPiece, chargeable, r2, shToUSA } from "@/lib/wh-store";
 import { Labels } from "@/components/wh-labels";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ shipment?: string }> }) {
@@ -10,7 +10,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
     const ps = loads.filter((l) => l.pallet === name).map((l) => findPiece(l.no)!.p);
     const lbs = r2(ps.reduce((a, p) => a + p.lbs, 0));
     return {
-      code: `${shipment}|${name}`, ship: sh?.ship ?? "Air", route: `Cargo ${sh?.cargoId ?? ""}`,
+      code: `${shipment}|${name}`, ship: sh?.ship ?? "Air", route: `Cargo ${sh?.cargoId ?? ""}`, ...(shToUSA(sh) && { to: "TO MIAMI" }),
       rows: [["Pieces", String(ps.length)], ["Weight", `${lbs} lb`], ["Chargeable", `${r2(ps.reduce((a, p) => a + chargeable(p), 0))} lb`], ["Weight", `${r2(lbs * 0.45359)} KG`]] as [string, string][],
     };
   });

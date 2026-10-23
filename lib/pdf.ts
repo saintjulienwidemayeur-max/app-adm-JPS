@@ -4,9 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { DISCLAIMER, ESTIMATE_NOTE } from "./disclaimer";
-import { COMPANY } from "./company";
+import { COMPANY, HAITI } from "./company";
 import { cardFees } from "./pricing";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
 
 const MAP: Record<string, string> = { "−": "-", "–": "-", "—": "-", "·": "-", "•": "*", "‘": "'", "’": "'", "“": '"', "”": '"', "…": "...", "→": "->", "×": "x", "≥": ">=", "€": "EUR", " ": " " };
 const safe = (s: unknown) => String(s ?? "").normalize("NFC").replace(/[^\x20-\x7e¡-ÿ]/g, (c) => MAP[c] ?? (c === "\n" ? " " : "?"));
@@ -80,14 +80,15 @@ const longDate = (d: string) => { const t = new Date(d); return isNaN(t.getTime(
 export async function receiptPdf(w: WR): Promise<Uint8Array> {
   const d = await Doc.make(), c = custOf(w), M = d.M, CW = d.W - 2 * M;
   const sh = shipperOf(w), rc = receiverOf(w), consignee = rc.name, place = [c?.consigneeCity, c?.consigneeCountry].filter(Boolean).join(", "), phone = rc.phone;
-  d.header([longDate(w.date), COMPANY.name, `${COMPANY.address}, ${COMPANY.city}`, COMPANY.phone]);
+  const office = toUSA(w) ? HAITI : COMPANY; // received at the Haiti office when it goes to the USA
+  d.header([longDate(w.date), COMPANY.name, `${office.address}, ${office.city}`, office.phone]);
   d.y -= 4; d.text("Warehouse Receipt", 0, 20, { bold: true, right: d.W / 2 + d.width("Warehouse Receipt", 20, true) / 2 }); d.y -= 30;
   const top = d.y;
   d.text("Shipper", M, 9, { color: GREY }); d.text(`${sh.name} (customer ${w.cust})`, M + 48, 10, { bold: true }); d.y -= 14;
   if (sh.phone) d.para(`Phone ${sh.phone}`, M, 300, 9.5);
   if (c?.billing) d.para(c.billing, M, 300, 9.5);
   d.y -= 4; d.text("Consignee", M, 9, { color: GREY }); d.text(consignee, M + 48, 10, { bold: true }); d.y -= 14;
-  for (const l of [c?.consigneeAddress, place, phone && `Phone ${phone}`, w.email && `eMail ${w.email}`].filter(Boolean) as string[]) d.para(l, M, 300, 9.5);
+  for (const l of [rc.address, place, phone && `Phone ${phone}`, w.email && `eMail ${w.email}`].filter(Boolean) as string[]) d.para(l, M, 300, 9.5);
   const afterLeft = d.y; d.y = top;
   d.page.drawRectangle({ x: d.W - M - 150, y: d.y - 34, width: 150, height: 34, borderColor: GREY, borderWidth: 1.5 });
   d.text("WR #", 0, 9, { color: GREY, right: d.W - M - 150 + 38 }); d.page.drawText(safe(wrCode(w)), { x: d.W - M - 108, y: d.y - 23, size: 15, font: d.bold, color: BLACK });

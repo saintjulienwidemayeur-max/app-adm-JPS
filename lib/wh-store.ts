@@ -8,7 +8,8 @@ import { COMPANY, HAITI, ORIGIN, DESTINATION, AIRLINE, COMPANY_EMAILS, BLOCKED_E
 export type Ship = "Air" | "Ocean";
 // Set by lib/actor.ts: the name of the person doing the current action.
 export const actorRef: { get: () => string } = { get: () => "" };
-export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string; prealert?: string; by?: string };
+// `office`: "Haiti" when the parcel was received at the Haiti office (to be sent to the USA); absent = the Miami warehouse.
+export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string; prealert?: string; by?: string; office?: "Haiti" };
 // `by`: who made the piece. `old`: made before the 132 / 1788 formulas (measured with 139 / 1728), kept so that old invoices do not change.
 export type Piece = { no: number; type: string; l: number; w: number; h: number; lbs: number; contents?: string; by?: string; old?: boolean };
 export type Payment = { date: string; time?: string; amount: number; method: string; ref: string; batch?: string };
@@ -38,7 +39,7 @@ export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
 };
 // A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
 export type OrderItem = { desc: string; qty: number; unit: number };
@@ -67,7 +68,8 @@ export type Prealert = {
   siteId?: string; clientId?: string; // set when the customer announced it on the website
 };
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string; by?: string; hereBy?: string };
-export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string; shippedBy?: string };
+// `dir`: "USA" = goes from Haiti to Miami (absent = Miami to Haiti, as before).
+export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string; shippedBy?: string; dir?: "USA" };
 
 // Booking info of a shipment (the old "Shipment Booking Info" form). It feeds the Bill of Lading,
 // the Shipper's Letter of Instruction and the cargo list.
@@ -105,8 +107,13 @@ export const defaultRate = (ship: Ship) => (ship === "Ocean" ? OCEAN_RATE : AIR_
 export const DESTINATIONS = ["Port-au-Prince", "Cap Haitien", "Miragoane", "Cayes", "St Marc", "Hinche", "Jeremie", "Saint Domingue", "Miami"];
 export const DEFAULT_DEST = "Port-au-Prince";
 export const destLabel = (d: string) => (d === "Miami" ? "Miami (from Haiti)" : d);
+// Direction: a receipt whose destination is Miami was taken in Haiti and goes to the USA; a shipment made for those receipts has dir "USA".
+// Everything else (and every record saved before this existed) goes from Miami to Haiti.
+export const US_DEST = "Miami";
+export const toUSA = (w: { dest?: string }) => w.dest === US_DEST;
+export const shToUSA = (sh: { dir?: string } | undefined) => sh?.dir === "USA";
 const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "");
-const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "Port-au-Prince", capehaitien: "Cap Haitien", caphaitien: "Cap Haitien", cap: "Cap Haitien", lescayes: "Cayes", cayes: "Cayes", stmarc: "St Marc", saintmarc: "St Marc", jeremie: "Jeremie", santodomingo: "Saint Domingue", saintdomingue: "Saint Domingue", stdomingue: "Saint Domingue", miragoane: "Miragoane", hinche: "Hinche", miami: "Miami" };
+const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "Port-au-Prince", capehaitien: "Cap Haitien", caphaitien: "Cap Haitien", cap: "Cap Haitien", lescayes: "Cayes", cayes: "Cayes", stmarc: "St Marc", saintmarc: "St Marc", jeremie: "Jeremie", santodomingo: "Saint Domingue", saintdomingue: "Saint Domingue", stdomingue: "Saint Domingue", miragoane: "Miragoane", hinche: "Hinche", miami: "Miami", miamifl: "Miami", miamiflorida: "Miami" };
 // The destination a customer's consignee city points to (the usual one when it is not recognised).
 export const destOf = (c: { consigneeCity?: string } | undefined) => ALIASES[norm(c?.consigneeCity ?? "")] ?? DEFAULT_DEST;
 export const destRate = (dest: string | undefined, ship: Ship) => { const r = db.settings.rates?.[dest ?? ""]?.[ship === "Ocean" ? "ocean" : "air"]; return r && r > 0 ? r : defaultRate(ship); };
@@ -161,7 +168,7 @@ export const newCustomer = (name: string, init: Partial<Customer> = {}): Custome
 };
 // Who sends and who receives this receipt: what was typed on the receipt, else the customer (shipper) and the customer's consignee (receiver).
 export const shipperOf = (w: WR) => { const c = custOf(w); return { name: w.shipperName || w.customer, phone: w.shipperPhone || c?.phone || "" }; };
-export const receiverOf = (w: WR) => { const c = custOf(w); return { name: w.receiverName || c?.consignee || w.customer, phone: w.receiverPhone || c?.consigneePhone || c?.phone || "" }; };
+export const receiverOf = (w: WR) => { const c = custOf(w); return { name: w.receiverName || c?.consignee || w.customer, phone: w.receiverPhone || c?.consigneePhone || c?.phone || "", address: w.receiverAddress || c?.consigneeAddress || "" }; };
 export const creditOf = (c: Customer | undefined) => r2((c?.creditLog ?? []).reduce((a, e) => a + e.amount, 0));
 export const custOf = (w: WR) => db.customers.find((c) => c.no === w.cust);
 export const repOf = (id: string) => db.reps.find((r) => r.id === id);
@@ -185,15 +192,16 @@ export { isoToday };
 export const openBooking = (sh: Shipment): Booking => {
   const ex = bookingOf(sh.name);
   if (ex) return ex;
-  const air = sh.ship === "Air";
+  const air = sh.ship === "Air", usa = shToUSA(sh); // Haiti -> Miami: origin, destination, shipper and consignee are swapped
   const b: Booking = {
-    shipment: sh.name, line: air ? AIRLINE : "", awb: "", bol: "", sailDate: isoToday(), origin: ORIGIN, destination: DESTINATION, vessel: air ? AIRLINE : "",
+    shipment: sh.name, line: air ? AIRLINE : "", awb: "", bol: "", sailDate: isoToday(), origin: usa ? DESTINATION : ORIGIN, destination: usa ? ORIGIN : DESTINATION, vessel: air ? AIRLINE : "",
     blCost: 0, freightPayableAt: "", declared: 0,
-    shipperName: COMPANY.name, shipperAddress: COMPANY.address, shipperCity: COMPANY.city, shipperContact: COMPANY.phone,
-    consigneeName: HAITI.name, consigneeAddress: HAITI.address, consigneeCity: HAITI.city, consigneeContact: HAITI.phone,
-    receiver: "", notify: "JP's Logistics Team", notifyContact: HAITI.email,
+    shipperName: usa ? HAITI.name : COMPANY.name, shipperAddress: usa ? HAITI.address : COMPANY.address, shipperCity: usa ? HAITI.city : COMPANY.city, shipperContact: usa ? HAITI.phone : COMPANY.phone,
+    consigneeName: usa ? COMPANY.name : HAITI.name, consigneeAddress: usa ? COMPANY.address : HAITI.address, consigneeCity: usa ? COMPANY.city : HAITI.city, consigneeContact: usa ? COMPANY.phone : HAITI.phone,
+    receiver: "", notify: "JP's Logistics Team", notifyContact: usa ? COMPANY.phone : HAITI.email,
     pieceType: "BOXES", commodity: "", sed: "NO", refrigeration: "NO", hazmat: "NO",
     containerSize: "", spotDate: "", spotTime: "", containerId: "", seal: "", tag: "", arrivalDate: "",
+    ...(usa && { airportDep: "PAP", airportArr: "MIA" }),
     notes: "", signer: "", contents: [{ label: "Boxes", value: 0 }, { label: "Cargo", value: 0 }, { label: "", value: 0 }], pallets: {},
   };
   db.bookings.push(b);

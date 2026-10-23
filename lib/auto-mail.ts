@@ -4,7 +4,7 @@
 //     get these from the website: push + e-mail, see jps-sync.pushStatus);
 //   - the invoice (PDF) is sent by the billing app when the invoice is made.
 // Each e-mail is logged (Administration > Email customers > history) and the PDF that was sent is kept (wh_docs).
-import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, paidAmt, money, type WR, type Customer } from "./wh-store";
+import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, paidAmt, money, toUSA, type WR, type Customer } from "./wh-store";
 import { flush, saveDoc } from "./persist";
 import { mailOne, mailTo, mailEnabled, findClientId, type MailFile } from "./jps-sync";
 import { usableEmail } from "./mailrules";
@@ -63,6 +63,22 @@ const T = {
     readySubject: (n: string) => `Su recibo ${n} está listo para retirar`, ready: (n: string) => `Sus paquetes del recibo ${n} están listos para retirar / entregar.\n\nPuede pasar por nuestra oficina: ${HAITI.name}, ${HAITI.address}, ${HAITI.city}, ${HAITI.phone}.` },
 };
 
+// Parcels that go from Haiti to the USA: received at the Haiti office, left Haiti, arrived in Miami, ready for pickup at the Miami warehouse.
+const TU = {
+  fr: { arrSubject: "Votre colis est arrivé à notre bureau d'Haïti", arr: (t: string) => `Nous avons bien reçu votre colis ${t} à notre bureau de Pétion-Ville (Haïti). Il sera bientôt préparé pour l'envoi vers les États-Unis.`, arrMany: (n: number, l: string) => `Nous avons bien reçu vos ${n} colis à notre bureau de Pétion-Ville (Haïti) :\n${l}\n\nIls seront bientôt préparés pour l'envoi vers les États-Unis.`,
+    shippedSubject: (n: string) => `Votre envoi (reçu ${n}) est parti d'Haïti`, shipped: (n: string) => `Votre envoi du reçu ${n} vient de partir d'Haïti : il est en transit vers Miami. Nous vous prévenons dès son arrivée à Miami.`,
+    haitiSubject: (n: string) => `Vos colis du reçu ${n} sont arrivés à Miami`, haiti: (n: string) => `Bonne nouvelle : tous les colis du reçu ${n} sont arrivés à Miami. Nous vous prévenons dès qu'ils sont prêts pour le retrait.`,
+    readySubject: (n: string) => `Votre reçu ${n} est prêt pour le retrait à Miami`, ready: (n: string) => `Vos colis du reçu ${n} sont prêts pour le retrait à Miami.\n\nVous pouvez passer à notre entrepôt : ${COMPANY.name}, ${COMPANY.address}, ${COMPANY.city}, ${COMPANY.phone}.` },
+  en: { arrSubject: "Your package arrived at our Haiti office", arr: (t: string) => `We received your package ${t} at our Pétion-Ville office (Haiti). It will soon be prepared for shipping to the USA.`, arrMany: (n: number, l: string) => `We received your ${n} packages at our Pétion-Ville office (Haiti):\n${l}\n\nThey will soon be prepared for shipping to the USA.`,
+    shippedSubject: (n: string) => `Your shipment (receipt ${n}) left Haiti`, shipped: (n: string) => `Your shipment of receipt ${n} just left Haiti: it is in transit to Miami. We will tell you as soon as it arrives in Miami.`,
+    haitiSubject: (n: string) => `Your packages of receipt ${n} arrived in Miami`, haiti: (n: string) => `Good news: all the packages of receipt ${n} arrived in Miami. We will tell you as soon as they are ready for pickup.`,
+    readySubject: (n: string) => `Your receipt ${n} is ready for pickup in Miami`, ready: (n: string) => `Your packages of receipt ${n} are ready for pickup in Miami.\n\nYou can come to our warehouse: ${COMPANY.name}, ${COMPANY.address}, ${COMPANY.city}, ${COMPANY.phone}.` },
+  es: { arrSubject: "Su paquete llegó a nuestra oficina de Haití", arr: (t: string) => `Recibimos su paquete ${t} en nuestra oficina de Pétion-Ville (Haití). Pronto será preparado para el envío a Estados Unidos.`, arrMany: (n: number, l: string) => `Recibimos sus ${n} paquetes en nuestra oficina de Pétion-Ville (Haití):\n${l}\n\nPronto serán preparados para el envío a Estados Unidos.`,
+    shippedSubject: (n: string) => `Su envío (recibo ${n}) salió de Haití`, shipped: (n: string) => `Su envío del recibo ${n} acaba de salir de Haití: está en tránsito a Miami. Le avisaremos en cuanto llegue a Miami.`,
+    haitiSubject: (n: string) => `Sus paquetes del recibo ${n} llegaron a Miami`, haiti: (n: string) => `Buenas noticias: todos los paquetes del recibo ${n} llegaron a Miami. Le avisaremos en cuanto estén listos para retirar.`,
+    readySubject: (n: string) => `Su recibo ${n} está listo para retirar en Miami`, ready: (n: string) => `Sus paquetes del recibo ${n} están listos para retirar en Miami.\n\nPuede pasar por nuestro depósito: ${COMPANY.name}, ${COMPANY.address}, ${COMPANY.city}, ${COMPANY.phone}.` },
+};
+
 // The warehouse receipt as a PDF. Not sent twice for the same state of the receipt.
 // `force` (the "Notify by e-mail" button) sends again even if the same state was already sent. Returns an error text, or "" when sent.
 export async function emailReceipt(w: WR, why: string, force = false): Promise<string> {
@@ -85,20 +101,20 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
 
 const hasAccount = (w: WR) => !!custOf(w)?.clientId || db.items.some((i) => i.wr === w.id && i.clientId);
 // "Parcel arrived": only for a customer with no account (the website sends it to the others).
-export function emailParcelArrived(c: Customer | undefined, trackings: string[]) {
-  if (!c || c.clientId || !usableEmail(c) || !trackings.length) return;
-  const tx = T[langOf(c)], tracking = trackings.join(", "), one = trackings.length === 1;
+export function emailParcelArrived(c: Customer | undefined, trackings: string[], office?: "Haiti") {
+  if (!c || (c.clientId && !office) || !usableEmail(c) || !trackings.length) return; // received in Haiti: the website does not send it, so always from here
+  const tx = office ? TU[langOf(c)] : T[langOf(c)], tracking = trackings.join(", "), one = trackings.length === 1;
   queueMail(async () => { const r = await deliver(c, "", tx.arrSubject, one ? tx.arr(tracking) : tx.arrMany(trackings.length, trackings.join("\n")), []); log(tx.arrSubject, r.to || c.name, r.error || undefined); });
 }
 export function emailHaiti(w: WR, kind: "shipped" | "arrived" | "ready") {
   const c = custOf(w);
-  if (hasAccount(w) || !c || !usableEmail(c)) return;
+  if ((hasAccount(w) && !toUSA(w)) || !c || !usableEmail(c)) return; // cargo to Miami is not on the website's route: always from here
   queueMail(() => emailStatus(w, kind));
 }
 // The same e-mail on demand ("Notify by e-mail" button): sent even if the customer has a website account. Returns an error text, or "".
 export async function emailStatus(w: WR, kind: "shipped" | "arrived" | "ready"): Promise<string> {
   const c = custOf(w);
-  const tx = T[langOf(c)], code = wrCode(w), subject = kind === "ready" ? tx.readySubject(code) : kind === "shipped" ? tx.shippedSubject(code) : tx.haitiSubject(code), message = kind === "ready" ? tx.ready(code) : kind === "shipped" ? tx.shipped(code) : tx.haiti(code);
+  const tx = (toUSA(w) ? TU : T)[langOf(c)], code = wrCode(w), subject = kind === "ready" ? tx.readySubject(code) : kind === "shipped" ? tx.shippedSubject(code) : tx.haitiSubject(code), message = kind === "ready" ? tx.ready(code) : kind === "shipped" ? tx.shipped(code) : tx.haiti(code);
   const r = await deliver(c, w.email, subject, message, []);
   log(subject, r.to || c?.name || w.customer, r.error || undefined);
   return r.error;

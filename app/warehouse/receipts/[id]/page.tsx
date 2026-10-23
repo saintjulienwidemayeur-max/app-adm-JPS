@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { listDocs } from "@/lib/persist";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
+import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
 import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
@@ -13,7 +13,7 @@ type SP = Promise<Record<string, string | undefined>>;
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 const lnk = "inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium hover:bg-zinc-100";
 const sel = "h-9 w-full rounded-md border bg-white px-2 text-sm";
-const F = ({ label, children }: { label: string; children: ReactNode }) => <label className="grid gap-1 text-xs font-medium text-zinc-600">{label}{children}</label>;
+const F = ({ label, children, span }: { label: string; children: ReactNode; span?: string }) => <label className={`grid gap-1 text-xs font-medium text-zinc-600 ${span ?? ""}`}>{label}{children}</label>;
 
 export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const { id } = await params;
@@ -34,7 +34,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/receipts" className="text-sm text-brand underline">All receipts</Link>
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-        <h1>{code} · {w.customer} <span className="text-base font-normal text-zinc-600">· {w.ship} · {w.date}{w.route && ` · ${w.route}`}</span></h1>
+        <h1>{code} · {w.customer} <span className="text-base font-normal text-zinc-600">· {w.ship} · {w.date}{w.route && ` · ${w.route}`}</span>{toUSA(w) && <span className="ml-2 rounded bg-sky-100 px-2 py-0.5 align-middle text-xs font-semibold text-sky-800">Haiti → Miami</span>}</h1>
         <div className="flex flex-wrap gap-2">
           <Link href={`/warehouse/receipts/${w.id}/report`} className={lnk}>View receipt</Link>
           <a href={`/warehouse/receipts/${w.id}/pdf`} target="_blank" className={lnk}>Download PDF</a>
@@ -67,8 +67,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <div><dt className="text-xs text-zinc-500">Phone</dt><dd>{cust.phone || "–"}</dd></div>
             <div><dt className="text-xs text-zinc-500">Email</dt><dd>{cust.email || "–"}</dd></div>
             <div><dt className="text-xs text-zinc-500">Billing address</dt><dd>{cust.billing || "–"}</dd></div>
-            <div><dt className="text-xs text-zinc-500">Consignee</dt><dd>{cust.consignee || cust.name}</dd></div>
-            <div><dt className="text-xs text-zinc-500">Destination</dt><dd>{[cust.consigneeCity, cust.consigneeCountry].filter(Boolean).join(", ") || "–"}</dd></div>
+            <div><dt className="text-xs text-zinc-500">{toUSA(w) ? "Receiver in the USA" : "Consignee"}</dt><dd>{toUSA(w) ? receiverOf(w).name : cust.consignee || cust.name}</dd></div>
+            <div><dt className="text-xs text-zinc-500">Destination</dt><dd>{toUSA(w) ? [receiverOf(w).address, "Miami (USA)"].filter(Boolean).join(", ") : [cust.consigneeCity, cust.consigneeCountry].filter(Boolean).join(", ") || "–"}</dd></div>
             <div><dt className="text-xs text-zinc-500">Representative</dt><dd>{db.reps.find((r) => r.id === w.rep)?.name ?? "–"}</dd></div>
           </dl>
         ) : <p className="mt-1 text-zinc-600">No customer record.</p>}
@@ -111,7 +111,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <p className="text-xs text-zinc-600">Receipt opened by <b>{w.by || "–"}</b>{db.shipments.find((s) => db.loads.some((l) => l.wr === w.id && l.shipment === s.name))?.shippedBy && <> · shipped by <b>{db.shipments.find((s) => db.loads.some((l) => l.wr === w.id && l.shipment === s.name))?.shippedBy}</b></>}. Every action is also in the Activity log.</p>
         {w.pieces.length > 0 && (
           <table className="mt-2 w-full text-left text-sm">
-            <thead><tr>{["Piece", "Parcel scanned by", "Piece made by", "Loaded on a pallet by", "Arrived in Haiti, scanned by"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["Piece", "Parcel scanned by", "Piece made by", "Loaded on a pallet by", toUSA(w) ? "Arrived in Miami, scanned by" : "Arrived in Haiti, scanned by"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
             <tbody>{w.pieces.map((p) => { const l = db.loads.find((x) => x.no === p.no); return (
               <tr key={p.no} className="border-b border-zinc-100"><td className={td}>{p.no}</td><td className={td}>{[...new Set(db.items.filter((i) => i.piece === p.no && i.by).map((i) => i.by))].join(", ") || "–"}</td><td className={td}>{p.by || "–"}</td><td className={td}>{l?.by || "–"}</td><td className={td}>{l?.hereBy || "–"}</td></tr>); })}</tbody>
           </table>
@@ -191,6 +191,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <F label="Shipper phone"><Input name="shipperPhone" defaultValue={w.shipperPhone ?? ""} placeholder={shipperOf(w).phone} maxLength={40} /></F>
           <F label="Receiver name (who receives it)"><Input name="receiverName" defaultValue={w.receiverName ?? ""} placeholder={receiverOf(w).name} maxLength={80} /></F>
           <F label="Receiver phone"><Input name="receiverPhone" defaultValue={w.receiverPhone ?? ""} placeholder={receiverOf(w).phone} maxLength={40} /></F>
+          <F label="Receiver address (street, city, state, zip)" span="sm:col-span-2"><Input name="receiverAddress" defaultValue={w.receiverAddress ?? ""} placeholder={receiverOf(w).address} maxLength={160} /></F>
           <F label="Notification email"><Input name="email" type="email" defaultValue={w.email} /></F>
           <F label="Value of the parcel ($, commercial value)"><Input name="declared" type="number" step="0.01" min="0" defaultValue={w.declared} /></F>
           <F label="Insurance"><select name="insurance" defaultValue={w.insurance} className={sel}><option>Declined</option><option>Accepted</option></select></F>

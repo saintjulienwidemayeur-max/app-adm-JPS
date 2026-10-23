@@ -31,7 +31,8 @@ export const SECTIONS: MenuSection[] = [
     pages: [
       { href: "/warehouse/prealerts", label: "Pre-alerts", icon: BellRing, desc: "Orders customers announced, and unidentified parcels" },
       { href: "/warehouse/receiving", label: "Received items", icon: PackageOpen, desc: "Scan each parcel that arrives from the carriers" },
-      { href: "/warehouse/arrivals", label: "Arrivals PV", icon: MapPin, desc: "Check in the pieces that arrived at the destination office" },
+      { href: "/warehouse/arrivals", label: "Arrivals PV", icon: MapPin, desc: "Check in the pieces that arrived at the Pétion-Ville office (cargo from Miami)" },
+      { href: "/warehouse/arrivals-miami", label: "Arrivals Miami", icon: MapPin, desc: "Check in the pieces that arrived in Miami (cargo from Haiti)" },
     ],
   },
   {
