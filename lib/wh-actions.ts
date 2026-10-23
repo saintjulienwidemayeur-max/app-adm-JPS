@@ -53,7 +53,7 @@ export const endDelivery = act("endDelivery", async () => {
 });
 // The customer of a parcel is known (announced, typed at the scan, or set later): tell the website. That creates the parcel on the customer's
 // tracking page (status 0, "received in Miami") and the website sends the push notification and the e-mail "your parcel arrived at our office".
-async function notifyReceived(item: Item, c: { name: string; email: string; clientId?: string; box?: string } | undefined, ship: Ship): Promise<string> {
+async function notifyReceived(item: Item, c: { name: string; email: string; clientId?: string; box?: string } | undefined, ship: Ship, mails?: Map<number, { c: Customer; t: string[] }>): Promise<string> {
   if (!syncEnabled()) return "";
   let clientId = item.clientId ?? c?.clientId;
   if (!clientId && c) {
@@ -62,7 +62,7 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
   if (!clientId) {
     // No account on the website: the e-mail on file (if there is a real one) gets "your parcel arrived" from here.
     const full = c && "no" in c ? (c as Customer) : db.customers.find((x) => x.name === c?.name);
-    if (full && usableEmail(full)) { emailParcelArrived(full, item.tracking); return ""; }
+    if (full && usableEmail(full)) { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(item.tracking); mails.set(full.no, e); } else emailParcelArrived(full, [item.tracking]); return ""; }
     return `${c?.name ?? "This customer"} has no account on the website and no usable e-mail: no tracking and no notification.`;
   }
   item.clientId = clientId;
@@ -71,16 +71,15 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
 }
 // The customer field of Received items: "1001 · Name" (picked from the list), a number, a name or an e-mail.
 const pickCustomer = (v: string) => { const n = v.match(/^\s*(\d+)\s*(·|$)/); return findCustomer(n ? n[1] : v); };
-export const receiveItem = act("receiveItem", async (f: F) => {
-  const sess = await readSess();
-  if (!sess) back(RX, { err: "Start a delivery first." });
-  const tracking = cleanTracking(s(f, "tracking"));
-  if (tracking.length < 6) back(RX, { err: "That doesn't look like a tracking number. Scan it again." });
+type Res = Record<string, string>;
+// One scanned parcel: saves it and tells who it is for. Returns what the page shows (ok / info / warn / err). `mails`: collects the direct e-mails (customers with no website account) so a batch sends one e-mail per customer.
+async function receiveOne(sess: Sess, raw: string, typed: string, mails?: Map<number, { c: Customer; t: string[] }>): Promise<Res> {
+  const tracking = cleanTracking(raw);
+  if (tracking.length < 6) return { err: "That doesn't look like a tracking number. Scan it again." };
   const dup = db.items.find((i) => sameTracking(i.tracking, tracking));
-  if (dup) back(RX, { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` });
-  const typed = s(f, "customer");
+  if (dup) return { err: `DUPLICATE: ${tracking} was already accepted on ${dup.date} (${dup.carrier}, ${dup.receiver ? `received by ${dup.receiver}` : "no receiver noted"}). Not counted.` };
   const who = typed ? pickCustomer(typed) : undefined;
-  if (typed && !who) back(RX, { err: `No customer matches "${typed}". Leave the field empty if you don't know it, or pick a customer from the list.` });
+  if (typed && !who) return { err: `No customer matches "${typed}". Leave the field empty if you don't know it, or pick a customer from the list.` };
   // Already received in the old system? A warning only (a customer can order again, and tracking numbers get reused).
   const oldHit = db.oldWrs.length ? oldScanIndex(db.oldWrs).get(tracking.slice(-12))?.find((h) => true) : undefined;
   const oldMsg = oldHit ? ` Careful: this tracking number was already received in the old system on ${oldHit.date || "an unknown date"} (receipt ${oldHit.wr}).` : "";
@@ -99,15 +98,38 @@ export const receiveItem = act("receiveItem", async (f: F) => {
     Object.assign(pa, { status: "Received", itemId: item.id });
     if (pa.siteId) await markSitePrealertReceived(pa.siteId);
     const c = db.customers.find((x) => x.no === pa!.cust);
-    const warn = await notifyReceived(item, c ?? { name: pa.customer, email: "", clientId: pa.clientId }, ship);
-    back(RX, { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) });
+    const warn = await notifyReceived(item, c ?? { name: pa.customer, email: "", clientId: pa.clientId }, ship, mails);
+    return { ok: tracking, info: `Matched: ${pa.customer} (customer ${pa.cust}) · ${pa.choice ? ship : "no answer yet, Air by default"}${pa.wait ? " · waiting for other orders" : ""}.${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) };
   }
   if (who) {
     Object.assign(item, { customer: who.name, ship: "Air" as Ship, clientId: who.clientId });
-    const warn = await notifyReceived(item, who, "Air");
-    back(RX, { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) });
+    const warn = await notifyReceived(item, who, "Air", mails);
+    return { ok: tracking, info: `For ${who.name} (customer ${who.no}).${syncEnabled() && !warn ? " The customer was told by push and e-mail." : ""}${oldMsg}`, ...(warn && { warn }) };
   }
-  back(RX, { ok: tracking, warn: `Not announced by any customer: it waits in the review queue until it is identified.${oldMsg}` });
+  return { ok: tracking, warn: `Not announced by any customer: it waits in the review queue until it is identified.${oldMsg}` };
+}
+export const receiveItem = act("receiveItem", async (f: F) => {
+  const sess = await readSess();
+  if (!sess) back(RX, { err: "Start a delivery first." });
+  back(RX, await receiveOne(sess!, s(f, "tracking"), s(f, "customer")));
+});
+// Many parcels in one go: the person scans them all (for one customer, or none), then saves. One e-mail per customer lists all the parcels.
+export const receiveBatch = act("receiveBatch", async (f: F) => {
+  const sess = await readSess();
+  if (!sess) back(RX, { err: "Start a delivery first." });
+  const codes = [...new Set(s(f, "codes").split(/\r?\n/).map((x) => x.trim()).filter(Boolean))].slice(0, 300), typed = s(f, "customer");
+  if (!codes.length) back(RX, { err: "Scan at least one parcel before you save." });
+  if (typed && !pickCustomer(typed)) back(RX, { err: `No customer matches "${typed}". Nothing was saved.` });
+  const mails = new Map<number, { c: Customer; t: string[] }>();
+  let ok = 0; const bad: string[] = [], warns: string[] = [], who = new Set<string>();
+  for (const code of codes) {
+    const r = await receiveOne(sess!, code, typed, mails);
+    if (r.err) { bad.push(`${code}: ${r.err.replace(/^DUPLICATE: /, "already received. ")}`); continue; }
+    ok++; if (r.warn) warns.push(r.warn);
+    const m = (r.info ?? "").match(/^(?:For|Matched:) ([^(·]+?)(?: \(|$| ·)/); if (m) who.add(m[1].trim());
+  }
+  for (const { c, t } of mails.values()) emailParcelArrived(c, t);
+  back(RX, { ...(ok && { info: `${ok} parcel${ok === 1 ? "" : "s"} saved${typed ? ` for ${pickCustomer(typed)!.name}` : who.size ? ` (${[...who].slice(0, 4).join(", ")}${who.size > 4 ? "..." : ""})` : ""}.` }), ...(bad.length && { err: `${bad.length} not saved: ${bad.slice(0, 5).join(" · ")}${bad.length > 5 ? " ..." : ""}` }), ...(warns.length && { warn: `${warns.length} parcel${warns.length === 1 ? "" : "s"} could not be matched to a customer or notified: they wait in the review queue.` }) });
 });
 export const updateItem = act("updateItem", async (f: F) => {
   const it = db.items.find((i) => i.id === num(f, "id")), tracking = cleanTracking(s(f, "tracking"));

@@ -47,17 +47,17 @@ async function deliver(c: Customer | undefined, fallbackEmail: string, subject: 
 
 const T = {
   fr: { rcptSubject: (n: string) => `Votre reçu d'entrepôt ${n}`, rcpt: (n: string, p: number, lbs: number, ship: string) => `Votre reçu ${n} est joint à ce message (PDF).\n\n${p} pièce${p > 1 ? "s" : ""}, ${lbs} lb · ${ship === "Ocean" ? "bateau" : "avion"}.`, est: (t: string) => `\n\nCeci est une ESTIMATION : total estimé ${t}. La facture finale est émise après le dédouanement et la livraison.`, fin: "\n\nLa facture finale est émise lorsque l'envoi a passé la douane et a été livré à notre bureau de destination.",
-    arrSubject: "Votre colis est arrivé dans notre entrepôt de Miami", arr: (t: string) => `Nous avons bien reçu votre colis ${t} à notre entrepôt de Miami. Il sera bientôt préparé pour l'expédition.`,
+    arrMany: (n: number, l: string) => `Nous avons bien reçu vos ${n} colis dans notre entrepôt de Miami :\n${l}\n\nIls seront bientôt préparés pour l'expédition.`, arrSubject: "Votre colis est arrivé dans notre entrepôt de Miami", arr: (t: string) => `Nous avons bien reçu votre colis ${t} à notre entrepôt de Miami. Il sera bientôt préparé pour l'expédition.`,
     haitiSubject: (n: string) => `Vos colis du reçu ${n} sont arrivés en Haïti`, haiti: (n: string) => `Bonne nouvelle : tous les colis du reçu ${n} sont arrivés en Haïti. Nous vous prévenons dès qu'ils sont prêts pour le retrait.`,
     shippedSubject: (n: string) => `Votre envoi (reçu ${n}) est parti de Miami`, shipped: (n: string) => `Votre envoi du reçu ${n} vient de partir de Miami : il est en transit. Nous vous prévenons dès son arrivée en Haïti.`,
     readySubject: (n: string) => `Votre reçu ${n} est prêt pour le retrait`, ready: (n: string) => `Vos colis du reçu ${n} sont prêts pour le retrait / la livraison.\n\nVous pouvez passer à notre bureau : ${HAITI.name}, ${HAITI.address}, ${HAITI.city}, ${HAITI.phone}.` },
   en: { rcptSubject: (n: string) => `Your warehouse receipt ${n}`, rcpt: (n: string, p: number, lbs: number, ship: string) => `Your receipt ${n} is attached to this message (PDF).\n\n${p} piece${p > 1 ? "s" : ""}, ${lbs} lb · ${ship === "Ocean" ? "ocean" : "air"}.`, est: (t: string) => `\n\nThis is an ESTIMATE: estimated total ${t}. The final invoice is issued after customs and delivery.`, fin: "\n\nThe final invoice is issued when the shipment has cleared customs and been delivered to our destination office.",
-    arrSubject: "Your package arrived at our Miami warehouse", arr: (t: string) => `We received your package ${t} at our Miami warehouse. It will soon be prepared for shipping.`,
+    arrMany: (n: number, l: string) => `We received your ${n} packages at our Miami warehouse:\n${l}\n\nThey will soon be prepared for shipping.`, arrSubject: "Your package arrived at our Miami warehouse", arr: (t: string) => `We received your package ${t} at our Miami warehouse. It will soon be prepared for shipping.`,
     haitiSubject: (n: string) => `Your packages of receipt ${n} arrived in Haiti`, haiti: (n: string) => `Good news: all the packages of receipt ${n} arrived in Haiti. We will tell you as soon as they are ready for pickup.`,
     shippedSubject: (n: string) => `Your shipment (receipt ${n}) left Miami`, shipped: (n: string) => `Your shipment of receipt ${n} just left Miami: it is in transit. We will tell you as soon as it arrives in Haiti.`,
     readySubject: (n: string) => `Your receipt ${n} is ready for pickup`, ready: (n: string) => `Your packages of receipt ${n} are ready for pickup / delivery.\n\nYou can come to our office: ${HAITI.name}, ${HAITI.address}, ${HAITI.city}, ${HAITI.phone}.` },
   es: { rcptSubject: (n: string) => `Su recibo de almacén ${n}`, rcpt: (n: string, p: number, lbs: number, ship: string) => `Su recibo ${n} está adjunto a este mensaje (PDF).\n\n${p} pieza${p > 1 ? "s" : ""}, ${lbs} lb · ${ship === "Ocean" ? "barco" : "avión"}.`, est: (t: string) => `\n\nEsto es una ESTIMACIÓN: total estimado ${t}. La factura final se emite después de la aduana y la entrega.`, fin: "\n\nLa factura final se emite cuando el envío ha pasado la aduana y ha sido entregado en nuestra oficina de destino.",
-    arrSubject: "Su paquete llegó a nuestro depósito de Miami", arr: (t: string) => `Recibimos su paquete ${t} en nuestro depósito de Miami. Pronto será preparado para el envío.`,
+    arrMany: (n: number, l: string) => `Recibimos sus ${n} paquetes en nuestro depósito de Miami:\n${l}\n\nPronto serán preparados para el envío.`, arrSubject: "Su paquete llegó a nuestro depósito de Miami", arr: (t: string) => `Recibimos su paquete ${t} en nuestro depósito de Miami. Pronto será preparado para el envío.`,
     haitiSubject: (n: string) => `Sus paquetes del recibo ${n} llegaron a Haití`, haiti: (n: string) => `Buenas noticias: todos los paquetes del recibo ${n} llegaron a Haití. Le avisaremos en cuanto estén listos para retirar.`,
     shippedSubject: (n: string) => `Su envío (recibo ${n}) salió de Miami`, shipped: (n: string) => `Su envío del recibo ${n} acaba de salir de Miami: está en tránsito. Le avisaremos en cuanto llegue a Haití.`,
     readySubject: (n: string) => `Su recibo ${n} está listo para retirar`, ready: (n: string) => `Sus paquetes del recibo ${n} están listos para retirar / entregar.\n\nPuede pasar por nuestra oficina: ${HAITI.name}, ${HAITI.address}, ${HAITI.city}, ${HAITI.phone}.` },
@@ -85,10 +85,10 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
 
 const hasAccount = (w: WR) => !!custOf(w)?.clientId || db.items.some((i) => i.wr === w.id && i.clientId);
 // "Parcel arrived": only for a customer with no account (the website sends it to the others).
-export function emailParcelArrived(c: Customer | undefined, tracking: string) {
-  if (!c || c.clientId || !usableEmail(c)) return;
-  const tx = T[langOf(c)];
-  queueMail(async () => { const r = await deliver(c, "", tx.arrSubject, tx.arr(tracking), []); log(tx.arrSubject, r.to || c.name, r.error || undefined); });
+export function emailParcelArrived(c: Customer | undefined, trackings: string[]) {
+  if (!c || c.clientId || !usableEmail(c) || !trackings.length) return;
+  const tx = T[langOf(c)], tracking = trackings.join(", "), one = trackings.length === 1;
+  queueMail(async () => { const r = await deliver(c, "", tx.arrSubject, one ? tx.arr(tracking) : tx.arrMany(trackings.length, trackings.join("\n")), []); log(tx.arrSubject, r.to || c.name, r.error || undefined); });
 }
 export function emailHaiti(w: WR, kind: "shipped" | "arrived" | "ready") {
   const c = custOf(w);
