@@ -54,11 +54,11 @@ export function readCargo(f: { receipts: string; pieces: string; scans: string; 
 }
 
 // Finds a tracking number in the old scans (tolerant: the tail of a long barcode matches).
-let index: { n: number; map: Map<string, { wr: string; date: string; carrier: string }[]> } | null = null;
+let index: { wrs: OldWR[]; map: Map<string, { wr: string; date: string; carrier: string }[]> } | null = null;
 export function oldScanIndex(wrs: OldWR[]) {
-  if (index && index.n === wrs.length) return index.map;
+  if (index && index.wrs === wrs) return index.map; // the list is replaced as a whole by an import or a refresh
   const map = new Map<string, { wr: string; date: string; carrier: string }[]>();
   for (const w of wrs) for (const s of w.scans) { const k = s.t.slice(-12); (map.get(k) ?? map.set(k, []).get(k)!).push({ wr: w.wr, date: s.date, carrier: s.carrier }); }
-  index = { n: wrs.length, map };
+  index = { wrs, map };
   return map;
 }

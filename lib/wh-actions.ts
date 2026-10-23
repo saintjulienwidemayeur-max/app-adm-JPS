@@ -194,7 +194,7 @@ async function assign(ids: number[], f: F) {
   let w = addToOpen ? db.wrs.find((x) => x.cust === cno && x.ship === ship && toUSA(x) === toUSA({ dest: dest ?? destOf(c) }) && !x.invoice && !x.pieces.some((pc) => db.loads.some((l) => l.no === pc.no))) : undefined;
   if (!w) w = openWR(c, ship, dest ? { dest } : {});
   const no = db.n.piece++;
-  w.pieces.push({ no, ...p, by: actor() });
+  w.pieces.push({ no, ...p, by: actor(), old: false });
   const usa = toUSA(w);
   for (const i of items) Object.assign(i, { customer: c.name, piece: no, wr: w.id, clientId, ship });
   // Website status 0 "received in Miami": the customer gets the push + e-mail now that we know who it belongs to.
@@ -443,7 +443,7 @@ export const addPiece = act("addPiece", async (f: F) => {
   if (typeof p === "string") back(wrPath(w.id), { err: p });
   else if (!Number.isFinite(qty) || qty < 1 || qty > 100) back(wrPath(w.id), { err: "Number of boxes: from 1 to 100." });
   else if (w.pieces.length + qty > 500) back(wrPath(w.id), { err: "A receipt can't have more than 500 pieces." });
-  else { for (let i = 0; i < qty; i++) w.pieces.push({ no: db.n.piece++, ...p, by: actor() }); queueReceiptSoon(w.id); }
+  else { for (let i = 0; i < qty; i++) w.pieces.push({ no: db.n.piece++, ...p, by: actor(), old: false }); queueReceiptSoon(w.id); }
   back(wrPath(w.id), qty > 1 ? { ok: `${qty} boxes added (each one is its own piece with its own label).` } : {});
 });
 export const updatePiece = act("updatePiece", async (f: F) => {

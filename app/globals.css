@@ -30,3 +30,11 @@ main thead { background: #eaeefb; color: var(--color-brand) !important; }
 main tbody tr:hover { background: #f6f8fd; }
 main input:not([type="checkbox"]), main select { border-color: #cfd6e8; }
 @media print { body { background: #fff } main table, main .rounded-lg { box-shadow: none } main thead { background: none } }
+
+/* Phone: a wide table scrolls sideways on its own instead of pushing the page or being cut off. */
+@media (max-width: 640px) {
+  main table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+@media print {
+  main table { display: table; overflow: visible; }
+}

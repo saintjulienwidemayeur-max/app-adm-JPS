@@ -30,7 +30,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       <form action={createWR} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[1.4fr_6rem_6rem_9rem_1fr_auto]">
         <Input name="customer" list="cust" placeholder="Customer (name or number; new names are added to Customers)" required />
         <Input name="route" placeholder="Route" maxLength={12} aria-label="Route" />
-        <select name="ship" className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
+        <select name="ship" aria-label="Ship type" className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
         <select name="dest" aria-label="Going to" className="h-9 rounded-md border bg-white px-2 text-sm"><option value="">To Haiti</option><option value="Miami">To Miami</option></select>
         <Input name="comments" placeholder="Comments" />
         <Button type="submit">New receipt</Button>
@@ -53,9 +53,9 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       {rows.length > 0 && <p className="mt-2 text-xs text-zinc-600">{rows.length} of {db.wrs.length} receipts</p>}
       {pages > 1 && (
         <div className="mt-3 flex items-center justify-center gap-4 text-sm">
-          {page > 1 ? <Link href={link(page - 1)} className="text-brand underline">Previous</Link> : <span className="text-zinc-400">Previous</span>}
+          {page > 1 ? <Link href={link(page - 1)} className="py-2 text-brand underline">Previous</Link> : <span className="py-2 text-zinc-400">Previous</span>}
           <span>Page {page} of {pages}</span>
-          {page < pages ? <Link href={link(page + 1)} className="text-brand underline">Next</Link> : <span className="text-zinc-400">Next</span>}
+          {page < pages ? <Link href={link(page + 1)} className="py-2 text-brand underline">Next</Link> : <span className="py-2 text-zinc-400">Next</span>}
         </div>
       )}
     </main>

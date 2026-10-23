@@ -118,7 +118,15 @@ const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "
 export const destOf = (c: { consigneeCity?: string } | undefined) => ALIASES[norm(c?.consigneeCity ?? "")] ?? DEFAULT_DEST;
 export const destRate = (dest: string | undefined, ship: Ship) => { const r = db.settings.rates?.[dest ?? ""]?.[ship === "Ocean" ? "ocean" : "air"]; return r && r > 0 ? r : defaultRate(ship); };
 // The rate of this customer (from the old system or typed on the customer page), else the rate of the destination, else the standard one.
-export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : destRate(dest, ship); };
+// A customer's own rate for a destination that has its own price list in the old system (Cap-Air, Cap-Ocean, SDQ, DR Ocean) comes first.
+const routeRate = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => {
+  const r = c?.rates;
+  return dest === "Cap Haitien" ? (ship === "Ocean" ? r?.capo : r?.capa) : dest === "Saint Domingue" ? (ship === "Ocean" ? r?.droc : r?.sdq) : undefined;
+};
+export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => {
+  const own = routeRate(c, ship, dest), r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air;
+  return own && own > 0 ? own : r && r > 0 ? r : destRate(dest, ship);
+};
 
 // Settings the administrator can change (Administration > Fees & rates).
 // Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
@@ -240,8 +248,18 @@ export const cuft = (p: Piece) => r2((p.l * p.w * p.h) / (p.old ? 1728 : CUFT_DI
 // Once, when the data is loaded: the pieces of invoiced receipts keep the old formulas, so an invoice never changes by itself.
 export function keepOldFormulas() { for (const w of db.wrs) if (w.invoice) for (const p of w.pieces) if (p.old === undefined) p.old = true; }
 export const chargeable = (p: Piece) => Math.max(p.lbs, vol(p));
+// Looked up by number all the time (a shipment lists thousands of pieces): an index of the receipts, rebuilt when the list changes.
+// A hit is checked before it is trusted (the piece may have been deleted or moved), else the receipts are searched.
+let pieceIndex: { wrs: WR[]; len: number; map: Map<number, { w: WR; p: Piece }> } | null = null;
 export const findPiece = (no: number) => {
-  for (const w of db.wrs) { const p = w.pieces.find((x) => x.no === no); if (p) return { w, p }; }
+  if (!pieceIndex || pieceIndex.wrs !== db.wrs || pieceIndex.len !== db.wrs.length) {
+    const map = new Map<number, { w: WR; p: Piece }>();
+    for (const w of db.wrs) for (const p of w.pieces) map.set(p.no, { w, p });
+    pieceIndex = { wrs: db.wrs, len: db.wrs.length, map };
+  }
+  const hit = pieceIndex.map.get(no);
+  if (hit && hit.w.pieces.includes(hit.p)) return hit;
+  for (const w of db.wrs) { const p = w.pieces.find((x) => x.no === no); if (p) { pieceIndex.map.set(no, { w, p }); return { w, p }; } }
 };
 
 // ---------- Money ----------
@@ -261,12 +279,14 @@ export const total = (w: WR) => Math.max(0, r2(charges(w) + insuranceFee(w) - cr
 export const paidAmt = (w: WR) => r2(w.payments.reduce((a, p) => a + p.amount, 0));
 export const balance = (w: WR) => r2(total(w) - paidAmt(w));
 export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && priced(w) ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
+// Same helper as `priced` (a receipt that has something to pay, also when it only has the automatic freight line): kept under the name the audit uses.
+export const hasCharges = priced;
 export const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // What the same goods would cost shipped the other way (same pieces, standard rate of that method, its automatic handling fee).
 export const otherShip = (w: WR): Ship => (w.ship === "Air" ? "Ocean" : "Air");
 export const estimateFor = (w: WR, ship: Ship) => {
-  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship);
+  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship, w.dest);
   const freight = r2(qty * rate), handling = ship === "Ocean" ? OCEAN_HANDLING : 0;
   const isHandling = (f: Fee) => f.auto === "handling" || f.label.trim().toLowerCase() === HANDLING_LABEL.toLowerCase(); // a handling line typed by hand counts as handling too
   const extra = r2(w.fees.filter((f) => f.kind === "charge" && !isHandling(f)).reduce((a, f) => a + f.amount, 0));

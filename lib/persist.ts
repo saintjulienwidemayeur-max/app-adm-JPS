@@ -10,11 +10,13 @@
 import { Pool, type PoolClient } from "pg";
 import { db, keepOldFormulas } from "./wh-store";
 
-type Table = { name: string; key: (row: never) => string; rows: () => unknown[]; set: (rows: never[]) => void };
+// `frozen`: imported as a whole and never edited row by row (the old cargo history and old invoices: tens of MB). While the list is the very
+// same array as at the last save, it is not compared again (comparing means writing every row as JSON, on every page view).
+type Table = { name: string; key: (row: never) => string; rows: () => unknown[]; set: (rows: never[]) => void; frozen?: boolean };
 type Store = {
   pool: Pool | null; loaded: boolean; error: string | null;
   seen: Map<string, Map<string, string>>; queue: Promise<unknown>; starting: Promise<void> | null; retry?: boolean;
-  maxAt?: Map<string, number>; syncAt?: number; keysAt?: number; syncing?: boolean; lastUse?: number; timer?: boolean;
+  gate?: Promise<void>; refs?: Map<string, unknown[]>; maxAt?: Map<string, number>; syncAt?: number; keysAt?: number; syncing?: boolean; lastUse?: number; timer?: boolean;
 };
 const g = globalThis as unknown as { __whStore?: Store };
 const st: Store = (g.__whStore ??= { pool: null, loaded: false, error: null, seen: new Map(), queue: Promise.resolve(), starting: null });
@@ -37,9 +39,9 @@ const TABLES: Table[] = [
   { name: "wh_users", key: (u: { id: string }) => u.id, rows: () => db.users, set: (r) => { db.users = r; } },
   { name: "wh_maillog", key: (m: { id: number }) => String(m.id), rows: () => db.maillog, set: (r) => { db.maillog = (r as { id: number }[]).sort((a, b) => b.id - a.id) as never; } },
   { name: "wh_audit", key: (a: { id: number }) => String(a.id), rows: () => db.audit, set: (r) => { db.audit = (r as { id: number }[]).sort((a, b) => b.id - a.id) as never; } },
-  { name: "wh_oldinvoices", key: (o: { no: string }) => o.no, rows: () => db.oldInvoices, set: (r) => { db.oldInvoices = r; } },
-  { name: "wh_oldwrs", key: (o: { wr: string }) => o.wr, rows: () => db.oldWrs, set: (r) => { db.oldWrs = r; } },
-  { name: "wh_oldships", key: (o: { id: string }) => o.id, rows: () => db.oldShips, set: (r) => { db.oldShips = r; } },
+  { name: "wh_oldinvoices", key: (o: { no: string }) => o.no, rows: () => db.oldInvoices, set: (r) => { db.oldInvoices = r; }, frozen: true },
+  { name: "wh_oldwrs", key: (o: { wr: string }) => o.wr, rows: () => db.oldWrs, set: (r) => { db.oldWrs = r; }, frozen: true },
+  { name: "wh_oldships", key: (o: { id: string }) => o.id, rows: () => db.oldShips, set: (r) => { db.oldShips = r; }, frozen: true },
   { name: "wh_bookings", key: (b: { shipment: string }) => b.shipment, rows: () => db.bookings, set: (r) => { db.bookings = r; } },
 ];
 // Counters and the fee-name lists are two small rows of a "meta" table.
@@ -81,6 +83,9 @@ async function createTables(c: PoolClient) {
   }
 }
 
+// The largest of the numbers (Math.max(...list) fails with a very long list).
+const top = (start: number, list: number[]) => list.reduce((m, x) => (x > m ? x : m), start);
+
 async function load() {
   const pool = st.pool!;
   const c = await pool.connect();
@@ -92,6 +97,7 @@ async function load() {
       const r = await c.query<{ k: string; data: unknown }>(`select k, data from ${t.name} order by seq`);
       t.set(r.rows.map((x) => x.data) as never[]);
       seen.set(t.name, rowsOf(t));
+      (st.refs ??= new Map()).set(t.name, t.rows());
     }
     const m = await c.query<{ k: string; data: Record<string, unknown> }>(`select k, data from ${META}`);
     const metaSeen = new Map<string, string>(); // only what is really in the database, so missing rows get written on the first save
@@ -106,15 +112,17 @@ async function load() {
     }
     keepOldFormulas(); // saved with the next flush
     // Make sure the counters are ahead of every number already used (defence against a lost counter row).
-    db.n.wr = Math.max(db.n.wr, ...db.wrs.map((w) => Number(w.id) + 1));
-    db.n.piece = Math.max(db.n.piece, ...db.wrs.flatMap((w) => w.pieces.map((p) => p.no + 1)));
-    db.n.item = Math.max(db.n.item, ...db.items.map((i) => i.id + 1));
-    db.n.pickup = Math.max(db.n.pickup, ...db.pickups.map((p) => Number(p.id.replace(/\D/g, "")) + 1));
-    db.n.prealert = Math.max(db.n.prealert, ...db.prealerts.map((p) => Number(p.id.replace(/\D/g, "")) + 1));
-    db.n.mail = Math.max(db.n.mail, ...db.maillog.map((m) => m.id + 1));
-    db.n.user = Math.max(db.n.user, ...db.users.map((u) => Number(u.id.replace(/\D/g, "")) + 1));
-    db.n.audit = Math.max(db.n.audit, ...db.audit.map((a) => a.id + 1));
-    db.n.cust = Math.max(db.n.cust, ...db.customers.map((x) => x.no + 1));
+    db.n.wr = top(db.n.wr, db.wrs.map((w) => Number(w.id) + 1));
+    db.n.inv = top(db.n.inv, db.wrs.flatMap((w) => (w.invoice ? [Number(w.invoice.replace(/\D/g, "")) + 1] : [])));
+    db.n.pay = top(db.n.pay, [...db.wrs.flatMap((w) => w.payments), ...db.customers.flatMap((c) => c.creditLog ?? [])].flatMap((x) => (x.batch ? [Number(x.batch.replace(/\D/g, "")) + 1] : [])));
+    db.n.piece = top(db.n.piece, db.wrs.flatMap((w) => w.pieces.map((p) => p.no + 1)));
+    db.n.item = top(db.n.item, db.items.map((i) => i.id + 1));
+    db.n.pickup = top(db.n.pickup, db.pickups.map((p) => Number(p.id.replace(/\D/g, "")) + 1));
+    db.n.prealert = top(db.n.prealert, db.prealerts.map((p) => Number(p.id.replace(/\D/g, "")) + 1));
+    db.n.mail = top(db.n.mail, db.maillog.map((m) => m.id + 1));
+    db.n.user = top(db.n.user, db.users.map((u) => Number(u.id.replace(/\D/g, "")) + 1));
+    db.n.audit = top(db.n.audit, db.audit.map((a) => a.id + 1));
+    db.n.cust = top(db.n.cust, db.customers.map((x) => x.no + 1));
     seen.set(META, metaSeen);
     st.seen = seen;
     st.maxAt = maxAt;
@@ -163,7 +171,8 @@ async function write() {
   const next = new Map<string, Map<string, string>>();
   try {
     // First find what changed, without touching the database: most pages change nothing, and then there is nothing to do.
-    const sets: [string, Map<string, string>][] = [...TABLES.map((t) => [t.name, rowsOf(t)] as [string, Map<string, string>]), [META, metaMap()]];
+    const unchanged = (t: Table) => t.frozen && st.refs?.get(t.name) === t.rows() && st.seen.has(t.name);
+    const sets: [string, Map<string, string>][] = [...TABLES.map((t) => [t.name, unchanged(t) ? st.seen.get(t.name)! : rowsOf(t)] as [string, Map<string, string>]), [META, metaMap()]];
     const work = sets.map(([name, cur]) => {
       const old = st.seen.get(name) ?? new Map<string, string>();
       return { name, cur, up: [...cur].filter(([k, json]) => old.get(k) !== json), del: [...old.keys()].filter((k) => !cur.has(k)) };
@@ -178,12 +187,40 @@ async function write() {
     }
     await c.query("commit");
     st.seen = next;
+    for (const t of TABLES) (st.refs ??= new Map()).set(t.name, t.rows());
     st.error = null;
   } catch (e) {
     await c?.query("rollback").catch(() => {});
     st.error = e instanceof Error ? e.message : String(e);
     console.error("[persist] save failed (will retry on the next change):", st.error);
   } finally { c?.release(); }
+}
+
+// One action at a time across BOTH apps. Receipt, piece, invoice and payment numbers are counters in memory: without this, two people
+// pressing a button in the two apps within the same few seconds got the same number (or one app saved over the other's row).
+// The lock is a Postgres advisory lock held on its own connection while the action runs (released when it has been saved); the other
+// app waits (at most 10 seconds, then goes ahead as before) and, when it gets the lock, looks at the database again.
+const LOCK_KEY = 7262002;
+export async function lockActions(): Promise<() => void> {
+  const prev = st.gate ?? Promise.resolve();
+  let open!: () => void;
+  st.gate = new Promise<void>((r) => { open = r; });
+  await prev; // actions of this app go one after the other (a connection each would use up the pool)
+  const pool = st.pool;
+  let c: PoolClient | undefined;
+  try {
+    if (pool && st.loaded) {
+      c = await pool.connect();
+      let got = false;
+      for (let i = 0; i < 400 && !got; i++) { got = (await c.query<{ ok: boolean }>("select pg_try_advisory_lock($1) as ok", [LOCK_KEY])).rows[0].ok; if (!got) await new Promise((r) => setTimeout(r, 25)); }
+      if (!got) { console.error("[persist] the other app kept the lock for 10 seconds: going ahead without it"); c.release(); c = undefined; }
+    }
+  } catch (e) { console.error("[persist] lock failed:", e instanceof Error ? e.message : e); c?.release(true); c = undefined; }
+  const held = c;
+  return () => {
+    if (held) held.query("select pg_advisory_unlock($1)", [LOCK_KEY]).then(() => held.release(), () => held.release(true));
+    open();
+  };
 }
 
 // Writes the rows that changed since the last save. Saves never run at the same time.
@@ -202,10 +239,12 @@ async function latest(c: PoolClient): Promise<Map<string, number>> {
 
 // Brings in what the other app wrote to the database since the last look (at most every 3 seconds, and every 5 seconds in the background).
 // Rows this app changed and has not saved yet are kept. Counters take the larger value, so two apps never give out the same number.
-export async function refresh(background = false): Promise<void> {
+// `force`: look now (an action is about to change data), not only when the last look is older than 3 seconds.
+export async function refresh(background = false, force = false): Promise<void> {
   const pool = st.pool;
   if (!background) st.lastUse = Date.now();
-  if (!pool || !st.loaded || st.syncing || Date.now() - (st.syncAt ?? 0) < (background ? 2500 : 3000)) return;
+  if (force) for (let i = 0; st.syncing && i < 200; i++) await new Promise((r) => setTimeout(r, 25)); // a look in progress started before the lock: wait, then look again
+  if (!pool || !st.loaded || st.syncing || (!force && Date.now() - (st.syncAt ?? 0) < (background ? 2500 : 3000))) return;
   st.syncing = true; st.syncAt = Date.now();
   let c: PoolClient | undefined;
   try {
@@ -233,6 +272,7 @@ export async function refresh(background = false): Promise<void> {
         for (const [k, v] of [...local]) if (!keys.has(k) && JSON.stringify(v) === seen.get(k)) { local.delete(k); seen.delete(k); changed = true; }
       }
       if (changed) { t.set([...local.values()] as never[]); st.seen.set(t.name, seen); }
+      if (changed || !st.refs?.has(t.name)) (st.refs ??= new Map()).set(t.name, t.rows());
     }
     if ((now.get(META) ?? 0) > (before.get(META) ?? 0)) {
       const metaSeen = st.seen.get(META) ?? new Map<string, string>();

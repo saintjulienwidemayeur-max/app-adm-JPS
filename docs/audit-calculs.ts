@@ -1,4 +1,4 @@
-import { db, newCustomer, openWR, total, charges, credits, freightFee, freightQty, insuranceFee, balance, paidAmt, vol, cuft, chargeable, estimateFor, rateFor, r2, OCEAN_HANDLING } from "../lib/wh-store";
+import { db, hasCharges, keepOldFormulas, newCustomer, openWR, total, charges, credits, freightFee, freightQty, insuranceFee, balance, paidAmt, vol, cuft, chargeable, estimateFor, rateFor, r2, OCEAN_HANDLING } from "../lib/wh-store";
 import { calcInsurance, cardFees } from "../lib/pricing";
 import { estimate, parseEstimate } from "../lib/estimate";
 
@@ -57,4 +57,64 @@ console.log(`checks passed: ${pass}, failed: ${fail}`); if (bad.length) console.
 const w4 = openWR(cust, "Air"); w4.pieces.push({ no: db.n.piece++, type: "BOX", l: 30, w: 20, h: 20, lbs: 20, contents: "x" });
 w4.fees.push({ id: db.n.fee++, label: "Handling fees", amount: 35, kind: "charge" });
 eq("compare popup ignores the hand-typed Air handling", estimateFor(w4, "Ocean").total, R(R(R(30*20*20/1788) * 16) + 45));
-console.log(`final: passed ${pass}, failed ${fail}`);
+
+// ---- H. rounding traps: the app's Math.round(x * 100) / 100 against exact integer arithmetic (half-up), pieces with up to 2 decimals
+{
+  let seed2 = 777; const rr = () => (seed2 = (seed2 * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const halfUp = (num: number, den: number) => Math.floor((2 * num + den) / (2 * den)); // integers below 2^53
+  let off = 0, n = 0; const ex: string[] = [];
+  for (let t = 0; t < 20000; t++) {
+    const dec = rr() < 0.5 ? 10 : 100, ints = [0, 0, 0].map(() => Math.round((1 + rr() * 59) * dec)), [l, w, h] = ints.map((v) => v / dec);
+    const P = ints[0] * ints[1] * ints[2]; // exact product x dec^3
+    for (const [div, name, f] of [[132, "vol132", vol], [1788, "cuft1788", cuft]] as const) {
+      const cents = halfUp(P * 100, div * dec ** 3), got = f({ no: 0, type: "", l, w, h, lbs: 1 });
+      n++; if (Math.abs(got * 100 - cents) > 0.001) { off++; if (ex.length < 5) ex.push(`${name} ${l}x${w}x${h}: app ${got} exact ${cents / 100}`); }
+    }
+  }
+  console.log(`H. exact-rounding check: ${n} computations, ${off} differ by a cent from exact half-up`, ex.join(" | "));
+  // freight = r2(qty x rate) for typical rates and quantities
+  let off2 = 0, n2 = 0; const ex2: string[] = [];
+  for (const rate of [4.5, 4.15, 5, 16, 15.5, 17, 3.75]) for (let q100 = 1; q100 <= 30000; q100 += 7) {
+    const exact = halfUp(q100 * Math.round(rate * 100), 100); // cents
+    n2++; if (Math.abs(r2((q100 / 100) * rate) * 100 - exact) > 0.001) { off2++; if (ex2.length < 5) ex2.push(`${q100 / 100} x ${rate}: app ${r2((q100 / 100) * rate)} exact ${exact / 100}`); }
+  }
+  console.log(`H. freight rounding: ${n2} computations, ${off2} differ from exact half-up`, ex2.join(" | "));
+}
+// ---- I. legacy rule: pieces of invoiced receipts keep 139 / 1728; a receipt invoiced now is pinned to today's formulas
+{
+  const c = newCustomer("Legacy Customer");
+  const a = openWR(c, "Air"); a.pieces.push({ no: db.n.piece++, type: "BOX", l: 30, w: 20, h: 20, lbs: 10, contents: "x" }); // old data: no `old` flag
+  eq("legacy uninvoiced piece uses 132", vol(a.pieces[0]), R(12000 / 132));
+  a.invoice = "INV-LEG"; keepOldFormulas();
+  eq("legacy invoiced piece keeps 139", vol(a.pieces[0]), R(12000 / 139));
+  eq("legacy invoice freight", freightFee(a), R(R(12000 / 139) * 4.5));
+  const old = a.pieces[0].old; a.invoice = undefined; keepOldFormulas();
+  eq("cancelling the invoice keeps the pieces on the old formula", vol(a.pieces[0]), R(12000 / 139)); void old;
+  const o = openWR(c, "Ocean"); o.pieces.push({ no: db.n.piece++, type: "BOX", l: 30, w: 20, h: 20, lbs: 10, contents: "x", old: false });
+  o.invoice = "INV-NEW"; keepOldFormulas();
+  eq("a piece made today stays on 1788 when invoiced", cuft(o.pieces[0]), R(12000 / 1788));
+}
+// ---- J. a receipt with only freight (an Air receipt with no fee line) still has something to pay
+{
+  const c = newCustomer("Freight Only"); const w = openWR(c, "Air"); w.pieces.push({ no: db.n.piece++, type: "BOX", l: 20, w: 20, h: 20, lbs: 50, contents: "x", old: false });
+  eq("freight-only receipt is billable", hasCharges(w) ? 1 : 0, 1); eq("empty receipt is not billable", hasCharges(openWR(c, "Air")) ? 1 : 0, 0);
+}
+// ---- K. special rates: Cap-Air / Cap-Ocean / SDQ / DR Ocean come first for their destination; the compare popup uses the destination's rates
+{
+  db.settings.rates["Cap Haitien"] = { air: 5.5, ocean: 17 };
+  const plain = newCustomer("Plain"), special = newCustomer("Special", { rates: { air: 4.15, ocean: 15, capa: 5, capo: 18, sdq: 7, droc: 22 } });
+  eq("plain Cap Air = destination rate", rateFor(plain, "Air", "Cap Haitien"), 5.5); eq("plain Cap Ocean = destination rate", rateFor(plain, "Ocean", "Cap Haitien"), 17);
+  eq("special Cap Air", rateFor(special, "Air", "Cap Haitien"), 5); eq("special Cap Ocean", rateFor(special, "Ocean", "Cap Haitien"), 18);
+  eq("special SDQ Air", rateFor(special, "Air", "Saint Domingue"), 7); eq("special DR Ocean", rateFor(special, "Ocean", "Saint Domingue"), 22);
+  eq("special Port-au-Prince Air", rateFor(special, "Air", "Port-au-Prince"), 4.15);
+  const w = openWR(plain, "Air", { dest: "Cap Haitien" }); w.pieces.push({ no: db.n.piece++, type: "BOX", l: 30, w: 20, h: 20, lbs: 20, contents: "x", old: false });
+  eq("compare popup Ocean uses the destination rate", estimateFor(w, "Ocean").rate, 17);
+}
+// ---- L. insurance boundaries and the total of a receipt
+{
+  const c = newCustomer("Ins"); const w = openWR(c, "Air"); w.pieces.push({ no: db.n.piece++, type: "BOX", l: 20, w: 20, h: 20, lbs: 50, contents: "x", old: false });
+  for (const [d, want] of [[2213, 50], [2213.4, 50], [2214, 77.49], [3000, 105]] as const) { w.declared = d; w.insurance = "Accepted"; eq(`insurance fee in total (${d})`, insuranceFee(w), want); }
+  w.declared = 3000; eq("total = freight + insurance", total(w), R(freightFee(w) + 105));
+  w.fees.push({ id: db.n.fee++, label: "Discount", amount: 5000, kind: "credit" }); eq("credits cannot make the total negative", total(w), 0);
+}
+console.log(`final: passed ${pass}, failed ${fail}`); if (bad.length) console.log(bad.slice(0, 20).join("\n"));

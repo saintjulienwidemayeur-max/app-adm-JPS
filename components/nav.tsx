@@ -101,7 +101,7 @@ export function Nav({ mode = "memory", user = null, badges = {}, version = "" }:
       {/* Phone: top bar + the menu over the page */}
       <div className="no-print flex h-12 shrink-0 items-center gap-2 bg-brand px-2 text-white md:hidden">
         <button type="button" onClick={() => setDrawer(true)} aria-label="Open the menu" className={iconBtn}><Menu size={20} aria-hidden /></button>
-        <Link href="/" className="font-semibold">Warehouse</Link>
+        <Link href="/" className="inline-flex min-h-10 items-center font-semibold">Warehouse</Link>
       </div>
       {drawer && (
         <div className="no-print fixed inset-0 z-50 flex md:hidden">
