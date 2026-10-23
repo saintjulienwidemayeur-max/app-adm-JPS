@@ -5,7 +5,7 @@ import { listDocs } from "@/lib/persist";
 import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
-import { updateWR, addPiece, updatePiece, deletePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
+import { updateWR, addPiece, updatePiece, deletePiece, movePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -45,7 +45,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </div>
       </div>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
-      {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
+      {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}{q.label && <> <Link href={`/warehouse/receipts/${w.id}/labels?only=${q.label}`} className="underline">Print the label of piece {q.label}</Link></>}</p>}
 
       <section className="mt-4 rounded-lg border p-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">Customer notification</h2>
@@ -83,19 +83,23 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <tbody>{w.pieces.map((p) => (
               <tr key={p.no} className="border-b border-zinc-100 align-top">
                 <td className={td}>{p.no}</td><td className={td}>{p.type}</td><td className={td}>{p.contents || <span className="text-red-700">Required</span>}</td><td className={td}>{p.l}×{p.w}×{p.h}</td><td className={td}>{p.lbs}</td><td className={td}>{vol(p)}</td><td className={td}>{cuft(p)}</td>
-                <td className={td}>{loaded.has(p.no) ? <span className="text-zinc-500">Loaded</span> : (
-                  <details><summary className="cursor-pointer text-brand underline">Edit</summary>
+                <td className={td}><Link href={`/warehouse/receipts/${w.id}/labels?only=${p.no}`} className="mr-2 text-brand underline">Label</Link>{loaded.has(p.no) ? <span className="text-zinc-500">Loaded</span> : w.invoice ? <span className="text-xs text-zinc-500">Invoiced</span> : (
+                  <details className="inline-block align-top"><summary className="cursor-pointer text-brand underline">Edit</summary>
                     <form action={updatePiece} className="mt-1 flex flex-wrap gap-1"><input type="hidden" name="wr" value={w.id} /><input type="hidden" name="no" value={p.no} />
                       <Input name="type" defaultValue={p.type} className="w-32" aria-label="Type" />
                       <Input name="contents" defaultValue={p.contents} placeholder="Contents (required)" maxLength={120} className="w-56" aria-label="Contents" required />
                       {(["l", "w", "h", "lbs"] as const).map((k) => <Input key={k} name={k} type="number" step="any" min="0" defaultValue={p[k]} className="w-16" aria-label={k} required />)}
                       <Button type="submit">Save</Button></form>
+                    <form action={movePiece} className="mt-1 flex flex-wrap items-center gap-1"><input type="hidden" name="wr" value={w.id} /><input type="hidden" name="no" value={p.no} />
+                      <Input name="customer" list="custMove" placeholder="Wrong customer? Move this piece to…" className="w-64" aria-label="Move to customer" required /><Button type="submit" variant="outline">Move</Button></form>
                     <form action={deletePiece} className="mt-1"><input type="hidden" name="wr" value={w.id} /><input type="hidden" name="no" value={p.no} /><button className="text-red-700 underline">Delete piece</button></form>
                   </details>)}</td>
               </tr>))}</tbody>
             <tfoot><tr className="font-semibold"><td className={td} colSpan={4}>{w.pieces.length} piece{w.pieces.length > 1 ? "s" : ""}</td><td className={td}>{lbs}</td><td className={td} colSpan={3} /></tr></tfoot>
           </table>
         )}
+        <datalist id="custMove">{db.customers.slice(0, 3000).map((c) => <option key={c.no} value={`${c.no}`}>{c.name}</option>)}</datalist>
+        {w.invoice && <p className="mt-2 text-xs text-amber-700">Invoiced ({w.invoice}): pieces can't be added or changed. Cancel the invoice first.</p>}
         <form action={addPiece} className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-[1fr_repeat(5,5rem)_auto]">
           <input type="hidden" name="wr" value={w.id} />
           <Input name="type" placeholder="Type (BOX - OTHER)" className="col-span-4 sm:col-span-1" />

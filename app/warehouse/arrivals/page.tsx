@@ -1,5 +1,5 @@
 import { db, money, balance, wrCode } from "@/lib/wh-store";
-import { receiveHere, arriveShipment, markHereNotified, markReady, notifyEmail } from "@/lib/wh-actions";
+import { receiveHere, undoReceiveHere, arriveShipment, markHereNotified, markReady, notifyEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScanField } from "@/components/scan-field";
@@ -34,6 +34,10 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
       {q.ok && <p className="mt-2 text-sm font-medium text-green-700">{q.ok}</p>}
       {q.warn && <p role="alert" className="mt-1 text-sm font-medium text-amber-700">{q.warn}</p>}
+
+      <details className="mt-2 text-sm"><summary className="cursor-pointer text-brand underline">Scanned a piece by mistake?</summary>
+        <form action={undoReceiveHere} className="mt-1 flex max-w-xl gap-1"><Input name="code" placeholder="Piece number or label to take back to Expected" aria-label="Piece to undo" required /><Button type="submit" variant="outline">Undo</Button></form>
+      </details>
 
       <h2 className="mt-6 font-bold">Expected ({nExpected} pieces)</h2>
       {expected.length === 0 ? <p className="mt-1 text-sm text-zinc-600">Nothing is waiting. Cargo shows up here once it is marked as shipped.</p> : expected.map(({ sh, rows }) => (

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 export const metadata = { title: "Customers · JP's Logistics" };
 type SP = Promise<Record<string, string | undefined>>;
 const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
-const PER = 7;
+const PER = 25;
 
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const site = (await tryLoaded()) ? await syncSiteClients() : { added: 0, error: undefined }; // accounts created on the website appear here by themselves

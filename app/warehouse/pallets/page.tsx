@@ -20,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const shipment = q.shipment || (ship === "Air" ? `PL-AIR-${stamp}` : `CT-OCEAN-${stamp}`);
   const pallet = q.pallet || (ship === "Air" ? "Pallet 1" : "Container 1");
   const sh = db.shipments.find((x) => x.name === shipment);
-  const rows = db.loads.filter((l) => l.shipment === shipment).map((l) => ({ l, p: findPiece(l.no)!.p }));
+  const rows = db.loads.filter((l) => l.shipment === shipment).flatMap((l) => { const hit = findPiece(l.no); return hit ? [{ l, p: hit.p }] : []; }).reverse(); // the last scanned piece is on top
   const lbs = r2(rows.reduce((a, r) => a + r.p.lbs, 0));
   const chg = r2(rows.reduce((a, r) => a + chargeable(r.p), 0));
   return (
@@ -41,11 +41,11 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
       {rows.length === 0 ? <p className="mt-6 text-sm text-zinc-600">Nothing loaded on {shipment} yet. Scan a piece label to start.</p> : (
         <>
           <table className="mt-3 w-full text-left text-sm">
-            <thead><tr>{["Loaded", "Loaded by", "WR – item", "Weight (lb)", "Chargeable (lb)", "Pallet", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["Loaded", "Loaded by", "WR – item", "Customer", "Weight (lb)", "Chargeable (lb)", "Pallet", ""].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
             <tbody>{rows.map(({ l, p }) => (
-              <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{l.date}</td><td className={td}>{l.by || "–"}</td><td className={td}>{wrOf(l.wr)} – {l.no}</td><td className={td}>{p.lbs}</td><td className={td}>{chargeable(p)}</td><td className={td}>{l.pallet}</td>
+              <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{l.date}</td><td className={td}>{l.by || "–"}</td><td className={td}>{wrOf(l.wr)} – {l.no}</td><td className={td}>{db.wrs.find((x) => x.id === l.wr)?.customer}</td><td className={td}>{p.lbs}</td><td className={td}>{chargeable(p)}</td><td className={td}>{l.pallet}</td>
                 <td className={td}>{!sh?.shipped && <form action={unloadPiece}><input type="hidden" name="no" value={l.no} /><button className="text-red-700 underline" aria-label={`Remove ${l.no}`}>Remove</button></form>}</td></tr>))}</tbody>
-            <tfoot><tr className="font-semibold"><td className={td}>{rows.length} pieces</td><td /><td /><td className={td}>{lbs}</td><td className={td}>{chg}</td><td className={td} colSpan={2}>{r2(lbs * 0.45359)} KG</td></tr></tfoot>
+            <tfoot><tr className="font-semibold"><td className={td}>{rows.length} pieces</td><td /><td /><td /><td className={td}>{lbs}</td><td className={td}>{chg}</td><td className={td} colSpan={2}>{r2(lbs * 0.45359)} KG</td></tr></tfoot>
           </table>
           <div className="mt-4 flex gap-2">
             <Link href={`/warehouse/pallets/labels?shipment=${encodeURIComponent(shipment)}`} className="inline-flex h-9 items-center rounded-md border border-zinc-300 bg-white px-4 text-sm font-medium hover:bg-zinc-100">Print pallet labels</Link>

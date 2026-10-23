@@ -151,6 +151,18 @@ export const findCustomer = (q: string) => {
   if (t.includes("@")) return COMPANY_EMAILS.includes(t) ? undefined : db.customers.find((c) => c.email.toLowerCase() === t) ?? db.customers.find((c) => c.emailMore && c.emailMore.toLowerCase().split(/[;,\s]+/).includes(t));
   return db.customers.find((c) => c.name.toLowerCase() === t);
 };
+// Customers whose name is almost the same as the one typed (a typo like "Marie Josef"), so a new customer is not created by mistake.
+const letters = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const distance = (a: string, b: string) => {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) { const next = [i]; for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); row = next; }
+  return row[b.length];
+};
+export const similarCustomers = (name: string, max = 3): Customer[] => {
+  const t = letters(name);
+  if (t.length < 4 || /^\d+$/.test(name.trim()) || name.includes("@")) return [];
+  return db.customers.filter((c) => { const n = letters(c.name); return n === t || (Math.abs(n.length - t.length) <= 2 && distance(n, t) <= (t.length > 8 ? 2 : 1)); }).slice(0, max);
+};
 export const newCustomer = (name: string, init: Partial<Customer> = {}): Customer => {
   const c: Customer = {
     no: db.n.cust++, name, phone: "", email: "", billing: "", consignee: "", consigneePhone: "", consigneeAddress: "", consigneeCity: "",

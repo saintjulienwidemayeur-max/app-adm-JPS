@@ -32,6 +32,7 @@ export const SECTIONS: MenuSection[] = [
       { href: "/warehouse/prealerts", label: "Pre-alerts", icon: BellRing, desc: "Orders customers announced, and unidentified parcels" },
       { href: "/warehouse/receiving", label: "Received items", icon: PackageOpen, desc: "Scan each parcel that arrives from the carriers" },
       { href: "/warehouse/arrivals", label: "Arrivals PV", icon: MapPin, desc: "Check in the pieces that arrived at the destination office" },
+      { href: "/warehouse/today", label: "Day summary", icon: ClipboardList, desc: "What was scanned, loaded and received on a day, who did it, and what is still waiting (printable)" },
     ],
   },
   {
