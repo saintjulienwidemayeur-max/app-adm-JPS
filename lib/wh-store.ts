@@ -111,7 +111,15 @@ const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "
 export const destOf = (c: { consigneeCity?: string } | undefined) => ALIASES[norm(c?.consigneeCity ?? "")] ?? DEFAULT_DEST;
 export const destRate = (dest: string | undefined, ship: Ship) => { const r = db.settings.rates?.[dest ?? ""]?.[ship === "Ocean" ? "ocean" : "air"]; return r && r > 0 ? r : defaultRate(ship); };
 // The rate of this customer (from the old system or typed on the customer page), else the rate of the destination, else the standard one.
-export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => { const r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air; return r && r > 0 ? r : destRate(dest, ship); };
+// A customer's own rate for a destination that has its own price list in the old system (Cap-Air, Cap-Ocean, SDQ, DR Ocean) comes first.
+const routeRate = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => {
+  const r = c?.rates;
+  return dest === "Cap Haitien" ? (ship === "Ocean" ? r?.capo : r?.capa) : dest === "Saint Domingue" ? (ship === "Ocean" ? r?.droc : r?.sdq) : undefined;
+};
+export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, dest?: string) => {
+  const own = routeRate(c, ship, dest), r = ship === "Ocean" ? c?.rates?.ocean : c?.rates?.air;
+  return own && own > 0 ? own : r && r > 0 ? r : destRate(dest, ship);
+};
 
 // Settings the administrator can change (Administration > Fees & rates).
 // Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
@@ -248,13 +256,15 @@ export const insuranceFee = (w: WR) => (w.insurance === "Accepted" ? quote(w).cu
 export const total = (w: WR) => Math.max(0, r2(charges(w) + insuranceFee(w) - credits(w)));
 export const paidAmt = (w: WR) => r2(w.payments.reduce((a, p) => a + p.amount, 0));
 export const balance = (w: WR) => r2(total(w) - paidAmt(w));
+// A receipt that has something to pay: fee lines, or freight / insurance worked out from its pieces (an Air receipt may have no fee line at all).
+export const hasCharges = (w: WR) => w.fees.length > 0 || freightFee(w) > 0 || insuranceFee(w) > 0;
 export const payStatus = (w: WR) => (paidAmt(w) <= 0 ? (total(w) <= 0 && w.fees.length ? "No charge" : "Unpaid") : balance(w) <= 0 ? "Paid in full" : "Partially paid");
 export const money = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // What the same goods would cost shipped the other way (same pieces, standard rate of that method, its automatic handling fee).
 export const otherShip = (w: WR): Ship => (w.ship === "Air" ? "Ocean" : "Air");
 export const estimateFor = (w: WR, ship: Ship) => {
-  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship);
+  const qty = r2(w.pieces.reduce((a, p) => a + (ship === "Ocean" ? cuft(p) : chargeable(p)), 0)), rate = rateFor(custOf(w), ship, w.dest);
   const freight = r2(qty * rate), handling = ship === "Ocean" ? OCEAN_HANDLING : 0;
   const isHandling = (f: Fee) => f.auto === "handling" || f.label.trim().toLowerCase() === HANDLING_LABEL.toLowerCase(); // a handling line typed by hand counts as handling too
   const extra = r2(w.fees.filter((f) => f.kind === "charge" && !isHandling(f)).reduce((a, f) => a + f.amount, 0));

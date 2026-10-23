@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db, creditOf, balance, total, wrCode, money, r2 } from "@/lib/wh-store";
+import { db, creditOf, balance, total, wrCode, money, r2, hasCharges } from "@/lib/wh-store";
 import { usToIso } from "@/lib/clock";
 import { receivePayment } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ const th = "px-2 py-1 font-semibold", td = "px-2 py-1";
 export default async function Page({ searchParams }: { searchParams: SP }) {
   const q = await searchParams;
   const c = db.customers.find((x) => x.no === Number(q.c) || x.name.toLowerCase() === (q.c ?? "").toLowerCase());
-  const open = c ? db.wrs.filter((w) => w.cust === c.no && w.fees.length > 0 && balance(w) > 0).sort((a, b) => usToIso(a.date).localeCompare(usToIso(b.date)) || Number(a.id) - Number(b.id)) : [];
+  const open = c ? db.wrs.filter((w) => w.cust === c.no && hasCharges(w) && balance(w) > 0).sort((a, b) => usToIso(a.date).localeCompare(usToIso(b.date)) || Number(a.id) - Number(b.id)) : [];
   const owed = r2(open.reduce((a, w) => a + balance(w), 0));
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">

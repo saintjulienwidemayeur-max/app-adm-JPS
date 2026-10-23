@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
-import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee } from "./wh-store";
+import { db, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, hasCharges } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -311,7 +311,7 @@ export const saveFees = act("saveFees", async (f: F) => {
     const label = s(f, `label_${fee.id}`), amount = num(f, `amount_${fee.id}`), kind = feeKind(s(f, `kind_${fee.id}`));
     const bad = feeProblem(label, amount);
     if (bad) back(wrPath(w.id), { err: `${fee.label}: ${bad}` });
-    next.push({ id: fee.id, label, amount: r2(amount), kind });
+    next.push({ id: fee.id, label, amount: r2(amount), kind, ...(fee.auto && { auto: fee.auto }) }); // keeps the automatic mark (handling / storage): without it the storage fee was added a second time
   }
   if (tooMuchCredit(w, next)) back(wrPath(w.id), { err: "Credits can't be more than the charges on this receipt." });
   w.fees = next;
@@ -450,6 +450,7 @@ export const createInvoice = act("createInvoice", async (f: F) => {
   const w = db.wrs.find((x) => x.id === s(f, "wr"));
   if (!w) return;
   if (!w.pieces.length) back(wrPath(w.id), { err: "Add at least one piece before invoicing." });
+  if (!w.invoice) for (const p of w.pieces) p.old ??= false; // the formula of today is pinned: a restart must not turn it into the old 139 / 1728 and change the invoice
   if (!w.invoice) { w.invoice = `INV-${db.n.inv++}`; w.invoiceDate = nowStr(); }
   back(wrPath(w.id), { ok: `Invoice ${w.invoice} created.` });
 });
@@ -487,7 +488,7 @@ export const receivePayment = act("receivePayment", async (f: F) => {
   if (!method || method.length > 30) back(here, { err: "Choose how the customer paid (or type a new payment method)." });
   const batch = `PAY-${db.n.pay++}`, date = nowStr(), time = timeNow();
   let left = r2(amount);
-  const open = db.wrs.filter((w) => w.cust === c!.no && w.fees.length > 0 && balance(w) > 0)
+  const open = db.wrs.filter((w) => w.cust === c!.no && hasCharges(w) && balance(w) > 0)
     .sort((a, b) => usToIso(a.date).localeCompare(usToIso(b.date)) || Number(a.id) - Number(b.id));
   for (const w of open) {
     const take = Math.min(left, balance(w));
