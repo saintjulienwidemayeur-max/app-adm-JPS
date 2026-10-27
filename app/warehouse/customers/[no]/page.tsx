@@ -1,3 +1,4 @@
+import { setWhatsAppOff } from "@/lib/settings-actions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db, wrCode, total, money, payStatus, rateFor, oldBalance, oldOpen } from "@/lib/wh-store";
@@ -45,6 +46,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       </section>
 
       {old.length > 0 && <p className="mt-4 text-sm"><b>{old.length} old invoice{old.length === 1 ? "" : "s"}</b> (old billing system){oldOwed > 0 ? <> · <b className="text-red-700">{money(oldOwed)} still owed</b> on {old.filter(oldOpen).length}</> : " · nothing owed"}</p>}
+      <form className="mt-2 flex items-center gap-2 text-sm text-zinc-600">WhatsApp messages from the system: <b>{c.waOff ? "off" : "on"}</b><button formAction={setWhatsAppOff.bind(null, c.no, !c.waOff)} className="text-brand underline">{c.waOff ? "Turn on" : "Turn off"}</button></form>
       {db.oldWrs.some((o) => o.cust === c.no) && <p className="mt-2 text-sm"><Link href={`/warehouse/oldreceipts?c=${c.no}`} className="font-semibold text-brand underline">{db.oldWrs.filter((o) => o.cust === c.no).length} old receipt(s)</Link> (old system)</p>}
       <h2 className="mt-6 font-bold">Warehouse receipts ({wrs.length})</h2>
       {wrs.length === 0 ? <p className="mt-1 text-sm text-zinc-600">No receipts yet.</p> : (

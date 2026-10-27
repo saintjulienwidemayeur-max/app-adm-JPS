@@ -10,6 +10,7 @@ import { mailOne, mailTo, mailEnabled, findClientId, type MailFile } from "./jps
 import { usableEmail } from "./mailrules";
 import { receiptPdf } from "./pdf";
 import { COMPANY, HAITI, PAY } from "./company";
+import { waStatus, waReceipt } from "./whatsapp";
 
 type Lang = "fr" | "en" | "es";
 const langOf = (c?: Pick<Customer, "lang">): Lang => (c?.lang === "en" || c?.lang === "es" ? c.lang : "fr");
@@ -162,6 +163,7 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
   if (!w.pieces.length) return "The receipt has no pieces yet.";
   const sig = wrSig(w);
   if (!force && w.notices?.some((n) => n.auto && n.channel === "Email" && n.sig === sig)) return "";
+  if (!force) waReceipt(w, sig); // WhatsApp (short text) even when there is no usable e-mail
   const c = custOf(w), tx = T[langOf(c)], code = wrCode(w);
   const lbs = Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
   const pdf = await receiptPdf(w), name = `Receipt-${code}.pdf`;
@@ -182,6 +184,7 @@ export function emailParcelArrived(c: Customer | undefined, trackings: string[],
   queueMail(async () => { const r = await deliver(c, "", tx.arrSubject, one ? tx.arr(tracking) : tx.arrMany(trackings.length, trackings.join("\n")), []); log(tx.arrSubject, r.to || c.name, r.error || undefined); });
 }
 export function emailHaiti(w: WR, kind: "shipped" | "arrived" | "ready") {
+  waStatus(w, kind); // WhatsApp, whatever the e-mail does
   const c = custOf(w);
   if ((hasAccount(w) && (!toUSA(w) || siteUSA())) || !c || !usableEmail(c)) return; // cargo to Miami: from here, unless the website knows that direction
   queueMail(() => emailStatus(w, kind));
