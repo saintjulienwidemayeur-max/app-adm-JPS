@@ -19,7 +19,7 @@ const PAGES: Record<string, string[]> = {
   "/warehouse/receiving": ["startDelivery", "endDelivery", "receiveItem", "receiveBatch", "updateItem", "deleteItem"],
   "/warehouse/consolidate": ["singlePiece", "combinePieces", "scanForConsolidate"],
   [R]: ["createWR", "updateWR", "addPiece", "updatePiece", "deletePiece", "createInvoice", "addPayment", "voidPayment", "applyCredit", "addFee", "saveFees", "deleteFee", "switchShip", "notifyEmail", "markInvoiceSent", "cancelInvoice", "createOrder", "saveOrder", "addOrderItem", "saveOrderItems", "deleteOrderItem", "addOrderPayment", "voidOrderPayment"],
-  "/warehouse/customers": ["createCustomer", "saveCustomer", "saveCustomerRates"],
+  "/warehouse/customers": ["createCustomer", "saveCustomer", "saveCustomerRates", "setWhatsAppOff"],
   "/warehouse/reps": ["addRep", "saveRep", "deleteRep"],
   "/warehouse/estimate": ["estimateToReceipt", "dismissEstimateRequest", "emailEstimate"],
   "/warehouse/pickups": ["createPickup", "savePickup", "setPickupStatus"],

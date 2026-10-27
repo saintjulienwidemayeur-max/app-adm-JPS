@@ -26,7 +26,7 @@ export type Customer = {
   clientId?: string; box?: string; lang?: string;
   // From the old system (customer import): other contact details, this customer's own rates (per lb by Air, per cubic foot by Ocean, and the
   // other routes), whether an ID is on file, the old rep code.
-  whatsapp?: string; altPhone?: string; emailMore?: string; idOnFile?: boolean; legacyRep?: string; since?: string;
+  whatsapp?: string; waOff?: boolean; altPhone?: string; emailMore?: string; idOnFile?: boolean; legacyRep?: string; since?: string;
   rates?: CustomerRates;
   // The invitation to the website (account + temporary password by e-mail): when, how many times, and how it went.
   invite?: { at: string; time: string; count: number; status: "sent" | "failed"; error?: string };
@@ -39,7 +39,7 @@ export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; waSig?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
 };
 // A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
 export type OrderItem = { desc: string; qty: number; unit: number };
@@ -133,7 +133,7 @@ export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, de
 // Settings the administrator can change (Administration > Fees & rates).
 // Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
 // (0 = no automatic storage fee).
-export type Settings = { storageFreeDays: number; storageFee: number; siteDirection?: boolean; rates: Record<string, { air: number; ocean: number }> };
+export type Settings = { storageFreeDays: number; storageFee: number; siteDirection?: boolean; wa?: { on: boolean; cc?: string; events?: Partial<Record<"parcel" | "receipt" | "shipped" | "arrived" | "ready" | "invoice", boolean>> }; rates: Record<string, { air: number; ocean: number }> };
 export const DEFAULT_SETTINGS: Settings = { storageFreeDays: 30, storageFee: 10, rates: Object.fromEntries(DESTINATIONS.map((d) => [d, { air: AIR_RATE, ocean: OCEAN_RATE }])) };
 const today = () => usToday();
 type WhDb = {

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
+import { waParcel } from "./whatsapp";
 import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
@@ -78,6 +79,12 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
 // The customer field of Received items: "1001 · Name" (picked from the list), a number, a name or an e-mail.
 const pickCustomer = (v: string) => { const n = v.match(/^\s*(\d+)\s*(·|$)/); return findCustomer(n ? n[1] : v); };
 type Res = Record<string, string>;
+// WhatsApp: one message per customer listing the parcels that were just saved (identified ones only).
+function waForNew(fromId: number, office?: "Haiti") {
+  const by = new Map<number, string[]>();
+  for (const i of db.items) if (i.id >= fromId && i.customer) { const c = db.customers.find((x) => x.name === i.customer); if (c) (by.get(c.no) ?? by.set(c.no, []).get(c.no)!).push(i.tracking); }
+  for (const [no, t] of by) waParcel(db.customers.find((x) => x.no === no), t, office === "Haiti");
+}
 // A parcel with no tracking number (a box somebody brings, no label to scan): the system makes one, JPS + 7 digits, written on the box with the label that is printed after saving.
 const NOTRACK = "*NOTRACK*";
 const nextNoTrack = () => `JPS${String(db.n.nt++).padStart(7, "0")}`;
@@ -120,7 +127,10 @@ async function receiveOne(sess: Sess, raw: string, typed: string, mails?: Map<nu
 export const receiveItem = act("receiveItem", async (f: F) => {
   const sess = await readSess();
   if (!sess) back(RX, { err: "Start a delivery first." });
-  back(RX, await receiveOne(sess!, s(f, "tracking"), s(f, "customer")));
+  const from = db.n.item;
+  const res = await receiveOne(sess!, s(f, "tracking"), s(f, "customer"));
+  waForNew(from, sess!.office);
+  back(RX, res);
 });
 // Many parcels in one go: the person scans them all (for one customer, or none), then saves. One e-mail per customer lists all the parcels.
 export const receiveBatch = act("receiveBatch", async (f: F) => {
@@ -129,7 +139,7 @@ export const receiveBatch = act("receiveBatch", async (f: F) => {
   const codes = [...new Set(s(f, "codes").split(/\r?\n/).map((x) => x.trim()).filter(Boolean))].slice(0, 300), typed = s(f, "customer");
   if (!codes.length) back(RX, { err: "Scan at least one parcel before you save." });
   if (typed && !pickCustomer(typed)) back(RX, { err: `No customer matches "${typed}". Nothing was saved.` });
-  const mails = new Map<number, { c: Customer; t: string[] }>();
+  const mails = new Map<number, { c: Customer; t: string[] }>(), firstId = db.n.item;
   let ok = 0; const bad: string[] = [], warns: string[] = [], who = new Set<string>(), madeCodes: string[] = [];
   for (const code of codes) {
     const r = await receiveOne(sess!, code, typed, mails);
@@ -138,6 +148,7 @@ export const receiveBatch = act("receiveBatch", async (f: F) => {
     const m = (r.info ?? "").match(/^(?:For|Matched:) ([^(·]+?)(?: \(|$| ·)/); if (m) who.add(m[1].trim());
   }
   for (const { c, t } of mails.values()) emailParcelArrived(c, t, sess!.office);
+  waForNew(firstId, sess!.office);
   back(RX, { t: String(Date.now()), ...(madeCodes.length && { made: madeCodes.join(",") }), ...(ok && { info: `${ok} parcel${ok === 1 ? "" : "s"} saved${typed ? ` for ${pickCustomer(typed)!.name}` : who.size ? ` (${[...who].slice(0, 4).join(", ")}${who.size > 4 ? "..." : ""})` : ""}.` }), ...(bad.length && { err: `${bad.length} not saved: ${bad.slice(0, 5).join(" · ")}${bad.length > 5 ? " ..." : ""}` }), ...(warns.length && { warn: `${warns.length} parcel${warns.length === 1 ? "" : "s"} could not be matched to a customer or notified: they wait in the review queue.` }) });
 });
 export const updateItem = act("updateItem", async (f: F) => {

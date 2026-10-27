@@ -104,3 +104,6 @@ Type the customer on Received items (optional): the parcel is created on the cus
 - `npm run check`: type check + calculation audit (`docs/audit-calculs.ts`) + document audit (`docs/audit-documents.mts`: every fee, credit and the total must appear on the receipt and invoice PDFs). The same runs on every pull request (`.github/workflows/check.yml`).
 - `BASE=... node docs/smoke.mjs`: opens every page of the menu on a running app and fails on a blank page, an error page or an empty one.
 - Receipts and invoices show their lines from ONE function, `docLines(w)` in `lib/wh-store.ts` (receipt page, receipt PDF, invoice page, invoice PDF): add a new kind of line there and every document follows.
+
+## WhatsApp (WaAPI)
+Automatic WhatsApp messages (parcel received, receipt, shipment left, arrived, ready for pickup, invoice) through WaAPI (https://waapi.app). Set on Render, in BOTH apps: `WAAPI_TOKEN` (the API token; never put it in the code), optionally `WAAPI_INSTANCE_ID` (otherwise the first instance of the account is used) and `WAAPI_BASE_URL`. Then Administration > WhatsApp: turn on, choose the moments, send a test. A customer can be switched off on the customer's page. Numbers: the customer's WhatsApp number, else the phone (8 digits = Haiti 509, 10 digits = USA 1, or +country code).

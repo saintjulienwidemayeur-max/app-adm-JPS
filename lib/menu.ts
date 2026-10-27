@@ -1,7 +1,7 @@
 // The app's menu: five sections, like the old billing software's main menu. The sidebar, the main menu, each section's page and the
 // breadcrumb all read this list, so a page is added in one place.
 import { allowed, isOn, type Claims } from "./access";
-import { Search, Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, SlidersHorizontal, Archive, type LucideIcon } from "lucide-react";
+import { MessageCircle, Search, Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, SlidersHorizontal, Archive, type LucideIcon } from "lucide-react";
 
 export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean; accessOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
@@ -60,6 +60,7 @@ export const SECTIONS: MenuSection[] = [
       { href: "/settings/users", label: "Users & access", icon: ShieldCheck, desc: "Create the people who sign in and choose the pages each may open", adminOnly: true },
       { href: "/settings/invite", label: "Invite customers", icon: UserPlus, desc: "Open each customer's account on the website and e-mail the temporary password (100 a day)", adminOnly: true },
       { href: "/settings/activity", label: "Activity log", icon: History, desc: "Everything each person does in the app", adminOnly: true },
+      { href: "/settings/whatsapp", label: "WhatsApp", icon: MessageCircle, desc: "Automatic WhatsApp messages to customers: turn on, choose the moments, send a test", adminOnly: true },
       { href: "/settings/fees", label: "Fees & rates", icon: SlidersHorizontal, desc: "The automatic storage fee after 30 days", adminOnly: true },
       { href: "/settings/import", label: "Import data", icon: FileUp, desc: "Bring the customers of the old system in from a CSV file", adminOnly: true },
       { href: "/settings/email", label: "Email customers", icon: Mail, desc: "Send an e-mail through the website to all, to a shipment's customers or to chosen people" },
