@@ -1,7 +1,7 @@
 // The app's menu: five sections, like the old billing software's main menu. The sidebar, the main menu, each section's page and the
 // breadcrumb all read this list, so a page is added in one place.
 import { allowed, isOn, type Claims } from "./access";
-import { Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, SlidersHorizontal, Archive, type LucideIcon } from "lucide-react";
+import { Search, Home, Users, UserCheck, ReceiptText, Layers, PackageOpen, MapPin, Ship, Truck, ClipboardList, FileText, Wallet, ShoppingCart, Car, BellRing, Calculator, Banknote, ShieldCheck, Mail, FileUp, History, UserPlus, ExternalLink, SlidersHorizontal, Archive, type LucideIcon } from "lucide-react";
 
 export type MenuPage = { href: string; label: string; icon: LucideIcon; desc: string; adminOnly?: boolean; accessOnly?: boolean };
 export type MenuSection = { slug: string; title: string; icon: LucideIcon; blurb: string; pages: MenuPage[] };
@@ -29,6 +29,7 @@ export const SECTIONS: MenuSection[] = [
   {
     slug: "receiving", title: "Receiving & Dispatching", icon: PackageOpen, blurb: "Parcels arriving and being identified",
     pages: [
+      { href: "/warehouse/track", label: "Track a parcel", icon: Search, desc: "Where is it? Search by tracking number, receipt (WR) number, customer name or phone: every step, and a message to copy for the customer" },
       { href: "/warehouse/prealerts", label: "Pre-alerts", icon: BellRing, desc: "Orders customers announced, and unidentified parcels" },
       { href: "/warehouse/receiving", label: "Received items", icon: PackageOpen, desc: "Scan each parcel that arrives from the carriers" },
       { href: "/warehouse/arrivals", label: "Arrivals PV", icon: MapPin, desc: "Check in the pieces that arrived at the Pétion-Ville office (cargo from Miami)" },
