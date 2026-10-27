@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
-import { waParcel, waNowReceipt, waNowStatus } from "./whatsapp";
+import { waParcel, waNowReceipt, waNowStatus, waFailed, waSay } from "./whatsapp";
+import { receiptPdf } from "./pdf";
 import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
@@ -272,9 +273,9 @@ export const notifyEmail = act("notifyEmail", async (wr: string, kind: string, r
   if (!w) return;
   // ONE button: the e-mail (with the PDF for a receipt) and the WhatsApp message go together.
   const mailErr = !mailEnabled() ? "e-mail is not set up on this server" : kind === "receipt" ? await emailReceipt(w, "sent by staff (button)", true) : await emailStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
-  const waErr = kind === "receipt" ? await waNowReceipt(w, wrSig(w)) : await waNowStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
-  if (mailErr && waErr) back(to, { err: `Nothing was sent. E-mail: ${mailErr}. WhatsApp: ${waErr}.` });
-  back(to, { ok: `${mailErr ? `E-mail NOT sent (${mailErr})` : "E-mail sent"}. ${waErr ? `WhatsApp NOT sent (${waErr}).` : "WhatsApp sent."}` });
+  const waErr = kind === "receipt" ? await waNowReceipt(w, wrSig(w), async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) })) : await waNowStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
+  if (mailErr && waFailed(waErr)) back(to, { err: `Nothing was sent. E-mail: ${mailErr}. WhatsApp: ${waErr}.` });
+  back(to, { ok: `${mailErr ? `E-mail NOT sent (${mailErr})` : "E-mail sent"}. ${waSay(waErr)}` });
 });
 // Administrator only (it is not in the rights table of act()): a cargo shipped by mistake goes back to "open", so pieces can be unloaded, moved or added and the cargo shipped again.
 // Refused once a piece was received at the destination. The customers' "in transit" e-mails and the website tracking cannot be taken back.
@@ -296,7 +297,7 @@ export const notifyShipmentEmail = act("notifyShipmentEmail", async (name: strin
   for (const id of ids) {
     const w = db.wrs.find((x) => x.id === id); if (!w) continue;
     (!mailEnabled() || (await emailStatus(w, "shipped")) ? mailBad++ : mail++);
-    (await waNowStatus(w, "shipped")) ? waBad++ : wa++;
+    waFailed(await waNowStatus(w, "shipped")) ? waBad++ : wa++;
   }
   if (!mail && !wa) back(to, { err: `Nothing was sent (${ids.length} receipt${ids.length === 1 ? "" : "s"}): e-mail is not set up or the customers have no usable address, and WhatsApp is off, not set up, or the customers have no number.` });
   back(to, { ok: `Notified: ${mail} e-mail(s) and ${wa} WhatsApp message(s) sent${mailBad || waBad ? ` (${mailBad} e-mail and ${waBad} WhatsApp could not be sent)` : ""}.` });
