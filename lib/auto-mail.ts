@@ -163,7 +163,7 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
   if (!w.pieces.length) return "The receipt has no pieces yet.";
   const sig = wrSig(w);
   if (!force && w.notices?.some((n) => n.auto && n.channel === "Email" && n.sig === sig)) return "";
-  if (!force) waReceipt(w, sig); // WhatsApp (short text) even when there is no usable e-mail
+  if (!force) waReceipt(w, sig, async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) })); // WhatsApp (short text) even when there is no usable e-mail
   const c = custOf(w), tx = T[langOf(c)], code = wrCode(w);
   const lbs = Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
   const pdf = await receiptPdf(w), name = `Receipt-${code}.pdf`;
