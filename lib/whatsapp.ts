@@ -8,10 +8,10 @@ import { db, nowStr, timeNow, wrCode, total, money, toUSA, type WR, type Custome
 import { flush } from "./persist";
 import { HAITI, COMPANY } from "./company";
 
-export type WaEvent = "parcel" | "receipt" | "shipped" | "arrived" | "ready" | "invoice";
+export type WaEvent = "parcel" | "receipt" | "shipped" | "arrived" | "ready" | "invoice" | "order";
 export const WA_EVENTS: { key: WaEvent; label: string }[] = [
   { key: "parcel", label: "Parcel received at the warehouse" }, { key: "receipt", label: "Warehouse receipt made or changed" },
-  { key: "shipped", label: "Shipment left" }, { key: "arrived", label: "Arrived at the destination" }, { key: "ready", label: "Ready for pickup" }, { key: "invoice", label: "Invoice made" },
+  { key: "shipped", label: "Shipment left" }, { key: "arrived", label: "Arrived at the destination" }, { key: "ready", label: "Ready for pickup" }, { key: "invoice", label: "Invoice made" }, { key: "order", label: "Order invoice sent" },
 ];
 type Lang = "fr" | "en" | "es";
 const BASE = () => (process.env.WAAPI_BASE_URL ?? "https://waapi.app/api/v1").replace(/\/$/, "");
@@ -90,7 +90,7 @@ function sendTo(c: Customer | undefined, text: string, what: string) {
 
 const langOf = (c: Pick<Customer, "lang"> | undefined): Lang => (c?.lang === "en" || c?.lang === "es" ? c.lang : "fr");
 const sign = (l: Lang) => ({ fr: "JP's Logistics & More", en: "JP's Logistics & More", es: "JP's Logistics & More" }[l]);
-export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string; trackings?: string[]; pieces?: number; lbs?: number; total?: string; balance?: string; usa?: boolean; inv?: string; ship?: string }): string {
+export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string; trackings?: string[]; pieces?: number; lbs?: number; total?: string; balance?: string; usa?: boolean; inv?: string; order?: string; ship?: string }): string {
   const hi = { fr: `Bonjour ${p.name},`, en: `Hello ${p.name},`, es: `Hola ${p.name},` }[l], usa = !!p.usa, code = p.code ?? "";
   const office = usa ? { fr: "notre bureau d'Haïti", en: "our Haiti office", es: "nuestra oficina de Haití" }[l] : { fr: "notre entrepôt de Miami", en: "our Miami warehouse", es: "nuestro depósito de Miami" }[l];
   const dest = usa ? "Miami" : { fr: "Haïti", en: "Haiti", es: "Haití" }[l];
@@ -100,6 +100,7 @@ export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string;
     shipped: { fr: `Votre envoi (reçu ${code}) est parti : il est en transit vers ${dest}. Nous vous prévenons dès son arrivée.`, en: `Your shipment (receipt ${code}) has left: it is in transit to ${dest}. We will tell you as soon as it arrives.`, es: `Su envío (recibo ${code}) salió: va en tránsito a ${dest}. Le avisaremos en cuanto llegue.` },
     arrived: { fr: `Bonne nouvelle : votre envoi (reçu ${code}) est arrivé en ${dest}. Il sera bientôt prêt pour le retrait.`, en: `Good news: your shipment (receipt ${code}) has arrived in ${dest}. It will soon be ready for pickup.`, es: `Buenas noticias: su envío (recibo ${code}) llegó a ${dest}. Pronto estará listo para retirar.` },
     ready: { fr: `Votre envoi (reçu ${code}) est prêt pour le retrait / la livraison. ${usa ? `${COMPANY.name}, ${COMPANY.address}, ${COMPANY.city}, ${COMPANY.phone}` : `${HAITI.name}, ${HAITI.address}, ${HAITI.city}, ${HAITI.phone}`}`, en: `Your shipment (receipt ${code}) is ready for pickup / delivery. ${usa ? `${COMPANY.name}, ${COMPANY.address}, ${COMPANY.city}, ${COMPANY.phone}` : `${HAITI.name}, ${HAITI.address}, ${HAITI.city}, ${HAITI.phone}`}`, es: `Su envío (recibo ${code}) está listo para retiro / entrega. ${usa ? `${COMPANY.name}, ${COMPANY.address}, ${COMPANY.city}, ${COMPANY.phone}` : `${HAITI.name}, ${HAITI.address}, ${HAITI.city}, ${HAITI.phone}`}` },
+    order: { fr: `Votre commande ${p.order} : total ${p.total}, solde à payer ${p.balance}. La facture vous a été envoyée par e-mail.`, en: `Your order ${p.order}: total ${p.total}, balance to pay ${p.balance}. The invoice was sent to you by e-mail.`, es: `Su pedido ${p.order}: total ${p.total}, saldo a pagar ${p.balance}. La factura se le envió por correo.` },
     invoice: { fr: `Votre facture ${p.inv} (reçu ${code}) : total ${p.total}, solde à payer ${p.balance}. Elle vous a été envoyée par e-mail.`, en: `Your invoice ${p.inv} (receipt ${code}): total ${p.total}, balance to pay ${p.balance}. It was sent to you by e-mail.`, es: `Su factura ${p.inv} (recibo ${code}): total ${p.total}, saldo a pagar ${p.balance}. Se le envió por correo.` },
   };
   return `${hi}\n${T[kind][l]}\n\n${sign(l)}`;
@@ -130,3 +131,26 @@ export function waInvoice(w: WR, balance: number) {
   w.waSig = w.invoice;
   sendTo(c, waText("invoice", langOf(c), { name: w.customer, code: wrCode(w), inv: w.invoice, total: money(total(w)), balance: money(Math.max(0, balance)) }), `invoice ${w.invoice}`);
 }
+
+// ---- the "Notify" button: e-mail AND WhatsApp together. The WhatsApp part is sent now and its answer is waited for. Returns "" when sent, else the reason. ----
+export async function waNotifyNow(c: Customer | undefined, text: string, what: string): Promise<string> {
+  if (!waConfigured()) return "WhatsApp is not set up on the server (WAAPI_TOKEN)";
+  if (db.settings.wa?.on !== true) return "WhatsApp is turned off (Administration > WhatsApp)";
+  if (!c) return "no customer";
+  if (c.waOff) return "WhatsApp is switched off for this customer";
+  const n = waNumberOf(c);
+  if (!n) return "the customer has no valid WhatsApp or phone number";
+  const r = await waSendNow(n, text);
+  db.maillog.unshift({ id: db.n.mail++, date: nowStr(), time: timeNow(), by: "whatsapp", subject: `[WhatsApp] ${what} (button)`, to: `${c.name} (${n})`, sent: r.error ? 0 : 1, total: 1, failed: r.error ? [r.error] : [] });
+  db.maillog.length = Math.min(db.maillog.length, 200);
+  return r.error;
+}
+export async function waNowReceipt(w: WR, sig: string): Promise<string> {
+  const c = db.customers.find((x) => x.no === w.cust), l = langOf(c), lbs = Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
+  const err = await waNotifyNow(c, waText("receipt", l, { name: w.customer, code: wrCode(w), pieces: w.pieces.length, lbs, total: money(total(w)), ship: w.ship === "Air" ? { fr: "avion", en: "air", es: "avión" }[l] : { fr: "bateau", en: "ocean", es: "barco" }[l] }), `receipt ${wrCode(w)}`);
+  if (!err) w.waSig = sig;
+  return err;
+}
+export const waNowStatus = (w: WR, kind: "shipped" | "arrived" | "ready") => { const c = db.customers.find((x) => x.no === w.cust); return waNotifyNow(c, waText(kind, langOf(c), { name: w.customer, code: wrCode(w), usa: toUSA(w) }), `${kind} ${wrCode(w)}`); };
+export const waNowInvoice = (w: WR, balance: number) => { const c = db.customers.find((x) => x.no === w.cust); return waNotifyNow(c, waText("invoice", langOf(c), { name: w.customer, code: wrCode(w), inv: w.invoice, total: money(total(w)), balance: money(Math.max(0, balance)) }), `invoice ${w.invoice}`); };
+export const waNowOrder = (c: Customer | undefined, id: string, totalText: string, balanceText: string) => waNotifyNow(c, waText("order", langOf(c), { name: c?.name ?? "", order: id, total: totalText, balance: balanceText }), `order ${id}`);

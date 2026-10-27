@@ -54,7 +54,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           </span></div>
         <p className="mt-1 text-xs text-zinc-600">The receipt (PDF) is e-mailed to the customer by itself: a few minutes after a piece is saved, and when the shipment ships. If the receipt changes later, the updated one goes out again. Nothing to press. To send it again now (for example after you changed something), use the button.</p>
         <form className="mt-2 flex flex-wrap items-center gap-2">
-          <button formAction={notifyEmail.bind(null, w.id, "receipt", undefined)} disabled={!w.pieces.length} className={`${lnk} !border-brand !bg-brand !text-white`}>Notify by e-mail</button>
+          <button formAction={notifyEmail.bind(null, w.id, "receipt", undefined)} disabled={!w.pieces.length} className={`${lnk} !border-brand !bg-brand !text-white`}title="Sends the e-mail and the WhatsApp message to the customer">Notify</button>
           {w.notices && w.notices.length > 0 && <span className="text-xs text-zinc-500">{w.notices.length} notice{w.notices.length > 1 ? "s" : ""} · {w.notices.map((n) => `E-mail${n.auto ? " (automatic)" : ""}${n.to ? ` to ${n.to}` : ""} ${n.date}`).join(" · ")}</span>}
         </form>
         {docs.length > 0 && <ul className="mt-2 grid gap-0.5 text-xs">{docs.map((d) => <li key={d.id}><a href={`/docs/${d.id}`} target="_blank" className="text-brand underline">{d.name}</a> <span className="text-zinc-500">· {d.note} · {new Date(d.created).toLocaleString("en-US")}</span></li>)}</ul>}

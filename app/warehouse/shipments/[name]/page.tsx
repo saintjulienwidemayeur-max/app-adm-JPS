@@ -33,7 +33,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <Link href={`${base}/sli`} className={lnk}>Letter of Instruction</Link>
           <Link href={`${base}/cargo`} className={lnk}>Cargo list</Link>
           {sh.shipped && (await currentUser())?.admin && <form><ConfirmSubmit formAction={reopenShipment.bind(null, name)} message={`Reopen ${name}? Use this only for a cargo shipped by mistake. Customers already told "in transit" keep that e-mail.`} className="!bg-white !text-zinc-800 border border-zinc-300">Reopen (shipped by mistake)</ConfirmSubmit></form>}
-          {sh.shipped && <form><button formAction={notifyShipmentEmail.bind(null, name)} className={`${lnk} !border-brand !bg-brand !text-white`}>Notify by e-mail</button></form>}
+          {sh.shipped && <form><button formAction={notifyShipmentEmail.bind(null, name)} className={`${lnk} !border-brand !bg-brand !text-white`}title="Sends the e-mail and the WhatsApp message to the customer">Notify</button></form>}
         </div>
       </div>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}

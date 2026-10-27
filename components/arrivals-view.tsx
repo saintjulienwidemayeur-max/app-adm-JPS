@@ -76,7 +76,7 @@ export function ArrivalsView({ q, usa }: { q: Record<string, string | undefined>
                   {here === total && !w.ready && <form action={markReady}><input type="hidden" name="wr" value={w.id} /><button className={lnk}>Ready for pickup</button></form>}
                   {w.ready && <span className="text-xs font-medium text-green-700">Ready for pickup</span>}
                   {here === total && <span className="text-xs text-zinc-500">The customer is told by itself</span>}
-                  {here > 0 && <form><button formAction={notifyEmail.bind(null, w.id, w.ready ? "ready" : "arrived", base)} className={lnk}>Notify by e-mail</button></form>}
+                  {here > 0 && <form><button formAction={notifyEmail.bind(null, w.id, w.ready ? "ready" : "arrived", base)} className={lnk}title="Sends the e-mail and the WhatsApp message to the customer">Notify</button></form>}
                 </td>
               </tr>);
           })}</tbody>
