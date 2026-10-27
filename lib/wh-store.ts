@@ -133,7 +133,7 @@ export const rateFor = (c: { rates?: CustomerRates } | undefined, ship: Ship, de
 // Settings the administrator can change (Administration > Fees & rates).
 // Storage: the terms say a storage fee applies after 30 days in the warehouse. storageFee is the fee for each 30 days beyond the free period, per receipt
 // (0 = no automatic storage fee).
-export type Settings = { storageFreeDays: number; storageFee: number; siteDirection?: boolean; wa?: { on: boolean; cc?: string; events?: Partial<Record<"parcel" | "receipt" | "shipped" | "arrived" | "ready" | "invoice", boolean>> }; rates: Record<string, { air: number; ocean: number }> };
+export type Settings = { storageFreeDays: number; storageFee: number; siteDirection?: boolean; wa?: { on: boolean; cc?: string; events?: Partial<Record<"parcel" | "receipt" | "shipped" | "arrived" | "ready" | "invoice" | "order", boolean>> }; rates: Record<string, { air: number; ocean: number }> };
 export const DEFAULT_SETTINGS: Settings = { storageFreeDays: 30, storageFee: 10, rates: Object.fromEntries(DESTINATIONS.map((d) => [d, { air: AIR_RATE, ocean: OCEAN_RATE }])) };
 const today = () => usToday();
 type WhDb = {

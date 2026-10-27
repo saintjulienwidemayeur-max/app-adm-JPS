@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
-import { waParcel } from "./whatsapp";
+import { waParcel, waNowReceipt, waNowStatus } from "./whatsapp";
 import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
@@ -270,10 +270,11 @@ export const notifyEmail = act("notifyEmail", async (wr: string, kind: string, r
   const w = db.wrs.find((x) => x.id === wr);
   const to = ret || (w ? wrPath(w.id) : "/warehouse/receipts");
   if (!w) return;
-  if (!mailEnabled()) back(to, { err: "E-mail is not set up on this server (SUPABASE_URL, SITE_STAFF_EMAIL, SITE_STAFF_PASSWORD)." });
-  const err = kind === "receipt" ? await emailReceipt(w, "sent by staff (button)", true) : await emailStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
-  if (err) back(to, { err: `Not sent: ${err}` });
-  back(to, { ok: "E-mail sent to the customer." });
+  // ONE button: the e-mail (with the PDF for a receipt) and the WhatsApp message go together.
+  const mailErr = !mailEnabled() ? "e-mail is not set up on this server" : kind === "receipt" ? await emailReceipt(w, "sent by staff (button)", true) : await emailStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
+  const waErr = kind === "receipt" ? await waNowReceipt(w, wrSig(w)) : await waNowStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
+  if (mailErr && waErr) back(to, { err: `Nothing was sent. E-mail: ${mailErr}. WhatsApp: ${waErr}.` });
+  back(to, { ok: `${mailErr ? `E-mail NOT sent (${mailErr})` : "E-mail sent"}. ${waErr ? `WhatsApp NOT sent (${waErr}).` : "WhatsApp sent."}` });
 });
 // Administrator only (it is not in the rights table of act()): a cargo shipped by mistake goes back to "open", so pieces can be unloaded, moved or added and the cargo shipped again.
 // Refused once a piece was received at the destination. The customers' "in transit" e-mails and the website tracking cannot be taken back.
@@ -290,11 +291,15 @@ export const reopenShipment = act("reopenShipment", async (name: string) => {
 export const notifyShipmentEmail = act("notifyShipmentEmail", async (name: string) => {
   const to = `/warehouse/shipments/${encodeURIComponent(name)}`;
   if (!db.shipments.find((x) => x.name === name)?.shipped) back(to, { err: "This shipment has not left yet." });
-  if (!mailEnabled()) back(to, { err: "E-mail is not set up on this server (SUPABASE_URL, SITE_STAFF_EMAIL, SITE_STAFF_PASSWORD)." });
   const ids = [...new Set(db.loads.filter((l) => l.shipment === name).map((l) => l.wr))];
-  let ok = 0, bad = 0;
-  for (const id of ids) { const w = db.wrs.find((x) => x.id === id); if (!w) continue; (await emailStatus(w, "shipped")) ? bad++ : ok++; }
-  back(to, bad ? { err: `${ok} e-mail(s) sent, ${bad} could not be sent (no usable e-mail or the mail service refused).` } : { ok: `${ok} e-mail(s) sent: the customers know the shipment left ${shToUSA(db.shipments.find((x) => x.name === name)) ? "Haiti" : "Miami"}.` });
+  let mail = 0, mailBad = 0, wa = 0, waBad = 0;
+  for (const id of ids) {
+    const w = db.wrs.find((x) => x.id === id); if (!w) continue;
+    (!mailEnabled() || (await emailStatus(w, "shipped")) ? mailBad++ : mail++);
+    (await waNowStatus(w, "shipped")) ? waBad++ : wa++;
+  }
+  if (!mail && !wa) back(to, { err: `Nothing was sent (${ids.length} receipt${ids.length === 1 ? "" : "s"}): e-mail is not set up or the customers have no usable address, and WhatsApp is off, not set up, or the customers have no number.` });
+  back(to, { ok: `Notified: ${mail} e-mail(s) and ${wa} WhatsApp message(s) sent${mailBad || waBad ? ` (${mailBad} e-mail and ${waBad} WhatsApp could not be sent)` : ""}.` });
 });
 // Once a receipt has an invoice, what the invoice is made of cannot change by itself: cancel the invoice first (payments are not affected).
 const invoiceLock = (w: WR, what: string) => (w.invoice ? `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change ${what}.` : "");
