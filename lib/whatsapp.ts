@@ -107,7 +107,7 @@ const AUTO: Record<Lang, string> = { fr: "Ceci est un message automatique.", en:
 const SIGN = "JP's Logistics & More";
 const bullets = (rows: [string, string][]) => rows.map(([k, v]) => `• ${k} : ${v}`).join("\n");
 // Every message: greeting, a clear sentence, the details one per line, what to do next, "automated message", signature.
-export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string; trackings?: string[]; pieces?: number; lbs?: number; total?: string; balance?: string; usa?: boolean; inv?: string; order?: string; ship?: string; withPdf?: boolean }): string {
+export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string; trackings?: string[]; pieces?: number; lbs?: number; total?: string; balance?: string; usa?: boolean; inv?: string; order?: string; ship?: string; withPdf?: boolean; payUrl?: string }): string {
   const usa = !!p.usa, code = p.code ?? "", n = p.trackings?.length ?? 1;
   const hi = { fr: `Bonjour ${p.name},`, en: `Hello ${p.name},`, es: `Hola ${p.name},` }[l];
   const where = usa ? { fr: "notre bureau d'Haïti", en: "our Haiti office", es: "nuestra oficina de Haití" }[l] : { fr: "notre entrepôt de Miami", en: "our Miami warehouse", es: "nuestro depósito de Miami" }[l];
@@ -121,7 +121,7 @@ export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string;
     shipped: { fr: `Votre colis (reçu ${code}) a quitté ${usa ? "Haïti" : "Miami"} et il est en route vers ${dest}.\n\nNous vous écrirons dès son arrivée.`, en: `Your parcel (receipt ${code}) has left ${usa ? "Haiti" : "Miami"} and is on its way to ${dest}.\n\nWe will write to you as soon as it arrives.`, es: `Su paquete (recibo ${code}) salió de ${usa ? "Haití" : "Miami"} y va en camino a ${dest}.\n\nLe escribiremos en cuanto llegue.` }[l],
     arrived: { fr: `Bonne nouvelle : votre colis (reçu ${code}) est arrivé en ${dest}.\n\nIl sera bientôt prêt pour le retrait ou la livraison. Nous vous prévenons dès qu'il est prêt.`, en: `Good news: your parcel (receipt ${code}) has arrived in ${dest}.\n\nIt will soon be ready for pickup or delivery. We will tell you as soon as it is ready.`, es: `Buenas noticias: su paquete (recibo ${code}) llegó a ${dest}.\n\nPronto estará listo para retirar o entregar. Le avisaremos en cuanto esté listo.` }[l],
     ready: { fr: `Votre colis (reçu ${code}) est prêt !\n\nVous pouvez venir le chercher (ou demander la livraison) à :\n${office}`, en: `Your parcel (receipt ${code}) is ready!\n\nYou can come and pick it up (or ask for delivery) at:\n${office}`, es: `¡Su paquete (recibo ${code}) está listo!\n\nPuede venir a retirarlo (o pedir la entrega) en:\n${office}` }[l],
-    invoice: { fr: `Votre facture ${p.inv} est prête.\n\n${bullets([["Reçu", code], ["Total", p.total ?? ""], ["Reste à payer", p.balance ?? ""]])}\n\n${pdf("la facture")}`, en: `Your invoice ${p.inv} is ready.\n\n${bullets([["Receipt", code], ["Total", p.total ?? ""], ["Balance to pay", p.balance ?? ""]]).replace(/ : /g, ": ")}\n\n${pdf("the invoice")}`, es: `Su factura ${p.inv} está lista.\n\n${bullets([["Recibo", code], ["Total", p.total ?? ""], ["Saldo a pagar", p.balance ?? ""]])}\n\n${pdf("la factura")}` }[l],
+    invoice: { fr: `Votre facture ${p.inv} est prête.\n\n${bullets([["Reçu", code], ["Total", p.total ?? ""], ["Reste à payer", p.balance ?? ""]])}\n\n${pdf("la facture")}${p.payUrl ? `\n\nPayer en ligne (carte, Apple Pay, Google Pay) :\n${p.payUrl}` : ""}`, en: `Your invoice ${p.inv} is ready.\n\n${bullets([["Receipt", code], ["Total", p.total ?? ""], ["Balance to pay", p.balance ?? ""]]).replace(/ : /g, ": ")}\n\n${pdf("the invoice")}${p.payUrl ? `\n\nPay online (card, Apple Pay, Google Pay):\n${p.payUrl}` : ""}`, es: `Su factura ${p.inv} está lista.\n\n${bullets([["Recibo", code], ["Total", p.total ?? ""], ["Saldo a pagar", p.balance ?? ""]])}\n\n${pdf("la factura")}` }[l],
     order: { fr: `La facture de votre commande ${p.order} est prête.\n\n${bullets([["Total", p.total ?? ""], ["Reste à payer", p.balance ?? ""]])}\n\n${pdf("la facture")}`, en: `The invoice for your order ${p.order} is ready.\n\n${bullets([["Total", p.total ?? ""], ["Balance to pay", p.balance ?? ""]]).replace(/ : /g, ": ")}\n\n${pdf("the invoice")}`, es: `La factura de su pedido ${p.order} está lista.\n\n${bullets([["Total", p.total ?? ""], ["Saldo a pagar", p.balance ?? ""]])}\n\n${pdf("la factura")}` }[l],
   };
   return `${hi}\n\n${body[kind]}\n\n${AUTO[l]}\n\n${SIGN}`;
@@ -132,7 +132,7 @@ type FileOf = () => Promise<WaFile | undefined>;
 const shipOf = (w: WR, l: Lang) => (w.ship === "Air" ? { fr: "Par avion", en: "By air", es: "Por avión" }[l] : { fr: "Par bateau", en: "By ocean", es: "Por barco" }[l]);
 const lbsOf = (w: WR) => Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
 const receiptText = (w: WR, c: Customer | undefined, withPdf: boolean) => { const l = langOf(c); return waText("receipt", l, { name: w.customer, code: wrCode(w), pieces: w.pieces.length, lbs: lbsOf(w), total: money(total(w)), ship: shipOf(w, l), withPdf }); };
-const invoiceText = (w: WR, c: Customer | undefined, balance: number, withPdf: boolean) => waText("invoice", langOf(c), { name: w.customer, code: wrCode(w), inv: w.invoice, total: money(total(w)), balance: money(Math.max(0, balance)), withPdf });
+const invoiceText = (w: WR, c: Customer | undefined, balance: number, withPdf: boolean, link = "") => waText("invoice", langOf(c), { name: w.customer, code: wrCode(w), inv: w.invoice, total: money(total(w)), balance: money(Math.max(0, balance)), withPdf, ...(balance > 0.004 && link && { payUrl: link }) });
 export function waParcel(c: Customer | undefined, trackings: string[], usa = false) {
   if (!waOn("parcel") || !c || !trackings.length) return;
   sendTo(c, waText("parcel", langOf(c), { name: c.name, trackings, usa }), `parcel received (${trackings.length})`);
@@ -149,12 +149,12 @@ export function waReceipt(w: WR, sig: string, file?: FileOf) {
   w.waSig = sig;
   sendTo(c, receiptText(w, c, !!file), `receipt ${wrCode(w)}`, file);
 }
-export function waInvoice(w: WR, balance: number, file?: FileOf) {
+export function waInvoice(w: WR, balance: number, file?: FileOf, link = "") {
   if (!waOn("invoice") || !w.invoice || w.waSig === w.invoice) return;
   const c = db.customers.find((x) => x.no === w.cust);
   if (!waNumberOf(c)) return;
   w.waSig = w.invoice;
-  sendTo(c, invoiceText(w, c, balance, !!file), `invoice ${w.invoice}`, file);
+  sendTo(c, invoiceText(w, c, balance, !!file, link), `invoice ${w.invoice}`, file);
 }
 
 // ---- the "Notify" button: e-mail AND WhatsApp together. The WhatsApp part is sent now and its answer is waited for. Returns "" when sent, "~..." when sent without the PDF, else the reason. ----
@@ -178,5 +178,5 @@ export async function waNowReceipt(w: WR, sig: string, file?: FileOf): Promise<s
   return err;
 }
 export const waNowStatus = (w: WR, kind: "shipped" | "arrived" | "ready") => { const c = db.customers.find((x) => x.no === w.cust); return waNotifyNow(c, waText(kind, langOf(c), { name: w.customer, code: wrCode(w), usa: toUSA(w) }), `${kind} ${wrCode(w)}`); };
-export const waNowInvoice = (w: WR, balance: number, file?: FileOf) => { const c = db.customers.find((x) => x.no === w.cust); return waNotifyNow(c, invoiceText(w, c, balance, !!file), `invoice ${w.invoice}`, file); };
+export const waNowInvoice = (w: WR, balance: number, file?: FileOf, link = "") => { const c = db.customers.find((x) => x.no === w.cust); return waNotifyNow(c, invoiceText(w, c, balance, !!file, link), `invoice ${w.invoice}`, file); };
 export const waNowOrder = (c: Customer | undefined, id: string, totalText: string, balanceText: string, file?: FileOf) => waNotifyNow(c, waText("order", langOf(c), { name: c?.name ?? "", order: id, total: totalText, balance: balanceText, withPdf: !!file }), `order ${id}`, file);

@@ -12,7 +12,7 @@ export const actorRef: { get: () => string } = { get: () => "" };
 export type Item = { id: number; date: string; carrier: string; tracking: string; receiver: string; batch: string; customer?: string; piece?: number; ship?: Ship; shipped?: boolean; wr?: string; clientId?: string; prealert?: string; made?: boolean; by?: string; office?: "Haiti" };
 // `by`: who made the piece. `old`: made before the 132 / 1788 formulas (measured with 139 / 1728), kept so that old invoices do not change.
 export type Piece = { no: number; type: string; l: number; w: number; h: number; lbs: number; contents?: string; by?: string; old?: boolean; rd?: number };
-export type Payment = { date: string; time?: string; amount: number; method: string; ref: string; batch?: string };
+export type Payment = { date: string; time?: string; amount: number; method: string; ref: string; batch?: string; online?: boolean; payer?: string; payerEmail?: string };
 // Money a customer paid beyond what they owed (positive) and credit used later (negative).
 export type CreditEntry = { date: string; time: string; amount: number; note: string; batch?: string; method?: string; ref?: string };
 export type Rep = { id: string; name: string; initials: string };
@@ -39,7 +39,7 @@ export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; waSig?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; waSig?: string; siteSig?: string; siteInv?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
 };
 // A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
 export type OrderItem = { desc: string; qty: number; unit: number };
