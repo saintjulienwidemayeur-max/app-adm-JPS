@@ -205,3 +205,25 @@ export async function siteAccountStats(): Promise<{ login: Map<string, string>; 
   }
   return out;
 }
+
+// ---------- Receipts (WR), invoices and payments shown in the customer's space on the website (SQL section 17 of the website's schema) ----------
+export type SiteReceiptRow = { client_id: string; wr_id: string; receipt_code: string; receipt_date: string; ship: string; pieces: number; weight: number; total: number; paid: number; balance: number; status: "unpaid" | "partial" | "paid"; invoice_no: string | null; pay_url?: string; wr_pdf_url?: string; invoice_pdf_url?: string };
+export type SitePaymentRow = { paid_on: string; amount: number; method: string; reference: string; receipt_url: string };
+// Writes (or rewrites) one receipt and its payments. A link left out is not touched. Returns an error text, or null.
+export async function pushSiteReceipt(r: SiteReceiptRow, payments: SitePaymentRow[]): Promise<string | null> {
+  const c = client();
+  if (!c) return null;
+  const u = await c.from("client_receipts").upsert({ ...r, updated_at: new Date().toISOString() }, { onConflict: "wr_id" });
+  if (u.error) return u.error.message;
+  const d = await c.from("client_payments").delete().eq("wr_id", r.wr_id);
+  if (d.error) return d.error.message;
+  if (payments.length) { const i = await c.from("client_payments").insert(payments.map((p) => ({ ...p, client_id: r.client_id, wr_id: r.wr_id, invoice_no: r.invoice_no }))); if (i.error) return i.error.message; }
+  return null;
+}
+export async function dropSiteReceipt(wrId: string): Promise<string | null> {
+  const c = client();
+  if (!c) return null;
+  const a = await c.from("client_payments").delete().eq("wr_id", wrId);
+  const b = await c.from("client_receipts").delete().eq("wr_id", wrId);
+  return a.error?.message ?? b.error?.message ?? null;
+}

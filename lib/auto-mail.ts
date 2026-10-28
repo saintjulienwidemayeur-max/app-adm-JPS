@@ -11,6 +11,7 @@ import { usableEmail } from "./mailrules";
 import { receiptPdf } from "./pdf";
 import { COMPANY, HAITI, PAY } from "./company";
 import { waStatus, waReceipt } from "./whatsapp";
+import { queueSiteReceipts } from "./site-receipts";
 
 type Lang = "fr" | "en" | "es";
 const langOf = (c?: Pick<Customer, "lang">): Lang => (c?.lang === "en" || c?.lang === "es" ? c.lang : "fr");
@@ -18,7 +19,7 @@ const langOf = (c?: Pick<Customer, "lang">): Lang => (c?.lang === "en" || c?.lan
 // One job at a time, after the request that asked for it has answered.
 const g = globalThis as unknown as { __mailQ?: Promise<void>; __mailWait?: Map<string, ReturnType<typeof setTimeout>> };
 export function queueMail(job: () => Promise<unknown>) {
-  g.__mailQ = (g.__mailQ ?? Promise.resolve()).then(async () => { try { await job(); } catch (e) { console.error("[auto-mail]", e instanceof Error ? e.message : e); } finally { await flush().catch(() => {}); } });
+  g.__mailQ = (g.__mailQ ?? Promise.resolve()).then(async () => { try { await job(); } catch (e) { console.error("[auto-mail]", e instanceof Error ? e.message : e); } finally { await flush().catch(() => {}); queueSiteReceipts(); } });
 }
 // A piece was saved: wait 2 minutes (more pieces for the same customer may follow), then send the receipt as it is by then.
 export function queueReceiptSoon(wrId: string, seconds = Number(process.env.RECEIPT_MAIL_DELAY_SECONDS ?? 120)) {
