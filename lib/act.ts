@@ -19,15 +19,15 @@ const PAGES: Record<string, string[]> = {
   any: ["changeOwnCode"],
   "/warehouse/receiving": ["startDelivery", "endDelivery", "receiveItem", "receiveBatch", "updateItem", "deleteItem"],
   "/warehouse/consolidate": ["singlePiece", "combinePieces", "scanForConsolidate"],
-  [R]: ["createWR", "updateWR", "addPiece", "updatePiece", "deletePiece", "createInvoice", "addPayment", "voidPayment", "applyCredit", "addFee", "saveFees", "deleteFee", "switchShip", "notifyEmail", "markInvoiceSent", "cancelInvoice", "createOrder", "saveOrder", "addOrderItem", "saveOrderItems", "deleteOrderItem", "addOrderPayment", "voidOrderPayment"],
+  [R]: ["createWR", "updateWR", "addPiece", "updatePiece", "deletePiece", "createInvoice", "addPayment", "voidPayment", "applyCredit", "addFee", "saveFees", "deleteFee", "switchShip", "notifyEmail", "notifyRetry", "markInvoiceSent", "cancelInvoice", "createOrder", "saveOrder", "addOrderItem", "saveOrderItems", "deleteOrderItem", "addOrderPayment", "voidOrderPayment"],
   "/warehouse/customers": ["createCustomer", "saveCustomer", "saveCustomerRates", "setWhatsAppOff"],
   "/warehouse/reps": ["addRep", "saveRep", "deleteRep"],
   "/warehouse/estimate": ["estimateToReceipt", "dismissEstimateRequest", "emailEstimate", "emailEstimateTo"],
   "/warehouse/pickups": ["createPickup", "savePickup", "setPickupStatus"],
   "/warehouse/prealerts": ["savePrealert", "cancelPrealert"],
-  "/warehouse/shipments": ["createShipment", "saveBooking", "notifyShipmentEmail"],
+  "/warehouse/shipments": ["createShipment", "saveBooking", "notifyShipmentEmail", "notifyRetry"],
   "/warehouse/pallets": ["loadPiece", "unloadPiece", "shipCargo"],
-  "/warehouse/arrivals": ["receiveHere", "arriveShipment", "markHereNotified", "markReady", "notifyEmail"],
+  "/warehouse/arrivals": ["receiveHere", "arriveShipment", "markHereNotified", "markReady", "notifyEmail", "notifyRetry"],
   "/warehouse/payments": ["receivePayment"],
 };
 const mayRun = (u: { admin: boolean; perms: string[] }, name: string) =>
