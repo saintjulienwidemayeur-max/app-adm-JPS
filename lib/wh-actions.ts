@@ -6,7 +6,7 @@ import { actor } from "./actor";
 import { waParcel, waNowReceipt, waNowStatus, waFailed, waSay } from "./whatsapp";
 import { receiptPdf } from "./pdf";
 import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
-import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
+import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailTo, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
 import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailStatus, payLinkOf } from "./auto-mail";
@@ -966,6 +966,25 @@ export const dismissEstimateRequest = act("dismissEstimateRequest", async (f: F)
   const e = await markSiteEstimateAnswered(s(f, "req"));
   back(ES, e ? { err: e } : { ok: "Request marked as answered." });
 });
+// The estimate as an e-mail (the website adds "Hello <full name>," before it and the team signature after it): Air and Ocean, line by line.
+type EstResult = ReturnType<typeof estimate>;
+function estimateMessage(est: EstResult, lang: "fr" | "en" | "es"): { subject: string; message: string } {
+  const T = {
+    fr: { s: "Votre estimation de JP's Logistics & More", intro: "Voici l'estimation pour vos colis :", air: "PAR AVION", sea: "PAR BATEAU", note: "Ceci est une estimation : le montant final figure sur votre reçu d'entrepôt, d'après le poids et la taille réels de vos colis.", q: "Des questions ? Répondez simplement à ce message ou écrivez-nous sur WhatsApp." },
+    en: { s: "Your estimate from JP's Logistics & More", intro: "Here is the estimate for your boxes:", air: "BY AIR", sea: "BY SEA", note: "This is an estimate: the final amount is on your warehouse receipt, from the real weight and size of your parcels.", q: "Questions? Just reply to this message or write to us on WhatsApp." },
+    es: { s: "Su estimación de JP's Logistics & More", intro: "Esta es la estimación de sus cajas:", air: "POR AVIÓN", sea: "POR BARCO", note: "Esto es una estimación: el monto final aparece en su recibo de almacén, según el peso y el tamaño reales de sus paquetes.", q: "¿Preguntas? Responda a este mensaje o escríbanos por WhatsApp." },
+  }[lang];
+  const lines = [T.intro, ""];
+  for (const o of [est.air, est.ocean]) {
+    lines.push(`**${o.ship === "Air" ? T.air : T.sea} : ${money(o.total)}**`);
+    for (const l of o.lines) lines.push(`• ${l.kind === "credit" ? "-" : ""}${money(l.amount)} · ${l.label}${l.detail ? ` (${l.detail})` : ""}`);
+    lines.push("");
+  }
+  lines.push(T.note, "", T.q);
+  return { subject: T.s, message: lines.join("\n") };
+}
+const langOfC = (c: { lang?: string } | undefined): "fr" | "en" | "es" => (c?.lang === "en" || c?.lang === "es" ? c.lang : "fr");
+
 // Answers a request: the priced estimate (Air and Ocean) goes to the customer by e-mail through the website.
 export const emailEstimate = act("emailEstimate", async (f: F) => {
   const req = s(f, "req");
@@ -977,17 +996,28 @@ export const emailEstimate = act("emailEstimate", async (f: F) => {
   if (!r) here({ err: "That request was not found on the website." });
   const inp = parseEstimate((k) => keep[k]);
   if (!inp.rows.length) here({ err: "Enter the boxes first." });
-  const est = estimate(inp);
-  const first = (r!.clients?.name ?? "").split(" ")[0] || "";
-  const lines = [first ? `Hello ${first},` : "Hello,", "", "Here is the estimate for the boxes you asked about:", ""];
-  for (const o of [est.air, est.ocean]) {
-    lines.push(`${o.ship === "Air" ? "BY AIR" : "BY SEA"}: ${money(o.total)}`);
-    for (const l of o.lines) lines.push(`  ${l.kind === "credit" ? "-" : ""}${money(l.amount)}  ${l.label}${l.detail ? ` (${l.detail})` : ""}`);
-    lines.push("");
-  }
-  lines.push("This is an estimate: the final amount is on your warehouse receipt, from the real weight and size of your parcels.", "", "Questions? Just reply to this message or write to us on WhatsApp.");
-  const e = await mailOne(r!.client_id, "Your estimate from JP's Logistics & More", lines.join("\n"));
+  const est = estimate(inp), known = r!.clients?.name ? findCustomer(r!.clients.name) : undefined;
+  const m = estimateMessage(est, langOfC(known));
+  const e = await mailOne(r!.client_id, m.subject, m.message);
   if (e) here({ err: `Not sent: ${e}` });
   await markSiteEstimateAnswered(req);
   back(ES, { ok: `Estimate sent to ${r!.clients?.name ?? "the customer"} and the request is marked as answered.` });
+});
+// An estimate made here (no website request): e-mailed to the customer typed above (or to any e-mail address typed in the box), by the customer's full name.
+export const emailEstimateTo = act("emailEstimateTo", async (f: F) => {
+  const keep: Record<string, string> = {};
+  for (const [k, v] of f.entries()) if (k !== "to" && typeof v === "string" && !k.startsWith("$")) keep[k] = v;
+  const here = (extra: Record<string, string>) => back(ES, { ...keep, ...extra });
+  if (!mailEnabled()) here({ err: "E-mail is not set up (Administration > Email customers shows what is missing)." });
+  const inp = parseEstimate((k) => keep[k]);
+  if (!inp.rows.length) here({ err: "Enter the boxes first." });
+  const c = keep.customer ? findCustomer(keep.customer) : undefined, typed = s(f, "to").toLowerCase();
+  const to = typed || (c ? usableEmail(c) ?? "" : "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) here({ err: "Type the customer's e-mail address (this customer has no usable e-mail on file)." });
+  const m = estimateMessage(estimate(inp), langOfC(c)), name = c?.name ?? keep.customer ?? "";
+  // A customer with a website account and no other address typed: through the account; else to the address.
+  const err = c?.clientId && !typed ? await mailOne(c.clientId, m.subject, m.message) : await mailTo({ email: to, name, lang: langOfC(c) }, m.subject, m.message);
+  db.maillog.unshift({ id: db.n.mail++, date: nowStr(), time: timeNow(), by: "staff", subject: m.subject, to, sent: err ? 0 : 1, total: 1, failed: err ? [err] : [] });
+  db.maillog.length = Math.min(db.maillog.length, 200);
+  here(err ? { err: `Not sent: ${err}` } : { ok: `Estimate e-mailed to ${name || to} (${to}).` });
 });

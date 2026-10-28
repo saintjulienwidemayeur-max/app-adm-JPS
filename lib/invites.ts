@@ -17,7 +17,7 @@ export const tempPassword = () => Array.from({ length: 10 }, () => ALPHABET[rand
 type Lang = "fr" | "en" | "es";
 const langOf = (c: Customer): Lang => (c.lang === "en" || c.lang === "es" ? c.lang : "fr");
 
-// The e-mail the customer gets. The website adds "Hello <first name>," before and the team signature after.
+// The e-mail the customer gets. The website adds "Hello <full name>," before and the team signature after.
 export function inviteMessage(lang: Lang, v: { email: string; password: string; box?: string; name: string }): { subject: string; message: string } {
   const addr = `${v.name}, 8125 NW 67th Street, Box ${v.box ?? "…"}, Miami, FL 33166, USA`;
   if (lang === "en") return {

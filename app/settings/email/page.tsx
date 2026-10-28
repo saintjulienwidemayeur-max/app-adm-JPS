@@ -52,7 +52,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
           <div className="mt-2 grid gap-2">
             <label className="grid gap-1 text-xs font-medium text-zinc-600">Subject<Input name="subject" maxLength={150} required /></label>
             <label className="grid gap-1 text-xs font-medium text-zinc-600">Message<textarea name="message" rows={8} maxLength={5000} required className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm" /></label>
-            <p className="text-xs text-zinc-600">The website adds &quot;Hello &lt;first name&gt;,&quot; before your text and the team signature after it. Write only the message.</p>
+            <p className="text-xs text-zinc-600">The website adds &quot;Hello &lt;customer full name&gt;,&quot; before your text and the team signature after it. Write only the message.</p>
           </div>
         </section>
         <div><ConfirmSubmit message="Send this e-mail now? It cannot be taken back." disabled={!enabled}>Send the e-mail</ConfirmSubmit></div>
