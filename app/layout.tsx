@@ -12,6 +12,7 @@ import { currentUser } from "@/lib/users";
 import { db } from "@/lib/wh-store";
 import { VERSION } from "@/lib/version";
 import { persistState, initStore, refresh, flush } from "@/lib/persist";
+import { syncSiteReceiptsSoon } from "@/lib/site-receipts";
 import { applyStorageFees, storageFeesDue } from "@/lib/storage-fees";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const user = path === "/login" ? null : await currentUser();
   if (path !== "/login" && !user) redirect("/login"); // cookie of someone removed or changed, or a restart
   if (user && (!ps.enabled || ps.loaded) && storageFeesDue() && applyStorageFees() > 0) await flush(); // the storage fee of the terms, added by itself
+  if (ps.loaded) syncSiteReceiptsSoon();
   const mode = !ps.enabled ? "memory" : ps.loaded ? "database" : "down";
   return (
     <html lang="en">

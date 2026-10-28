@@ -1,6 +1,7 @@
 // What every server action goes through: the database copy is loaded, the person must be signed in, the action runs, it is written to the
 // activity log (who, which action, with what, how it ended), and what changed is saved (also when the action ends with a redirect).
 import { ensureLoaded, flush, refresh, lockActions } from "./persist";
+import { queueSiteReceipts } from "./site-receipts";
 import { requireUser } from "./users";
 import { logAudit, summarize } from "./audit";
 import { runAs } from "./actor";
@@ -48,6 +49,6 @@ export const act = <A extends unknown[]>(name: string, fn: (...a: A) => Promise<
       if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) { const m = digest.match(/[?&]err=([^&;]*)/); result = m ? `refused: ${decode(m[1])}` : "ok"; }
       else result = `error: ${e instanceof Error ? e.message : String(e)}`;
       throw e;
-    } finally { logAudit(user.name, words(name), summarize(a), result); await flush(); }
+    } finally { logAudit(user.name, words(name), summarize(a), result); await flush(); queueSiteReceipts(); }
   } finally { unlock(); }
 };

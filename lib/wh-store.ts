@@ -39,7 +39,7 @@ export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"
 export type WR = {
   id: string; date: string; customer: string; cust: number; email: string; route: string; rep: string; ship: Ship;
   comments: string; contents: string; declared: number; insurance: "Declined" | "Accepted";
-  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; waSig?: string; siteSig?: string; siteInv?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
+  fees: Fee[]; invoice?: string; invoiceDate?: string; invoiceSent?: string; invoiceMail?: { error?: string; tries: number; at?: string }; hereNotified?: boolean; ready?: boolean; rate?: number; dest?: string; by?: string; waSig?: string; siteSig?: string; siteUrl?: boolean; siteInv?: string; kind?: "Personal" | "Commercial"; shipperName?: string; shipperPhone?: string; receiverName?: string; receiverPhone?: string; estimate?: boolean; receiverAddress?: string; notices?: Notice[]; payments: Payment[]; pieces: Piece[];
 };
 // A purchase order: the customer pays JP's, and JP's buys the items and brings them to the Miami warehouse.
 export type OrderItem = { desc: string; qty: number; unit: number };
