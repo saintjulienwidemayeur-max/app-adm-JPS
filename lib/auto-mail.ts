@@ -10,7 +10,7 @@ import { mailOne, mailTo, mailEnabled, findClientId, type MailFile, type MailCta
 import { payUrl } from "./paylink";
 import { usableEmail } from "./mailrules";
 import { receiptPdf } from "./pdf";
-import { COMPANY, HAITI, PAY } from "./company";
+import { COMPANY, HAITI, PAY, payOther } from "./company";
 import { waStatus, waReceipt } from "./whatsapp";
 import { queueSiteReceipts } from "./site-receipts";
 
@@ -89,81 +89,34 @@ const TU = {
     readySubject: (n: string) => `Su recibo ${n} está listo para retirar en Miami`, ready: (n: string) => `Sus paquetes del recibo ${n} están listos para retirar en Miami.\n\nPuede pasar por nuestro depósito: ${COMPANY.name}, ${COMPANY.address}, ${COMPANY.city}, ${COMPANY.phone}.` },
 };
 
-// The e-mail that goes with a warehouse receipt (PDF attached): the owner's model, in the customer's language.
-export function receiptBody(w: WR, lang: Lang, name: string, code: string, pieces: number, lbs: number): string {
-  const p = PAY, tot = money(total(w)), air = w.ship === "Air";
-  if (lang === "fr") return `Dear ${name},
+// The e-mail that goes with a warehouse receipt (PDF attached): short, in the customer's language. The greeting ("Bonjour <full name>,") and the sign-off
+// are added by the website's e-mail design; `**x**` is bold. The "Pay online" button is added under it (see emailReceipt).
+export function receiptBody(w: WR, lang: Lang, _name: string, code: string, pieces: number, lbs: number): string {
+  const tot = money(total(w)), air = w.ship === "Air", s = pieces > 1;
+  if (lang === "fr") return `Merci d'avoir choisi JP's Logistics ! Votre reçu d'entrepôt **${code}** est prêt (PDF ci-joint).
 
-Merci d'avoir choisi JP's Logistics !
-Le colis ci-joint, ${code}, a été reçu pour vous dans notre entrepôt et est en route vers sa destination.
-${pieces} pièce${pieces > 1 ? "s" : ""}, ${lbs} lb, à expédier par ${air ? "avion" : "bateau"}.
-Total estimé : ${tot}
-La facture finale est émise lorsque l'envoi a passé la douane et a été livré à notre bureau de destination.
-Nous acceptons les espèces ou un chèque à l'ordre de « ${p.checkTo} », à remettre lors de l'enlèvement ou de la livraison.
-Pour les virements électroniques, veuillez utiliser l'une des méthodes suivantes :
-${p.haiti.bank} : ${p.haiti.kind}
-NOM : ${p.haiti.nameFr}
-COMPTE GOURDES : ${p.haiti.gourdes}
-COMPTE DOLLARS (USD) : ${p.haiti.usd}
-- Zelle au : ${p.zelle}
-- Pour les frais de traitement des paiements par carte de crédit, veuillez demander une facture en ligne.
-- Virement bancaire local américain à :
-${p.us.name}
-Numéro de routage de ${p.us.bank} : ${p.us.routing}
-Numéro de compte : ${p.us.account}
-Heureux de vous compter parmi nos nombreux clients, nous espérons vous servir à nouveau très bientôt.
-Cordialement,
-JP's Logistics & More
-${p.address}
-Tél. : ${p.phone}`;
-  if (lang === "es") return `Dear ${name},
+• ${pieces} pièce${s ? "s" : ""} · ${lbs} lb · par ${air ? "avion" : "bateau"}
+• Total estimé : **${tot}**
 
-¡Gracias por elegir JP's Logistics!
-El envío adjunto, ${code}, fue recibido para usted en nuestro almacén y va en camino a su destino.
-${pieces} pieza${pieces > 1 ? "s" : ""}, ${lbs} lb, a enviar por ${air ? "avión" : "barco"}.
-Total estimado: ${tot}
-La factura final se emite cuando el envío ha pasado la aduana y ha sido entregado en nuestra oficina de destino.
-Aceptamos efectivo o un cheque a nombre de "${p.checkTo}", para entregar en el momento de la recogida o la entrega.
-Para transferencias electrónicas, utilice uno de los siguientes métodos:
-${p.haiti.bank}: CUENTA CORRIENTE
-NOMBRE: ${p.haiti.name}
-CUENTA EN GOURDES: ${p.haiti.gourdes}
-CUENTA EN DÓLARES (USD): ${p.haiti.usd}
-- Zelle a: ${p.zelle}
-- Para los cargos de procesamiento de pagos con tarjeta de crédito, solicite una factura en línea.
-- Transferencia bancaria local en EE. UU. a:
-${p.us.name}
-Número de ruta de ${p.us.bank}: ${p.us.routing}
-Número de cuenta: ${p.us.account}
-Nos alegra contarle entre nuestros muchos clientes y esperamos volver a atenderle muy pronto.
-Atentamente,
-JP's Logistics & More
-${p.address}
-Tel.: ${p.phone}`;
-  return `Dear ${name},
+La facture finale est émise après la douane, une fois l'envoi livré à notre bureau de destination.
 
-Thank you for choosing JP's Logistics!
-The attached shipment, ${code}, was received for you in our warehouse and is on the way to destination.
-${pieces} piece${pieces > 1 ? "s" : ""}, ${lbs} lbs instructed to be shipped by ${air ? "air" : "ocean"}.
-Estimated Total: ${tot}
-The final invoice is issued when the shipment has cleared customs and been delivered to our destination office.
-We accept cash or a check made to the order of "${p.checkTo}" ready to remit at the time of pickup or delivery.
-For electronic transfers, please use one of the following methods:
-${p.haiti.bank}: CHECKING ACCOUNT (COMPTE COURANT)
-NAME: ${p.haiti.name}
-GOURDES ACCOUNT: ${p.haiti.gourdes}
-DOLLARS ACCOUNT (USD): ${p.haiti.usd}
-- Zelle to: ${p.zelle}
-- For credit card payment processing fees, please ask for an online invoice.
-- US local wire transfer to:
-${p.us.name}
-${p.us.bank} routing number: ${p.us.routing}
-Account number: ${p.us.account}
-Happy that you are one of our many customers and look forward to serving you again soon.
-Yours truly,
-JP's Logistics & More
-${p.address}
-Tel.: ${p.phone}`;
+${payOther("fr")}`;
+  if (lang === "es") return `¡Gracias por elegir JP's Logistics! Su recibo de almacén **${code}** está listo (PDF adjunto).
+
+• ${pieces} pieza${s ? "s" : ""} · ${lbs} lb · por ${air ? "avión" : "barco"}
+• Total estimado: **${tot}**
+
+La factura final se emite después de la aduana, cuando el envío llega a nuestra oficina de destino.
+
+${payOther("es")}`;
+  return `Thank you for choosing JP's Logistics! Your warehouse receipt **${code}** is ready (PDF attached).
+
+• ${pieces} piece${s ? "s" : ""} · ${lbs} lb · by ${air ? "air" : "ocean"}
+• Estimated total: **${tot}**
+
+The final invoice is issued after customs, once the shipment is delivered to our destination office.
+
+${payOther("en")}`;
 }
 
 // The warehouse receipt as a PDF. Not sent twice for the same state of the receipt.
@@ -179,8 +132,7 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
   // With a pay link (the website's pay page), the line about card fees becomes the link and the e-mail gets a "Pay online" button.
   const link = payLinkOf(w), lg = langOf(c);
   let message = receiptBody(w, lg, c?.name ?? w.customer, code, w.pieces.length, lbs);
-  if (link) { const o = ONLINE[lg]; message = message.includes(o.old) ? message.replace(o.old, o.line(link)) : `${message}\n\n${o.line(link)}`; }
-  const r = await deliver(c, w.email, tx.rcptSubject(code), message, [{ name, content: Buffer.from(pdf).toString("base64") }], link ? { label: ONLINE[lg].button, url: link } : undefined);
+  const r = await deliver(c, w.email, tx.rcptSubject(code), message, [{ name, content: Buffer.from(pdf).toString("base64") }], link ? { label: ONLINE[lg].button, url: link, methods: true } : undefined);
   log(tx.rcptSubject(code), r.to || w.customer, r.error || undefined);
   if (r.error) return r.error;
   const doc = await saveDoc({ kind: "receipt", ref: w.id, name, note: `${why} · sent to ${r.to}`, data: pdf });
