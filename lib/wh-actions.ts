@@ -9,7 +9,7 @@ import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustome
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
-import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailStatus } from "./auto-mail";
+import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailStatus, payLinkOf } from "./auto-mail";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
@@ -273,7 +273,7 @@ export const notifyEmail = act("notifyEmail", async (wr: string, kind: string, r
   if (!w) return;
   // ONE button: the e-mail (with the PDF for a receipt) and the WhatsApp message go together.
   const mailErr = !mailEnabled() ? "e-mail is not set up on this server" : kind === "receipt" ? await emailReceipt(w, "sent by staff (button)", true) : await emailStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
-  const waErr = kind === "receipt" ? await waNowReceipt(w, wrSig(w), async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) })) : await waNowStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
+  const waErr = kind === "receipt" ? await waNowReceipt(w, wrSig(w), async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) }), payLinkOf(w)) : await waNowStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
   if (mailErr && waFailed(waErr)) back(to, { err: `Nothing was sent. E-mail: ${mailErr}. WhatsApp: ${waErr}.` });
   back(to, { ok: `${mailErr ? `E-mail NOT sent (${mailErr})` : "E-mail sent"}. ${waSay(waErr)}` });
 });

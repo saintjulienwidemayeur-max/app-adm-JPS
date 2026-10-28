@@ -117,11 +117,11 @@ export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string;
   const pdf = (what: string) => (p.withPdf ? { fr: `Vous trouverez ${what} en PDF ci-joint. Il a aussi été envoyé par e-mail.`, en: `You will find ${what} attached as a PDF. It was also sent to you by e-mail.`, es: `Encontrará ${what} adjunto en PDF. También se le envió por correo.` }[l] : { fr: `${what[0].toUpperCase()}${what.slice(1)} vous a été envoyé par e-mail.`, en: `${what[0].toUpperCase()}${what.slice(1)} was sent to you by e-mail.`, es: `${what[0].toUpperCase()}${what.slice(1)} se le envió por correo.` }[l]);
   const body: Record<WaEvent, string> = {
     parcel: { fr: `Bonne nouvelle : nous avons bien reçu ${n > 1 ? `vos ${n} colis` : "votre colis"} à ${where}.\n\n${list}\n\nIl${n > 1 ? "s seront" : " sera"} bientôt préparé${n > 1 ? "s" : ""} pour l'expédition.`, en: `Good news: we have received ${n > 1 ? `your ${n} parcels` : "your parcel"} at ${where}.\n\n${list}\n\nWe will prepare ${n > 1 ? "them" : "it"} for shipping soon.`, es: `Buenas noticias: recibimos ${n > 1 ? `sus ${n} paquetes` : "su paquete"} en ${where}.\n\n${list}\n\nPronto ${n > 1 ? "los" : "lo"} prepararemos para el envío.` }[l],
-    receipt: { fr: `Votre reçu d'entrepôt ${code} est prêt.\n\n${bullets([["Nombre de pièces", String(p.pieces)], ["Poids total", `${p.lbs} lb`], ["Envoi", p.ship ?? ""], ["Total estimé", p.total ?? ""]])}\n\nLe prix final est confirmé sur la facture, après la douane.\n${pdf("le reçu")}`, en: `Your warehouse receipt ${code} is ready.\n\n${bullets([["Number of pieces", String(p.pieces)], ["Total weight", `${p.lbs} lb`], ["Shipping", p.ship ?? ""], ["Estimated total", p.total ?? ""]]).replace(/ : /g, ": ")}\n\nThe final price is confirmed on the invoice, after customs.\n${pdf("the receipt")}`, es: `Su recibo de almacén ${code} está listo.\n\n${bullets([["Número de piezas", String(p.pieces)], ["Peso total", `${p.lbs} lb`], ["Envío", p.ship ?? ""], ["Total estimado", p.total ?? ""]])}\n\nEl precio final se confirma en la factura, después de la aduana.\n${pdf("el recibo")}` }[l],
+    receipt: { fr: `Votre reçu d'entrepôt ${code} est prêt.\n\n${bullets([["Nombre de pièces", String(p.pieces)], ["Poids total", `${p.lbs} lb`], ["Envoi", p.ship ?? ""], ["Total estimé", p.total ?? ""]])}\n\nLe prix final est confirmé sur la facture, après la douane.\n${pdf("le reçu")}${p.payUrl ? `\n\nPayer en ligne (carte, Apple Pay, Google Pay) :\n${p.payUrl}` : ""}`, en: `Your warehouse receipt ${code} is ready.\n\n${bullets([["Number of pieces", String(p.pieces)], ["Total weight", `${p.lbs} lb`], ["Shipping", p.ship ?? ""], ["Estimated total", p.total ?? ""]]).replace(/ : /g, ": ")}\n\nThe final price is confirmed on the invoice, after customs.\n${pdf("the receipt")}${p.payUrl ? `\n\nPay online (card, Apple Pay, Google Pay):\n${p.payUrl}` : ""}`, es: `Su recibo de almacén ${code} está listo.\n\n${bullets([["Número de piezas", String(p.pieces)], ["Peso total", `${p.lbs} lb`], ["Envío", p.ship ?? ""], ["Total estimado", p.total ?? ""]])}\n\nEl precio final se confirma en la factura, después de la aduana.\n${pdf("el recibo")}${p.payUrl ? `\n\nPagar en línea (tarjeta, Apple Pay, Google Pay):\n${p.payUrl}` : ""}` }[l],
     shipped: { fr: `Votre colis (reçu ${code}) a quitté ${usa ? "Haïti" : "Miami"} et il est en route vers ${dest}.\n\nNous vous écrirons dès son arrivée.`, en: `Your parcel (receipt ${code}) has left ${usa ? "Haiti" : "Miami"} and is on its way to ${dest}.\n\nWe will write to you as soon as it arrives.`, es: `Su paquete (recibo ${code}) salió de ${usa ? "Haití" : "Miami"} y va en camino a ${dest}.\n\nLe escribiremos en cuanto llegue.` }[l],
     arrived: { fr: `Bonne nouvelle : votre colis (reçu ${code}) est arrivé en ${dest}.\n\nIl sera bientôt prêt pour le retrait ou la livraison. Nous vous prévenons dès qu'il est prêt.`, en: `Good news: your parcel (receipt ${code}) has arrived in ${dest}.\n\nIt will soon be ready for pickup or delivery. We will tell you as soon as it is ready.`, es: `Buenas noticias: su paquete (recibo ${code}) llegó a ${dest}.\n\nPronto estará listo para retirar o entregar. Le avisaremos en cuanto esté listo.` }[l],
     ready: { fr: `Votre colis (reçu ${code}) est prêt !\n\nVous pouvez venir le chercher (ou demander la livraison) à :\n${office}`, en: `Your parcel (receipt ${code}) is ready!\n\nYou can come and pick it up (or ask for delivery) at:\n${office}`, es: `¡Su paquete (recibo ${code}) está listo!\n\nPuede venir a retirarlo (o pedir la entrega) en:\n${office}` }[l],
-    invoice: { fr: `Votre facture ${p.inv} est prête.\n\n${bullets([["Reçu", code], ["Total", p.total ?? ""], ["Reste à payer", p.balance ?? ""]])}\n\n${pdf("la facture")}${p.payUrl ? `\n\nPayer en ligne (carte, Apple Pay, Google Pay) :\n${p.payUrl}` : ""}`, en: `Your invoice ${p.inv} is ready.\n\n${bullets([["Receipt", code], ["Total", p.total ?? ""], ["Balance to pay", p.balance ?? ""]]).replace(/ : /g, ": ")}\n\n${pdf("the invoice")}${p.payUrl ? `\n\nPay online (card, Apple Pay, Google Pay):\n${p.payUrl}` : ""}`, es: `Su factura ${p.inv} está lista.\n\n${bullets([["Recibo", code], ["Total", p.total ?? ""], ["Saldo a pagar", p.balance ?? ""]])}\n\n${pdf("la factura")}` }[l],
+    invoice: { fr: `Votre facture ${p.inv} est prête.\n\n${bullets([["Reçu", code], ["Total", p.total ?? ""], ["Reste à payer", p.balance ?? ""]])}\n\n${pdf("la facture")}${p.payUrl ? `\n\nPayer en ligne (carte, Apple Pay, Google Pay) :\n${p.payUrl}` : ""}`, en: `Your invoice ${p.inv} is ready.\n\n${bullets([["Receipt", code], ["Total", p.total ?? ""], ["Balance to pay", p.balance ?? ""]]).replace(/ : /g, ": ")}\n\n${pdf("the invoice")}${p.payUrl ? `\n\nPay online (card, Apple Pay, Google Pay):\n${p.payUrl}` : ""}`, es: `Su factura ${p.inv} está lista.\n\n${bullets([["Recibo", code], ["Total", p.total ?? ""], ["Saldo a pagar", p.balance ?? ""]])}\n\n${pdf("la factura")}${p.payUrl ? `\n\nPagar en línea (tarjeta, Apple Pay, Google Pay):\n${p.payUrl}` : ""}` }[l],
     order: { fr: `La facture de votre commande ${p.order} est prête.\n\n${bullets([["Total", p.total ?? ""], ["Reste à payer", p.balance ?? ""]])}\n\n${pdf("la facture")}`, en: `The invoice for your order ${p.order} is ready.\n\n${bullets([["Total", p.total ?? ""], ["Balance to pay", p.balance ?? ""]]).replace(/ : /g, ": ")}\n\n${pdf("the invoice")}`, es: `La factura de su pedido ${p.order} está lista.\n\n${bullets([["Total", p.total ?? ""], ["Saldo a pagar", p.balance ?? ""]])}\n\n${pdf("la factura")}` }[l],
   };
   return `${hi}\n\n${body[kind]}\n\n${AUTO[l]}\n\n${SIGN}`;
@@ -131,7 +131,7 @@ export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string;
 type FileOf = () => Promise<WaFile | undefined>;
 const shipOf = (w: WR, l: Lang) => (w.ship === "Air" ? { fr: "Par avion", en: "By air", es: "Por avión" }[l] : { fr: "Par bateau", en: "By ocean", es: "Por barco" }[l]);
 const lbsOf = (w: WR) => Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
-const receiptText = (w: WR, c: Customer | undefined, withPdf: boolean) => { const l = langOf(c); return waText("receipt", l, { name: w.customer, code: wrCode(w), pieces: w.pieces.length, lbs: lbsOf(w), total: money(total(w)), ship: shipOf(w, l), withPdf }); };
+const receiptText = (w: WR, c: Customer | undefined, withPdf: boolean, link = "") => { const l = langOf(c); return waText("receipt", l, { name: w.customer, code: wrCode(w), pieces: w.pieces.length, lbs: lbsOf(w), total: money(total(w)), ship: shipOf(w, l), withPdf, ...(link && { payUrl: link }) }); };
 const invoiceText = (w: WR, c: Customer | undefined, balance: number, withPdf: boolean, link = "") => waText("invoice", langOf(c), { name: w.customer, code: wrCode(w), inv: w.invoice, total: money(total(w)), balance: money(Math.max(0, balance)), withPdf, ...(balance > 0.004 && link && { payUrl: link }) });
 export function waParcel(c: Customer | undefined, trackings: string[], usa = false) {
   if (!waOn("parcel") || !c || !trackings.length) return;
@@ -142,12 +142,12 @@ export function waStatus(w: WR, kind: "shipped" | "arrived" | "ready") {
   const c = db.customers.find((x) => x.no === w.cust);
   sendTo(c, waText(kind, langOf(c), { name: w.customer, code: wrCode(w), usa: toUSA(w) }), `${kind} ${wrCode(w)}`);
 }
-export function waReceipt(w: WR, sig: string, file?: FileOf) {
+export function waReceipt(w: WR, sig: string, file?: FileOf, link = "") {
   if (!waOn("receipt") || !w.pieces.length || w.waSig === sig) return;
   const c = db.customers.find((x) => x.no === w.cust);
   if (!waNumberOf(c)) return;
   w.waSig = sig;
-  sendTo(c, receiptText(w, c, !!file), `receipt ${wrCode(w)}`, file);
+  sendTo(c, receiptText(w, c, !!file, link), `receipt ${wrCode(w)}`, file);
 }
 export function waInvoice(w: WR, balance: number, file?: FileOf, link = "") {
   if (!waOn("invoice") || !w.invoice || w.waSig === w.invoice) return;
@@ -171,9 +171,9 @@ export async function waNotifyNow(c: Customer | undefined, text: string, what: s
   db.maillog.length = Math.min(db.maillog.length, 200);
   return r.error;
 }
-export async function waNowReceipt(w: WR, sig: string, file?: FileOf): Promise<string> {
+export async function waNowReceipt(w: WR, sig: string, file?: FileOf, link = ""): Promise<string> {
   const c = db.customers.find((x) => x.no === w.cust);
-  const err = await waNotifyNow(c, receiptText(w, c, !!file), `receipt ${wrCode(w)}`, file);
+  const err = await waNotifyNow(c, receiptText(w, c, !!file, link), `receipt ${wrCode(w)}`, file);
   if (!waFailed(err)) w.waSig = sig;
   return err;
 }

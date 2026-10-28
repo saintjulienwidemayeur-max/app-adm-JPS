@@ -4,9 +4,10 @@
 //     get these from the website: push + e-mail, see jps-sync.pushStatus);
 //   - the invoice (PDF) is sent by the billing app when the invoice is made.
 // Each e-mail is logged (Administration > Email customers > history) and the PDF that was sent is kept (wh_docs).
-import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, paidAmt, money, toUSA, siteUSA, type WR, type Customer } from "./wh-store";
+import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, priced, paidAmt, money, toUSA, siteUSA, type WR, type Customer } from "./wh-store";
 import { flush, saveDoc } from "./persist";
-import { mailOne, mailTo, mailEnabled, findClientId, type MailFile } from "./jps-sync";
+import { mailOne, mailTo, mailEnabled, findClientId, type MailFile, type MailCta } from "./jps-sync";
+import { payUrl } from "./paylink";
 import { usableEmail } from "./mailrules";
 import { receiptPdf } from "./pdf";
 import { COMPANY, HAITI, PAY } from "./company";
@@ -36,17 +37,24 @@ const log = (subject: string, to: string, error?: string) => {
 const FRIENDLY: Record<string, string> = { UNKNOWN_ACTION: "The website's admin-mail function is the old version: redeploy it (supabase-functions/admin-mail)." };
 
 // Sends to the customer: through the website account if there is one, else to the e-mail on file. Returns an error text, or "" when sent.
-async function deliver(c: Customer | undefined, fallbackEmail: string, subject: string, message: string, files: MailFile[]): Promise<{ error: string; to: string }> {
+async function deliver(c: Customer | undefined, fallbackEmail: string, subject: string, message: string, files: MailFile[], cta?: MailCta): Promise<{ error: string; to: string }> {
   if (!mailEnabled()) return { error: "E-mail is not set up (see Administration > Email customers).", to: "" };
   const own = c ? usableEmail(c) : undefined, email = own ?? (fallbackEmail && usableEmail({ email: fallbackEmail }) ? fallbackEmail : undefined);
   let clientId = c?.clientId;
   if (!clientId && c) for (const who of [c.box, own]) { if (!who) continue; const r = await findClientId(who); if (r.id) { clientId = r.id; break; } }
-  if (clientId) { const e = await mailOne(clientId, subject, message, files); if (!e) return { error: "", to: email ?? c?.name ?? "" }; if (!email) return { error: FRIENDLY[e] ?? e, to: c?.name ?? "" }; }
+  if (clientId) { const e = await mailOne(clientId, subject, message, files, cta); if (!e) return { error: "", to: email ?? c?.name ?? "" }; if (!email) return { error: FRIENDLY[e] ?? e, to: c?.name ?? "" }; }
   if (!email) return { error: "no usable e-mail (missing, shared or company address)", to: "" };
-  const e = await mailTo({ email, name: c?.name, lang: langOf(c) }, subject, message, files);
+  const e = await mailTo({ email, name: c?.name, lang: langOf(c) }, subject, message, files, cta);
   return { error: e ? FRIENDLY[e] ?? e : "", to: email };
 }
 
+// The pay link of a receipt that still has a balance (empty when the app has no PAY_SITE_URL / PAY_BASE_URL, or nothing is owed).
+export const payLinkOf = (w: WR) => (priced(w) && balance(w) > 0.004 ? payUrl(w) : "");
+const ONLINE: Record<Lang, { old: string; line: (u: string) => string; button: string }> = {
+  fr: { old: "- Pour les frais de traitement des paiements par carte de crédit, veuillez demander une facture en ligne.", line: (u) => `- Payer en ligne par carte bancaire, Apple Pay, Google Pay ou Link : ${u}`, button: "Payer en ligne" },
+  en: { old: "- For credit card payment processing fees, please ask for an online invoice.", line: (u) => `- Pay online by bank card, Apple Pay, Google Pay or Link: ${u}`, button: "Pay online" },
+  es: { old: "- Para los cargos de procesamiento de pagos con tarjeta de crédito, solicite una factura en línea.", line: (u) => `- Pagar en línea con tarjeta bancaria, Apple Pay, Google Pay o Link: ${u}`, button: "Pagar en línea" },
+};
 const T = {
   fr: { rcptSubject: (n: string) => `Votre reçu d'entrepôt ${n}`, rcpt: (n: string, p: number, lbs: number, ship: string) => `Votre reçu ${n} est joint à ce message (PDF).\n\n${p} pièce${p > 1 ? "s" : ""}, ${lbs} lb · ${ship === "Ocean" ? "bateau" : "avion"}.`, est: (t: string) => `\n\nCeci est une ESTIMATION : total estimé ${t}. La facture finale est émise après le dédouanement et la livraison.`, fin: "\n\nLa facture finale est émise lorsque l'envoi a passé la douane et a été livré à notre bureau de destination.",
     arrMany: (n: number, l: string) => `Nous avons bien reçu vos ${n} colis dans notre entrepôt de Miami :\n${l}\n\nIls seront bientôt préparés pour l'expédition.`, arrSubject: "Votre colis est arrivé dans notre entrepôt de Miami", arr: (t: string) => `Nous avons bien reçu votre colis ${t} à notre entrepôt de Miami. Il sera bientôt préparé pour l'expédition.`,
@@ -164,12 +172,15 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
   if (!w.pieces.length) return "The receipt has no pieces yet.";
   const sig = wrSig(w);
   if (!force && w.notices?.some((n) => n.auto && n.channel === "Email" && n.sig === sig)) return "";
-  if (!force) waReceipt(w, sig, async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) })); // WhatsApp (short text) even when there is no usable e-mail
+  if (!force) waReceipt(w, sig, async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) }), payLinkOf(w)); // WhatsApp (short text) even when there is no usable e-mail
   const c = custOf(w), tx = T[langOf(c)], code = wrCode(w);
   const lbs = Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
   const pdf = await receiptPdf(w), name = `Receipt-${code}.pdf`;
-  const message = receiptBody(w, langOf(c), c?.name ?? w.customer, code, w.pieces.length, lbs);
-  const r = await deliver(c, w.email, tx.rcptSubject(code), message, [{ name, content: Buffer.from(pdf).toString("base64") }]);
+  // With a pay link (the website's pay page), the line about card fees becomes the link and the e-mail gets a "Pay online" button.
+  const link = payLinkOf(w), lg = langOf(c);
+  let message = receiptBody(w, lg, c?.name ?? w.customer, code, w.pieces.length, lbs);
+  if (link) { const o = ONLINE[lg]; message = message.includes(o.old) ? message.replace(o.old, o.line(link)) : `${message}\n\n${o.line(link)}`; }
+  const r = await deliver(c, w.email, tx.rcptSubject(code), message, [{ name, content: Buffer.from(pdf).toString("base64") }], link ? { label: ONLINE[lg].button, url: link } : undefined);
   log(tx.rcptSubject(code), r.to || w.customer, r.error || undefined);
   if (r.error) return r.error;
   const doc = await saveDoc({ kind: "receipt", ref: w.id, name, note: `${why} · sent to ${r.to}`, data: pdf });
