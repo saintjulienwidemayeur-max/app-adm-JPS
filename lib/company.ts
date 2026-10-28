@@ -39,3 +39,11 @@ export const PAY = {
   us: { name: "JP's Logistics and More LLC", bank: "Bank of America", routing: "26009593", account: "229058052645" },
   address: "Miami, Florida 33166", phone: "+1(786) 424-8025",
 };
+
+// The other ways to pay, short (one line each), for the e-mails. Shown under the "Pay online" button; `**x**` is bold in the e-mail.
+export function payOther(lang: "fr" | "en" | "es"): string {
+  const p = PAY, hn = (p.haiti as { nameFr?: string; name: string }).nameFr ?? p.haiti.name;
+  if (lang === "en") return `**Other ways to pay**\n• Zelle: ${p.zelle}\n• Haiti transfer: ${p.haiti.bank} · USD account ${p.haiti.usd} · gourdes account ${p.haiti.gourdes} · ${p.haiti.name}\n• US transfer: ${p.us.name} · ${p.us.bank} · routing ${p.us.routing} · account ${p.us.account}\n• Cash or a check to the order of "${p.checkTo}" at pickup or delivery.`;
+  if (lang === "es") return `**Otras formas de pago**\n• Zelle: ${p.zelle}\n• Transferencia en Haití: ${p.haiti.bank} · cuenta USD ${p.haiti.usd} · cuenta en gourdes ${p.haiti.gourdes} · ${p.haiti.name}\n• Transferencia en EE. UU.: ${p.us.name} · ${p.us.bank} · ruta ${p.us.routing} · cuenta ${p.us.account}\n• Efectivo o cheque a nombre de "${p.checkTo}" en la recogida o la entrega.`;
+  return `**Autres moyens de paiement**\n• Zelle : ${p.zelle}\n• Virement Haïti : ${p.haiti.bank} · compte USD ${p.haiti.usd} · compte gourdes ${p.haiti.gourdes} · ${hn}\n• Virement États-Unis : ${p.us.name} · ${p.us.bank} · routage ${p.us.routing} · compte ${p.us.account}\n• Espèces ou chèque à l'ordre de « ${p.checkTo} » à l'enlèvement ou à la livraison.`;
+}

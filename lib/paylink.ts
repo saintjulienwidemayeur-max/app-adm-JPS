@@ -15,10 +15,11 @@ export function wrOfToken(token: string): WR | undefined {
   if (!key || b.length !== want.length || !crypto.timingSafeEqual(Buffer.from(b), Buffer.from(want))) return undefined;
   return key.startsWith("wr:") ? db.wrs.find((x) => x.id === key.slice(3)) : db.wrs.find((x) => x.invoice === key);
 }
-// The public address of this app (PAY_BASE_URL, else the one Render gives). Empty when unknown: then no link is put in e-mails.
-export const payBase = (fallback = "") => (process.env.PAY_BASE_URL || process.env.RENDER_EXTERNAL_URL || fallback).replace(/\/$/, "");
-// The link the customer gets: the pay page of the website (PAY_SITE_URL, same design as the site) when it is set, else this app's own pay page.
-export const siteBase = () => (process.env.PAY_SITE_URL ?? "").replace(/\/$/, "");
+// The public address of the BILLING app, where the PDFs and the payment API are (PAY_BASE_URL; in the billing app itself, else the address Render gives it).
+// NB: the warehouse app's copy of this file reads PAY_BASE_URL only (the address Render gives the warehouse app is not the billing app). Empty when unknown: then no link is put in e-mails.
+export const payBase = (fallback = "") => (process.env.PAY_BASE_URL || fallback).replace(/\/$/, "");
+// The link the customer gets: the pay page of the website (https://jpslogistics.me/pay.html, same design as the site; PAY_SITE_URL can change the address).
+export const siteBase = () => (process.env.PAY_SITE_URL ?? "https://jpslogistics.me").replace(/\/$/, "");
 export const payUrl = (w: { id: string } | undefined, fallback = "") => (!w ? "" : siteBase() ? `${siteBase()}/pay.html?t=${payToken(w.id)}` : payBase(fallback) ? `${payBase(fallback)}/pay/${payToken(w.id)}` : "");
 export const receiptUrl = (w: { id: string }, i: number, fallback = "") => (payBase(fallback) ? `${payBase(fallback)}/pay/${payToken(w.id)}/receipt/${i}` : "");
 // The PDFs of the receipt (what was received) and of the invoice, for the customer's space.
