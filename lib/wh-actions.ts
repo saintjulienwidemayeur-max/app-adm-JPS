@@ -267,15 +267,39 @@ export const switchShip = act("switchShip", async (wr: string) => {
   back(wrPath(w.id), { ok: `Changed to ${to === "Ocean" ? "Ocean" : "Air"}: the receipt is now ${wrCode(w)}${to === "Ocean" ? ` and the ${money(OCEAN_HANDLING)} handling fee was added` : ""}.` });
 });
 // "Notify by e-mail" button: sends the e-mail now (the same ones that go out by themselves), even if it was already sent.
-export const notifyEmail = act("notifyEmail", async (wr: string, kind: string, ret?: string) => {
+// "Notify": the e-mail (with the PDF for a receipt) and the WhatsApp message. `channel` sends only one of them (the "send again" buttons).
+type NKind = "receipt" | "arrived" | "ready" | "shipped";
+async function sendOne(w: WR, kind: NKind, channel: string): Promise<{ mailErr: string | null; waErr: string | null }> {
+  let mailErr: string | null = null, waErr: string | null = null; // null = not tried
+  if (channel !== "wa") mailErr = !mailEnabled() ? "e-mail is not set up on this server" : kind === "receipt" ? await emailReceipt(w, "sent by staff (button)", true) : await emailStatus(w, kind);
+  if (channel !== "email") waErr = kind === "receipt" ? await waNowReceipt(w, wrSig(w), async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) }), payLinkOf(w)) : await waNowStatus(w, kind);
+  return { mailErr, waErr };
+}
+const nk = (kind: string): NKind => (kind === "receipt" || kind === "shipped" || kind === "arrived" ? kind : "ready");
+export const notifyEmail = act("notifyEmail", async (wr: string, kind: string, ret?: string, channel?: string) => {
   const w = db.wrs.find((x) => x.id === wr);
   const to = ret || (w ? wrPath(w.id) : "/warehouse/receipts");
   if (!w) return;
-  // ONE button: the e-mail (with the PDF for a receipt) and the WhatsApp message go together.
-  const mailErr = !mailEnabled() ? "e-mail is not set up on this server" : kind === "receipt" ? await emailReceipt(w, "sent by staff (button)", true) : await emailStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
-  const waErr = kind === "receipt" ? await waNowReceipt(w, wrSig(w), async () => ({ name: `Receipt-${wrCode(w)}.pdf`, bytes: await receiptPdf(w) }), payLinkOf(w)) : await waNowStatus(w, kind === "shipped" || kind === "arrived" ? kind : "ready");
-  if (mailErr && waFailed(waErr)) back(to, { err: `Nothing was sent. E-mail: ${mailErr}. WhatsApp: ${waErr}.` });
-  back(to, { ok: `${mailErr ? `E-mail NOT sent (${mailErr})` : "E-mail sent"}. ${waSay(waErr)}` });
+  const k = nk(kind), { mailErr, waErr } = await sendOne(w, k, channel ?? "both");
+  const mFail = !!mailErr, wFail = waErr !== null && waFailed(waErr);
+  const left = { ...(mFail && { nm: w.id }), ...(wFail && { nw: w.id }), ...((mFail || wFail) && { nkind: k }) };
+  const parts = [mailErr !== null && (mailErr ? `E-mail NOT sent (${mailErr})` : "E-mail sent"), waErr !== null && waSay(waErr)].filter(Boolean).join(". ");
+  const tried = [mailErr !== null, waErr !== null].filter(Boolean).length;
+  if (tried && (mFail ? 1 : 0) + (wFail ? 1 : 0) === tried) back(to, { err: `Nothing was sent. ${parts.replace(/\.$/, "")}.`, ...left });
+  back(to, { ok: `${parts.replace(/\.$/, "")}.`, ...left });
+});
+// Tells again, one channel only, the customers whose e-mail or WhatsApp message did not go.
+export const notifyRetry = act("notifyRetry", async (kind: string, channel: string, ids: string, ret: string) => {
+  const k = nk(kind), list = ids.split(",").filter(Boolean).slice(0, 300), nm: string[] = [], nw: string[] = [];
+  let sent = 0;
+  for (const id of list) {
+    const w = db.wrs.find((x) => x.id === id); if (!w) continue;
+    const { mailErr, waErr } = await sendOne(w, k, channel);
+    if (mailErr) nm.push(id); else if (mailErr === "") sent++;
+    if (waErr !== null && waFailed(waErr)) nw.push(id); else if (waErr !== null) sent++;
+  }
+  const left = { ...(nm.length && { nm: nm.join(",") }), ...(nw.length && { nw: nw.join(",") }), ...((nm.length || nw.length) && { nkind: k }) };
+  back(ret || "/warehouse/receipts", { [nm.length || nw.length ? "err" : "ok"]: `${sent} ${channel === "email" ? "e-mail" : "WhatsApp"} message(s) sent${nm.length || nw.length ? `, ${nm.length + nw.length} still not sent` : ""}.`, ...left });
 });
 // Administrator only (it is not in the rights table of act()): a cargo shipped by mistake goes back to "open", so pieces can be unloaded, moved or added and the cargo shipped again.
 // Refused once a piece was received at the destination. The customers' "in transit" e-mails and the website tracking cannot be taken back.
@@ -288,20 +312,22 @@ export const reopenShipment = act("reopenShipment", async (name: string) => {
   db.items.forEach((i) => { if (i.wr && ids.has(i.wr)) i.shipped = false; });
   back(to, { ok: `${name} is open again: you can unload, move or add pieces, then ship it again. The customers who were told "in transit" keep that e-mail.` });
 });
-// "Notify by e-mail" on a shipment: tells every customer on it that it left Miami.
 export const notifyShipmentEmail = act("notifyShipmentEmail", async (name: string) => {
   const to = `/warehouse/shipments/${encodeURIComponent(name)}`;
   if (!db.shipments.find((x) => x.name === name)?.shipped) back(to, { err: "This shipment has not left yet." });
   const ids = [...new Set(db.loads.filter((l) => l.shipment === name).map((l) => l.wr))];
-  let mail = 0, mailBad = 0, wa = 0, waBad = 0;
+  let mail = 0, wa = 0; const nm: string[] = [], nw: string[] = [];
   for (const id of ids) {
     const w = db.wrs.find((x) => x.id === id); if (!w) continue;
-    (!mailEnabled() || (await emailStatus(w, "shipped")) ? mailBad++ : mail++);
-    waFailed(await waNowStatus(w, "shipped")) ? waBad++ : wa++;
+    const { mailErr, waErr } = await sendOne(w, "shipped", "both");
+    if (mailErr) nm.push(id); else mail++;
+    if (waErr !== null && waFailed(waErr)) nw.push(id); else wa++;
   }
-  if (!mail && !wa) back(to, { err: `Nothing was sent (${ids.length} receipt${ids.length === 1 ? "" : "s"}): e-mail is not set up or the customers have no usable address, and WhatsApp is off, not set up, or the customers have no number.` });
-  back(to, { ok: `Notified: ${mail} e-mail(s) and ${wa} WhatsApp message(s) sent${mailBad || waBad ? ` (${mailBad} e-mail and ${waBad} WhatsApp could not be sent)` : ""}.` });
+  const left = { ...(nm.length && { nm: nm.join(",") }), ...(nw.length && { nw: nw.join(",") }), ...((nm.length || nw.length) && { nkind: "shipped" }) };
+  if (!mail && !wa) back(to, { err: `Nothing was sent (${ids.length} receipt${ids.length === 1 ? "" : "s"}): e-mail is not set up or the customers have no usable address, and WhatsApp is off, not set up, or the customers have no number.`, ...left });
+  back(to, { ok: `Notified: ${mail} e-mail(s) and ${wa} WhatsApp message(s) sent${nm.length || nw.length ? ` (${nm.length} e-mail and ${nw.length} WhatsApp could not be sent)` : ""}.`, ...left });
 });
+
 // Once a receipt has an invoice, what the invoice is made of cannot change by itself: cancel the invoice first (payments are not affected).
 const invoiceLock = (w: WR, what: string) => (w.invoice ? `Receipt ${wrCode(w)} is already invoiced (${w.invoice}): cancel the invoice first to change ${what}.` : "");
 export const updateWR = act("updateWR", async (f: F) => {

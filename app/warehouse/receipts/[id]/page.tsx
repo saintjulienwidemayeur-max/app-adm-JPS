@@ -5,6 +5,7 @@ import { listDocs } from "@/lib/persist";
 import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
+import { NotifyForm } from "@/components/notify";
 import { updateWR, addPiece, updatePiece, deletePiece, movePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -53,10 +54,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             {nstate === "current" ? `Customer notified by ${notice?.channel} · ${notice?.date} ${notice?.time}` : nstate === "outdated" ? `Update NOT sent: the receipt changed after the ${notice?.channel} of ${notice?.date}` : "Customer not notified yet"}
           </span></div>
         <p className="mt-1 text-xs text-zinc-600">The receipt (PDF) is e-mailed to the customer by itself: a few minutes after a piece is saved, and when the shipment ships. If the receipt changes later, the updated one goes out again. Nothing to press. To send it again now (for example after you changed something), use the button.</p>
-        <form className="mt-2 flex flex-wrap items-center gap-2">
-          <button formAction={notifyEmail.bind(null, w.id, "receipt", undefined)} disabled={!w.pieces.length} className={`${lnk} !border-brand !bg-brand !text-white`}title="Sends the e-mail and the WhatsApp message to the customer">Notify</button>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <NotifyForm action={notifyEmail.bind(null, w.id, "receipt", undefined, "both")} disabled={!w.pieces.length} className={`${lnk} !border-brand !bg-brand !text-white`} title="Sends the e-mail and the WhatsApp message to the customer" />
           {w.notices && w.notices.length > 0 && <span className="text-xs text-zinc-500">{w.notices.length} notice{w.notices.length > 1 ? "s" : ""} · {w.notices.map((n) => `E-mail${n.auto ? " (automatic)" : ""}${n.to ? ` to ${n.to}` : ""} ${n.date}`).join(" · ")}</span>}
-        </form>
+        </div>
         {docs.length > 0 && <ul className="mt-2 grid gap-0.5 text-xs">{docs.map((d) => <li key={d.id}><a href={`/docs/${d.id}`} target="_blank" className="text-brand underline">{d.name}</a> <span className="text-zinc-500">· {d.note} · {new Date(d.created).toLocaleString("en-US")}</span></li>)}</ul>}
       </section>
 
