@@ -17,7 +17,9 @@ export function wrOfToken(token: string): WR | undefined {
 }
 // The public address of this app (PAY_BASE_URL, else the one Render gives). Empty when unknown: then no link is put in e-mails.
 export const payBase = (fallback = "") => (process.env.PAY_BASE_URL || process.env.RENDER_EXTERNAL_URL || fallback).replace(/\/$/, "");
-export const payUrl = (w: { id: string } | undefined, fallback = "") => (w && payBase(fallback) ? `${payBase(fallback)}/pay/${payToken(w.id)}` : "");
+// The link the customer gets: the pay page of the website (PAY_SITE_URL, same design as the site) when it is set, else this app's own pay page.
+export const siteBase = () => (process.env.PAY_SITE_URL ?? "").replace(/\/$/, "");
+export const payUrl = (w: { id: string } | undefined, fallback = "") => (!w ? "" : siteBase() ? `${siteBase()}/pay.html?t=${payToken(w.id)}` : payBase(fallback) ? `${payBase(fallback)}/pay/${payToken(w.id)}` : "");
 export const receiptUrl = (w: { id: string }, i: number, fallback = "") => (payBase(fallback) ? `${payBase(fallback)}/pay/${payToken(w.id)}/receipt/${i}` : "");
 // The PDFs of the receipt (what was received) and of the invoice, for the customer's space.
 export const docUrl = (w: { id: string }, kind: "wr" | "invoice", fallback = "") => (payBase(fallback) ? `${payBase(fallback)}/pay/${payToken(w.id)}/${kind}` : "");
