@@ -4,7 +4,8 @@ import { cardFees } from "@/lib/pricing";
 import { ESTIMATE_NOTE } from "@/lib/disclaimer";
 import { DESTINATIONS, destLabel, destOf, destRate } from "@/lib/wh-store";
 import { estimate, parseEstimate, EST_MAX_ROWS, EST_AIR_HANDLING, EST_OCEAN_HANDLING } from "@/lib/estimate";
-import { estimateToReceipt, dismissEstimateRequest, emailEstimate } from "@/lib/wh-actions";
+import { estimateToReceipt, dismissEstimateRequest, emailEstimate, emailEstimateTo } from "@/lib/wh-actions";
+import { usableEmail } from "@/lib/mailrules";
 import { siteEstimates, siteEstimate, syncEnabled } from "@/lib/jps-sync";
 import Link from "next/link";
 import { db } from "@/lib/wh-store";
@@ -143,6 +144,14 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
               {carry.map((k) => <input key={k} type="hidden" name={k} value={q[k]} />)}
               <div className="mr-2"><div className="font-bold">Answer {openReq.clients?.name ?? "the customer"}&apos;s request</div><div className="text-xs text-zinc-600">E-mails the Air and Ocean prices through the website and marks the request as answered.</div></div>
               <Button type="submit">E-mail this estimate</Button>
+            </form>
+          )}
+          {!openReq && (
+            <form action={emailEstimateTo} className="no-print mt-5 flex flex-wrap items-end gap-2 rounded-lg border p-3">
+              {carry.map((k) => <input key={k} type="hidden" name={k} value={q[k]} />)}
+              <div className="mr-2"><div className="font-bold">E-mail this estimate to the customer</div><div className="text-xs text-zinc-600">Sends the Air and Ocean prices, by the customer&apos;s full name{cust ? <> ({cust.name})</> : " (type the customer above to use their name and language)"}.</div></div>
+              <Input name="to" type="email" defaultValue={cust ? usableEmail(cust) ?? "" : ""} placeholder="Customer's e-mail address" aria-label="Customer's e-mail address" className="w-64" />
+              <Button type="submit">E-mail the estimate</Button>
             </form>
           )}
           <form action={estimateToReceipt} className="no-print mt-5 flex flex-wrap items-end gap-2 rounded-lg border p-3">

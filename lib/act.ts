@@ -22,7 +22,7 @@ const PAGES: Record<string, string[]> = {
   [R]: ["createWR", "updateWR", "addPiece", "updatePiece", "deletePiece", "createInvoice", "addPayment", "voidPayment", "applyCredit", "addFee", "saveFees", "deleteFee", "switchShip", "notifyEmail", "markInvoiceSent", "cancelInvoice", "createOrder", "saveOrder", "addOrderItem", "saveOrderItems", "deleteOrderItem", "addOrderPayment", "voidOrderPayment"],
   "/warehouse/customers": ["createCustomer", "saveCustomer", "saveCustomerRates", "setWhatsAppOff"],
   "/warehouse/reps": ["addRep", "saveRep", "deleteRep"],
-  "/warehouse/estimate": ["estimateToReceipt", "dismissEstimateRequest", "emailEstimate"],
+  "/warehouse/estimate": ["estimateToReceipt", "dismissEstimateRequest", "emailEstimate", "emailEstimateTo"],
   "/warehouse/pickups": ["createPickup", "savePickup", "setPickupStatus"],
   "/warehouse/prealerts": ["savePrealert", "cancelPrealert"],
   "/warehouse/shipments": ["createShipment", "saveBooking", "notifyShipmentEmail"],
