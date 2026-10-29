@@ -1,5 +1,5 @@
 // In-memory warehouse data (frontend mode). Resets when the dev server restarts.
-import { calcInsurance } from "./pricing";
+import { calcInsurance, cardFee } from "./pricing";
 import type { PrealertItem, HazardKey } from "./compliance";
 import { usToday, isoToday, timeNow } from "./clock";
 export { timeNow };
@@ -33,7 +33,7 @@ export type Customer = {
 };
 export type CustomerRates = { ocean?: number; air?: number; capa?: number; capo?: number; sdq?: number; droc?: number };
 // One line of "Fees and credits" on a receipt. Credits are subtracted from the total.
-export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" | "storage" };
+export type Fee = { id: number; label: string; amount: number; kind: "charge" | "credit"; auto?: "handling" | "storage" | "card" };
 // A notice sent to the customer about a receipt (email or WhatsApp). `sig` is the state of the receipt that was sent.
 export type Notice = { date: string; time: string; channel: "Email" | "WhatsApp"; sig: string; auto?: boolean; to?: string; doc?: string; why?: string };
 export type WR = {
@@ -370,3 +370,14 @@ export const newOrderId = () => {
 };
 export const orderNotes = (o: Order) =>
   o.notes || `***Prices include purchasing fees of ${o.feePct}% and shipping and delivery to Miami warehouse ****ETA 2 days Miami, Florida *****Full payment is required before purchasing ******Once the complete order will be in Miami warehouse, JP's will ship it out via Air Freight to Haiti.`;
+
+// ---- the card fee (3% + $0.30) ----
+export const CARD_FEE_LABEL = "Card processing fee (3% + $0.30)";
+// A payment method typed in the office that is a credit / debit card (Square, card reader, manual): the fee is added to what the customer pays.
+export const isCardMethod = (m: string) => /card|carte|tarjeta|visa|master|amex|american express|discover|credit|cr[ée]dit|debit|d[ée]bit|square|stripe|apple pay|google pay/i.test(m);
+// Puts the fee of a card payment of `amount` on the receipt as a charge line, and returns it (0 when there is nothing to pay).
+export function addCardFee(w: WR, amount: number): number {
+  const fee = cardFee(amount);
+  if (fee > 0) w.fees.push({ id: db.n.fee++, label: CARD_FEE_LABEL, amount: fee, kind: "charge", auto: "card" });
+  return fee;
+}

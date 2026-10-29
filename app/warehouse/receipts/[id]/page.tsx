@@ -175,7 +175,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </dl>
         {balance(w) > 0 && (
           <p className="mt-2 text-xs text-zinc-600">
-            Paying the balance ({money(balance(w))}) by credit card: Square invoice <b>{money(card.invoice.total)}</b> · card present <b>{money(card.present.total)}</b> · manual entry <b>{money(card.manual.total)}</b>.
+            Paying the balance ({money(balance(w))}) by credit card (office or online): <b>{money(card.invoice.total)}</b> (3% + $0.30 fee = {money(card.invoice.fee)}, added to the receipt when the card is used).
           </p>
         )}
       </section>

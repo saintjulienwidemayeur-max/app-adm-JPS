@@ -14,15 +14,15 @@ export function calcInsurance(declared: number) {
   return calc > INS_MIN_COST ? { jps: calc, customer: r(declared * INS_CUSTOMER_RATE) } : { jps: INS_MIN_COST, customer: INS_MIN_CUSTOMER };
 }
 
-// Credit-card surcharges, worked out from the old invoice screen: a $20.00 invoice showed
-//   Square CC invoice $0.91 (total $20.91), Card present $0.64 (total $20.64), Manual $0.88 (total $20.88).
-// These fit Square's rates: invoice 2.9% + $0.30 and card present 2.6% + $0.10, added on top so JP's still nets the full
-// amount (total = (amount + fixed) / (1 - rate)); manual entry is 2.9% + $0.30 of the amount.
-// Only one sample was available. Check the three results against another invoice, and edit the rates here if they differ.
+// Credit-card fee: 3% of the amount paid + $0.30, added on top of what is owed. It applies to a card payment in the office (Square, card reader, manual)
+// and to every payment made online (Stripe). The fee goes on the customer's receipt as a line, so the invoice shows it.
+export const CARD_FEE_PCT = 0.03;
+export const CARD_FEE_FIXED = 0.3;
+export const cardFee = (amount: number) => (amount > 0 ? Math.round((amount * CARD_FEE_PCT + CARD_FEE_FIXED) * 100) / 100 : 0);
 export const CARD_RATES = {
-  invoice: { pct: 0.029, fixed: 0.3, grossUp: true },
-  present: { pct: 0.026, fixed: 0.1, grossUp: true },
-  manual: { pct: 0.029, fixed: 0.3, grossUp: false },
+  invoice: { pct: CARD_FEE_PCT, fixed: CARD_FEE_FIXED, grossUp: false },
+  present: { pct: CARD_FEE_PCT, fixed: CARD_FEE_FIXED, grossUp: false },
+  manual: { pct: CARD_FEE_PCT, fixed: CARD_FEE_FIXED, grossUp: false },
 } as const;
 
 export function cardFees(amount: number) {

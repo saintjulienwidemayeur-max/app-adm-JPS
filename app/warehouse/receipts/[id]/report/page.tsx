@@ -99,8 +99,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         {balance(w) > 0 && (
           <div className="ml-auto mt-4 max-w-xs border-2 border-black p-2">
             <div className="text-center font-semibold">If Paying with Credit Card</div>
-            <div className="flex justify-between"><span>Card Present</span><b>{money(card.present.total)}</b></div>
-            <div className="flex justify-between"><span>Pay Online</span><b>{money(card.invoice.total)}</b></div>
+            <div className="flex justify-between"><span>3% + $0.30 fee</span><b>{money(card.invoice.total)}</b></div>
           </div>
         )}
         {w.estimate

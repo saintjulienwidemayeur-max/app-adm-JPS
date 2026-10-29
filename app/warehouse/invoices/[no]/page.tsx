@@ -66,7 +66,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <div className="mt-4 max-w-sm border border-zinc-400 p-2 text-xs">
           <div className="font-semibold">If paying the balance ({money(balance(w))}) by credit card</div>
           <div className="mt-1 grid grid-cols-[1fr_auto_auto] gap-x-4">
-            {([["Square CC invoice", card.invoice], ["Pay by credit card, card present", card.present], ["Pay by credit card, manual", card.manual]] as const).map(([label, v]) => (
+            {([["Pay by credit card (3% + $0.30, added when the card is used, in the office or online)", card.invoice]] as const).map(([label, v]) => (
               <div key={label} className="contents"><span>{label}</span><span className="text-right">{money(v.fee)}</span><b className="text-right">{money(v.total)}</b></div>))}
           </div>
         </div>
