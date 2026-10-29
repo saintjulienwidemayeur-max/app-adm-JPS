@@ -32,10 +32,10 @@ export function ArrivalsView({ q, usa }: { q: Record<string, string | undefined>
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <h1>{usa ? "Arrivals · Miami" : "Arrivals · Pétion-Ville"}</h1>
-      <p className="text-sm text-zinc-600">Scan each piece label as cargo arrives {usa ? "in Miami (sent from Haiti)" : "in Haiti"}. Customers are told once their pieces are here.</p>
+      <p className="text-sm text-zinc-600">Scan the label of a pallet / container ({usa ? "in Miami (sent from Haiti)" : "in Haiti"}): every piece on it arrives at once and the customers are told. You can also scan one piece label at a time. A customer is told once all the pieces of their receipt are here.</p>
       <form action={receiveHere} className="mt-4 grid grid-cols-[1fr_auto] gap-2 rounded-lg border p-3 sm:max-w-xl">
         <input type="hidden" name="dir" value={usa ? "USA" : ""} />
-        <div className="flex gap-1"><ScanField id="code" name="code" placeholder="Scan piece label" /><CameraScan target="code" submit /></div>
+        <div className="flex gap-1"><ScanField id="code" name="code" placeholder="Scan a pallet label or a piece label" /><CameraScan target="code" submit /></div>
         <Button type="submit">Receive</Button>
       </form>
       {q.err && <p role="alert" className="mt-2 text-sm font-medium text-red-700">{q.err}</p>}
@@ -53,6 +53,8 @@ export function ArrivalsView({ q, usa }: { q: Record<string, string | undefined>
             <span><b>{sh.name}</b> · Cargo ID {sh.cargoId} · shipped {sh.shipped} · {rows.length} to receive</span>
             <form action={arriveShipment}><input type="hidden" name="shipment" value={sh.name} /><Button type="submit" variant="outline">Mark all as here</Button></form>
           </div>
+          <div className="mb-2 flex flex-wrap gap-2">{[...new Set(rows.map((l) => l.pallet))].map((pl) => (
+            <form key={pl} action={receiveHere}><input type="hidden" name="dir" value={usa ? "USA" : ""} /><input type="hidden" name="code" value={`${sh.name}|${pl}`} /><Button type="submit" variant="outline">Receive pallet {pl} ({rows.filter((l) => l.pallet === pl).length} pieces)</Button></form>))}</div>
           <table className="w-full text-left text-sm">
             <thead><tr>{["WR", "Customer", "Item", "Pallet"].map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
             <tbody>{rows.slice(0, 40).map((l) => <tr key={l.no} className="border-b border-zinc-100"><td className={td}>{code(l.wr)}</td><td className={td}>{cust(l.wr)}</td><td className={td}>{l.no}</td><td className={td}>{l.pallet}</td></tr>)}</tbody>
