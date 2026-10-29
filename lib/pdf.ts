@@ -6,7 +6,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
 import { DISCLAIMER, ESTIMATE_NOTE } from "./disclaimer";
 import { COMPANY, HAITI } from "./company";
 import { cardFees } from "./pricing";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, docLines, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
+import { db, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, docLines, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
 
 const MAP: Record<string, string> = { "−": "-", "–": "-", "—": "-", "·": "-", "•": "*", "‘": "'", "’": "'", "“": '"', "”": '"', "…": "...", "→": "->", "×": "x", "≥": ">=", "€": "EUR", " ": " " };
 const safe = (s: unknown) => String(s ?? "").normalize("NFC").replace(/[^\x20-\x7e¡-ÿ]/g, (c) => MAP[c] ?? (c === "\n" ? " " : "?"));
@@ -113,7 +113,7 @@ export async function receiptPdf(w: WR): Promise<Uint8Array> {
     if (!dl.length) d.para("No fees on this receipt yet.", M, CW, 9, { color: GREY, gap: 2 });
     for (const l of dl) d.row([{ w: CW - 90, t: l.qty !== undefined ? `${l.desc} (${l.qty} x ${money(l.rate ?? 0)})` : l.desc }, { w: 90, t: `${l.amount < 0 ? "-" : ""}${money(Math.abs(l.amount))}`, right: true }], 9);
     d.y -= 4;
-    const sum: [string, string, boolean?][] = [];
+    const sum: [string, string, boolean?][] = [[totalMeasure(w).label, totalMeasure(w).value, true]];
     if (credits(w) > 0) sum.push(["Charges", money(charges(w) + insuranceFee(w))], ["Credits", `-${money(credits(w))}`]);
     sum.push([w.estimate ? "Estimated total" : "Total", money(total(w)), true], ["Paid", money(paidAmt(w))], ["Balance", money(balance(w))], ["Status", payStatus(w)]);
     for (const [k, v, b] of sum) { d.need(14); d.text(k, d.W - M - 190, 10, { bold: !!b }); d.text(v, 0, 10, { bold: !!b, right: d.W - M }); d.y -= 14; }

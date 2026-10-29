@@ -4,7 +4,7 @@
 //     get these from the website: push + e-mail, see jps-sync.pushStatus);
 //   - the invoice (PDF) is sent by the billing app when the invoice is made.
 // Each e-mail is logged (Administration > Email customers > history) and the PDF that was sent is kept (wh_docs).
-import { db, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, priced, paidAmt, money, toUSA, siteUSA, type WR, type Customer } from "./wh-store";
+import { db, totalMeasure, nowStr, timeNow, wrCode, wrSig, custOf, total, balance, priced, paidAmt, money, toUSA, siteUSA, type WR, type Customer } from "./wh-store";
 import { flush, saveDoc } from "./persist";
 import { mailOne, mailTo, mailEnabled, findClientId, type MailFile, type MailCta } from "./jps-sync";
 import { payUrl } from "./paylink";
@@ -92,10 +92,11 @@ const TU = {
 // The e-mail that goes with a warehouse receipt (PDF attached): short, in the customer's language. The greeting ("Bonjour <full name>,") and the sign-off
 // are added by the website's e-mail design; `**x**` is bold. The "Pay online" button is added under it (see emailReceipt).
 export function receiptBody(w: WR, lang: Lang, _name: string, code: string, pieces: number, lbs: number): string {
-  const tot = money(total(w)), air = w.ship === "Air", s = pieces > 1;
+  const tot = money(total(w)), air = w.ship === "Air", s = pieces > 1, tm = totalMeasure(w), ocean = tm.key === "cuft";
   if (lang === "fr") return `Merci d'avoir choisi JP's Logistics ! Votre reçu d'entrepôt **${code}** est prêt (PDF ci-joint).
 
-• ${pieces} pièce${s ? "s" : ""} · ${lbs} lb · par ${air ? "avion" : "bateau"}
+• ${pieces} pièce${s ? "s" : ""} · par ${air ? "avion" : "bateau"}
+• ${ocean ? "Total pieds cubes" : "Poids total"} : **${tm.value}**
 • Total estimé : **${tot}**
 
 La facture finale est émise après la douane, une fois l'envoi livré à notre bureau de destination.
@@ -103,7 +104,8 @@ La facture finale est émise après la douane, une fois l'envoi livré à notre 
 ${payOther("fr")}`;
   if (lang === "es") return `¡Gracias por elegir JP's Logistics! Su recibo de almacén **${code}** está listo (PDF adjunto).
 
-• ${pieces} pieza${s ? "s" : ""} · ${lbs} lb · por ${air ? "avión" : "barco"}
+• ${pieces} pieza${s ? "s" : ""} · por ${air ? "avión" : "barco"}
+• ${ocean ? "Total pies cúbicos" : "Peso total"}: **${tm.value}**
 • Total estimado: **${tot}**
 
 La factura final se emite después de la aduana, cuando el envío llega a nuestra oficina de destino.
@@ -111,7 +113,8 @@ La factura final se emite después de la aduana, cuando el envío llega a nuestr
 ${payOther("es")}`;
   return `Thank you for choosing JP's Logistics! Your warehouse receipt **${code}** is ready (PDF attached).
 
-• ${pieces} piece${s ? "s" : ""} · ${lbs} lb · by ${air ? "air" : "ocean"}
+• ${pieces} piece${s ? "s" : ""} · by ${air ? "air" : "ocean"}
+• ${tm.label}: **${tm.value}**
 • Estimated total: **${tot}**
 
 The final invoice is issued after customs, once the shipment is delivered to our destination office.
