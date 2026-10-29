@@ -273,6 +273,8 @@ export const findPiece = (no: number) => {
 // Insurance is automatic: only when the customer accepted it and a declared value is set.
 // Freight is automatic: Air = chargeable lb (larger of gross and volumetric weight) x rate, Ocean = cubic feet x rate.
 export const freightQty = (w: WR) => r2(w.pieces.reduce((a, p) => a + (w.ship === "Ocean" ? cuft(p) : chargeable(p)), 0));
+// What the receipt says about the size of the shipment, as the system figures it: Ocean = Total Cubic Feet, Air = Total Weight (the pounds the price is made from).
+export const totalMeasure = (w: WR) => (w.ship === "Ocean" ? { key: "cuft" as const, label: "Total Cubic Feet", value: `${freightQty(w)} cu ft` } : { key: "weight" as const, label: "Total Weight", value: `${freightQty(w)} lb` });
 export const freightFee = (w: WR) => ((w.rate ?? 0) > 0 ? (w.pieces.some(legacyRound) ? r2o : r2)(freightQty(w) * (w.rate ?? 0)) : 0);
 export const freightDesc = (w: WR) => `Freight Charges - Ref. WR: ${w.id} - (${freightQty(w)} ${w.ship === "Ocean" ? "cuf" : "lbs"}) - Number Of Pieces: ${w.pieces.length}`;
 export const charges = (w: WR) => r2(freightFee(w) + w.fees.filter((f) => f.kind === "charge").reduce((a, f) => a + f.amount, 0));

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { listDocs } from "@/lib/persist";
-import { db, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
+import { db, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
 import { NotifyForm } from "@/components/notify";
@@ -164,7 +164,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         </form>
 
         <dl className="mt-4 grid max-w-sm grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-sm">
-          <dt>Chargeable weight</dt><dd className="text-right">{r2(w.pieces.reduce((a, p) => a + chargeable(p), 0))} lb</dd>
+          <dt className="font-semibold">{totalMeasure(w).label}</dt><dd className="text-right font-semibold">{totalMeasure(w).value}</dd>
           <dt>Charges</dt><dd className="text-right">{money(charges(w))}</dd>
           {credits(w) > 0 && <><dt>Credits</dt><dd className="text-right">−{money(credits(w))}</dd></>}
           {insuranceFee(w) > 0 && <><dt>Insurance</dt><dd className="text-right">{money(insuranceFee(w))}</dd></>}
