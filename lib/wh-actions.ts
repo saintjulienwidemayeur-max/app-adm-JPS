@@ -941,6 +941,21 @@ async function syncArrived(wrIds: string[]) {
 }
 export const receiveHere = act("receiveHere", async (f: F) => {
   const raw = s(f, "code"), no = Number(raw.split("|").pop()), page = arPath(s(f, "dir") === "USA");
+  // The label of a whole pallet / container ("<shipment>|<pallet>", printed by "Print pallet labels"): every piece on it arrives at once.
+  const pp = raw.split("|").map((x) => x.trim());
+  if (pp.length === 2 && db.shipments.some((x) => x.name === pp[0])) {
+    const sh = db.shipments.find((x) => x.name === pp[0])!, usa = shToUSA(sh);
+    if (usa !== (page === ARM)) back(page, { err: `Pallet ${pp[1]} is on ${sh.name}, which goes ${usa ? "Haiti -> Miami: scan it on Arrivals Miami" : "Miami -> Haiti: scan it on Arrivals PV"}.` });
+    if (!sh.shipped) back(page, { err: `${sh.name} hasn't shipped yet.` });
+    const onPallet = db.loads.filter((l) => l.shipment === sh.name && l.pallet === pp[1]);
+    if (!onPallet.length) back(page, { err: `There is no pallet "${pp[1]}" on ${sh.name}. Check the label.` });
+    const todo = onPallet.filter((l) => !l.here);
+    if (!todo.length) back(page, { err: `All ${onPallet.length} pieces of pallet ${pp[1]} were already received here.` });
+    todo.forEach((l) => { l.here = nowStr(); l.hereBy = actor(); });
+    const ids = [...new Set(todo.map((l) => l.wr))], failed = await syncArrived(ids);
+    const done = ids.filter((id) => { const w = db.wrs.find((x) => x.id === id); return !!w && w.pieces.every((p) => db.loads.some((l) => l.no === p.no && l.here)); }).length;
+    back(page, { ok: `Pallet ${pp[1]} received: ${todo.length} piece(s) of ${ids.length} receipt(s). ${done} customer(s) told that their parcels arrived${ids.length > done ? `; ${ids.length - done} receipt(s) still wait for pieces on another pallet (they are told when all their pieces are here)` : ""}.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+  }
   const l = db.loads.find((x) => x.no === no);
   if (!l) back(page, { err: `Piece "${raw}" was never loaded on a shipment. Check the label.` });
   const sh = db.shipments.find((x) => x.name === l!.shipment), usa = shToUSA(sh);
