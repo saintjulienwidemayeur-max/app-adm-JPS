@@ -9,7 +9,7 @@ import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustome
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailTo, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
-import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailStatus, payLinkOf } from "./auto-mail";
+import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailPartial, emailStatus, payLinkOf } from "./auto-mail";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
@@ -928,11 +928,18 @@ const AR = "/warehouse/arrivals", ARM = "/warehouse/arrivals-miami";
 const arPath = (usa: boolean) => (usa ? ARM : AR);
 // Website status 2 "arrived in Haiti" once EVERY piece of a receipt is here (a partial arrival changes nothing). Cargo that arrives in Miami
 // is not on the website's route: those customers get our own e-mail instead.
-async function syncArrived(wrIds: string[]) {
+// `partial` (a pallet or a whole shipment was received): a customer whose receipt is only partly here is told which pieces (tracking numbers) arrived and which are still to come.
+async function syncArrived(wrIds: string[], partial = false) {
   let failed = 0;
   for (const id of wrIds) {
     const w = db.wrs.find((x) => x.id === id);
-    if (!w || !w.pieces.length || !w.pieces.every((p) => db.loads.some((l) => l.no === p.no && l.here))) continue;
+    if (!w || !w.pieces.length) continue;
+    const here = w.pieces.filter((p) => db.loads.some((l) => l.no === p.no && l.here)).map((p) => p.no), missing = w.pieces.filter((p) => !here.includes(p.no)).map((p) => p.no);
+    if (missing.length) {
+      const sig = here.join(",");
+      if (partial && here.length && w.arrSig !== sig) { w.arrSig = sig; emailPartial(w, here, missing); }
+      continue;
+    }
     if (!toUSA(w) || siteUSA()) for (const i of db.items) if (i.wr === id && i.clientId && await pushStatus({ tracking: i.tracking, status: 2, clientId: i.clientId, ...(toUSA(w) && { direction: "US" as const }) })) failed++;
     emailHaiti(w, "arrived"); // customers with no website account (the others get the website's push + e-mail), and always for cargo arriving in Miami
     if (syncEnabled() || mailEnabled()) w.hereNotified = true; // the customer is told by itself: nothing to press
@@ -952,9 +959,9 @@ export const receiveHere = act("receiveHere", async (f: F) => {
     const todo = onPallet.filter((l) => !l.here);
     if (!todo.length) back(page, { err: `All ${onPallet.length} pieces of pallet ${pp[1]} were already received here.` });
     todo.forEach((l) => { l.here = nowStr(); l.hereBy = actor(); });
-    const ids = [...new Set(todo.map((l) => l.wr))], failed = await syncArrived(ids);
+    const ids = [...new Set(todo.map((l) => l.wr))], failed = await syncArrived(ids, true);
     const done = ids.filter((id) => { const w = db.wrs.find((x) => x.id === id); return !!w && w.pieces.every((p) => db.loads.some((l) => l.no === p.no && l.here)); }).length;
-    back(page, { ok: `Pallet ${pp[1]} received: ${todo.length} piece(s) of ${ids.length} receipt(s). ${done} customer(s) told that their parcels arrived${ids.length > done ? `; ${ids.length - done} receipt(s) still wait for pieces on another pallet (they are told when all their pieces are here)` : ""}.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
+    back(page, { ok: `Pallet ${pp[1]} received: ${todo.length} piece(s) of ${ids.length} receipt(s). ${done} customer(s) told that all their parcels arrived${ids.length > done ? `; ${ids.length - done} customer(s) told which tracking numbers arrived and which are still to come` : ""}.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
   }
   const l = db.loads.find((x) => x.no === no);
   if (!l) back(page, { err: `Piece "${raw}" was never loaded on a shipment. Check the label.` });
@@ -980,7 +987,7 @@ export const arriveShipment = act("arriveShipment", async (f: F) => {
   if (!sh?.shipped) return;
   const touched = new Set<string>();
   db.loads.forEach((l) => { if (l.shipment === name && !l.here) { l.here = nowStr(); l.hereBy = actor(); touched.add(l.wr); } });
-  const failed = await syncArrived([...touched]);
+  const failed = await syncArrived([...touched], true);
   back(arPath(shToUSA(sh)), { ok: `All pieces of ${name} are marked as here.`, ...(failed && { warn: `${failed} parcel(s) could not be updated on the website.` }) });
 });
 export const markHereNotified = act("markHereNotified", async (f: F) => {

@@ -11,7 +11,7 @@ import { payUrl } from "./paylink";
 import { usableEmail } from "./mailrules";
 import { receiptPdf } from "./pdf";
 import { COMPANY, HAITI, PAY, payOther } from "./company";
-import { waStatus, waReceipt } from "./whatsapp";
+import { waStatus, waReceipt, waPartial } from "./whatsapp";
 import { queueSiteReceipts } from "./site-receipts";
 
 type Lang = "fr" | "en" | "es";
@@ -147,6 +147,27 @@ export function emailParcelArrived(c: Customer | undefined, trackings: string[],
   const tx = office ? TU[langOf(c)] : T[langOf(c)], tracking = trackings.join(", "), one = trackings.length === 1;
   queueMail(async () => { const r = await deliver(c, "", tx.arrSubject, one ? tx.arr(tracking) : tx.arrMany(trackings.length, trackings.join("\n")), []); log(tx.arrSubject, r.to || c.name, r.error || undefined); });
 }
+// Some of the pieces of a receipt arrived (a pallet was scanned), others not yet: the e-mail lists the tracking numbers that are here and those still to come.
+// Sent to every customer (the website only tells them when everything is here).
+export function emailPartial(w: WR, here: number[], missing: number[]) {
+  const c = custOf(w), l = langOf(c), usa = toUSA(w), code = wrCode(w);
+  const line = (no: number) => {
+    const p = w.pieces.find((x) => x.no === no), tr = db.items.filter((i) => i.wr === w.id && i.piece === no).map((i) => i.tracking);
+    const lab = { fr: ["Pièce", "suivi", "pas de numéro de suivi"], en: ["Piece", "tracking", "no tracking number"], es: ["Pieza", "seguimiento", "sin número de seguimiento"] }[l];
+    return `${lab[0]} ${no}${p?.contents ? ` · ${p.contents}` : ""} · ${lab[1]} : ${tr.length ? tr.join(", ") : lab[2]}`;
+  };
+  waPartial(w, here.map(line), missing.map(line));
+  if (!c || (!usableEmail(c) && !hasAccount(w))) return;
+  const dest = usa ? "Miami" : { fr: "Haïti", en: "Haiti", es: "Haití" }[l];
+  const X = {
+    fr: { s: `Une partie de vos colis est arrivée en ${dest} (reçu ${code})`, intro: `Une partie de vos colis du reçu **${code}** est arrivée en ${dest}.`, a: `**Arrivés (${here.length} sur ${here.length + missing.length})**`, m: `**Pas encore arrivés (${missing.length})**`, f: "Ils arrivent avec un prochain envoi. Nous vous écrirons dès que tout est arrivé." },
+    en: { s: `Part of your parcels arrived in ${dest} (receipt ${code})`, intro: `Part of your parcels of receipt **${code}** arrived in ${dest}.`, a: `**Arrived (${here.length} of ${here.length + missing.length})**`, m: `**Not here yet (${missing.length})**`, f: "They come with a later shipment. We will write to you as soon as everything has arrived." },
+    es: { s: `Una parte de sus paquetes llegó a ${dest} (recibo ${code})`, intro: `Una parte de sus paquetes del recibo **${code}** llegó a ${dest}.`, a: `**Llegaron (${here.length} de ${here.length + missing.length})**`, m: `**Aún no llegan (${missing.length})**`, f: "Llegan con un próximo envío. Le escribiremos en cuanto todo haya llegado." },
+  }[l];
+  const message = `${X.intro}\n\n${X.a}\n${here.map((n) => `• ${line(n)}`).join("\n")}\n\n${X.m}\n${missing.map((n) => `• ${line(n)}`).join("\n")}\n\n${X.f}`;
+  queueMail(async () => { const r = await deliver(c, w.email, X.s, message, []); log(X.s, r.to || c.name, r.error || undefined); });
+}
+
 export function emailHaiti(w: WR, kind: "shipped" | "arrived" | "ready") {
   waStatus(w, kind); // WhatsApp, whatever the e-mail does
   const c = custOf(w);

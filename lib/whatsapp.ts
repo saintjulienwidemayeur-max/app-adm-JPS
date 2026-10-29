@@ -127,6 +127,21 @@ export function waText(kind: WaEvent, l: Lang, p: { name: string; code?: string;
   return `${hi}\n\n${body[kind]}\n\n${AUTO[l]}\n\n${SIGN}`;
 }
 
+// Some of the parcels of a receipt arrived (a pallet was scanned) and some did not yet: which ones are here, which ones are still to come.
+export function waPartial(w: WR, here: string[], missing: string[]) {
+  if (!waOn("arrived")) return;
+  const c = db.customers.find((x) => x.no === w.cust), l = langOf(c), usa = toUSA(w), code = wrCode(w);
+  const dest = usa ? "Miami" : { fr: "Haïti", en: "Haiti", es: "Haití" }[l];
+  const T = {
+    fr: { h: `Une partie de vos colis (reçu ${code}) est arrivée en ${dest}.`, a: `Arrivés (${here.length}) :`, m: `Pas encore arrivés (${missing.length}) :`, f: "Ils arrivent avec un prochain envoi. Nous vous écrirons dès que tout est arrivé." },
+    en: { h: `Part of your parcels (receipt ${code}) arrived in ${dest}.`, a: `Arrived (${here.length}):`, m: `Not here yet (${missing.length}):`, f: "They come with a later shipment. We will write to you as soon as everything has arrived." },
+    es: { h: `Una parte de sus paquetes (recibo ${code}) llegó a ${dest}.`, a: `Llegaron (${here.length}):`, m: `Aún no llegan (${missing.length}):`, f: "Llegan con un próximo envío. Le escribiremos en cuanto todo haya llegado." },
+  }[l];
+  const hi = { fr: `Bonjour ${w.customer},`, en: `Hello ${w.customer},`, es: `Hola ${w.customer},` }[l];
+  const list = (a: string[]) => a.slice(0, 15).map((x) => `• ${x}`).join("\n") + (a.length > 15 ? "\n• ..." : "");
+  sendTo(c, `${hi}\n\n${T.h}\n\n${T.a}\n${list(here)}\n\n${T.m}\n${list(missing)}\n\n${T.f}\n\n${AUTO[l]}\n\n${SIGN}`, `partial arrival ${code}`);
+}
+
 // ---- the moments (called next to the e-mails) ----
 type FileOf = () => Promise<WaFile | undefined>;
 const shipOf = (w: WR, l: Lang) => (w.ship === "Air" ? { fr: "Par avion", en: "By air", es: "Por avión" }[l] : { fr: "Par bateau", en: "By ocean", es: "Por barco" }[l]);
