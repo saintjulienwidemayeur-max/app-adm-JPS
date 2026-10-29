@@ -133,7 +133,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
                 <table className="mt-2 w-full"><tbody>{o.lines.map((l, i) => (
                   <tr key={i} className="border-b border-zinc-100 align-top"><td className="py-1 pr-2">{l.label}{l.detail && <span className="block text-xs text-zinc-500">{l.detail}</span>}</td><td className="py-1 text-right">{l.kind === "credit" ? "−" : ""}{money(l.amount)}</td></tr>))}</tbody></table>
                 <div className="mt-2 flex items-baseline justify-between border-t-2 border-black pt-2"><span className="font-bold">Estimated total</span><span className="text-xl font-bold">{money(o.total)}</span></div>
-                <p className="no-print mt-1 text-xs text-zinc-600">By card: Square invoice {money(card(o.total).invoice.total)} · card present {money(card(o.total).present.total)}</p>
+                <p className="no-print mt-1 text-xs text-zinc-600">By card: {money(card(o.total).invoice.total)} (3% + $0.30 fee)</p>
               </div>))}
           </div>
           <p className="mt-4 border border-zinc-400 p-2 text-xs font-medium">{ESTIMATE_NOTE}</p>

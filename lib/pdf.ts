@@ -117,7 +117,7 @@ export async function receiptPdf(w: WR): Promise<Uint8Array> {
     if (credits(w) > 0) sum.push(["Charges", money(charges(w) + insuranceFee(w))], ["Credits", `-${money(credits(w))}`]);
     sum.push([w.estimate ? "Estimated total" : "Total", money(total(w)), true], ["Paid", money(paidAmt(w))], ["Balance", money(balance(w))], ["Status", payStatus(w)]);
     for (const [k, v, b] of sum) { d.need(14); d.text(k, d.W - M - 190, 10, { bold: !!b }); d.text(v, 0, 10, { bold: !!b, right: d.W - M }); d.y -= 14; }
-    if (balance(w) > 0) { const card = cardFees(balance(w)); d.y -= 4; d.para(`If paying with credit card: card present ${money(card.present.total)} - pay online ${money(card.invoice.total)}`, M, CW, 9, { gap: 2 }); }
+    if (balance(w) > 0) { const card = cardFees(balance(w)); d.y -= 4; d.para(`If paying with a credit card (3% + $0.30 fee): ${money(card.invoice.total)}`, M, CW, 9, { gap: 2 }); }
     if (w.estimate) d.para(ESTIMATE_NOTE, M, CW, 8.5, { gap: 4 });
     else d.para("This receipt confirms what JP's received. The final invoice is issued when the shipment has cleared customs and been delivered to our destination office.", M, CW, 8.5, { color: GREY, gap: 4 });
   }
@@ -155,7 +155,7 @@ export async function invoicePdf(w: WR): Promise<Uint8Array> {
   if (w.payments.length) { d.y -= 6; d.para("Payments received", M, CW, 9.5, { bold: true, gap: 1 }); for (const p of w.payments) d.row([{ w: CW - 90, t: `${p.date} - ${p.method}${p.ref ? ` - ${p.ref}` : ""}` }, { w: 90, t: money(p.amount), right: true }], 8.5); }
   if (balance(w) > 0) {
     const card = cardFees(balance(w)); d.y -= 8;
-    d.para(`If paying the balance (${money(balance(w))}) by credit card: Square CC invoice ${money(card.invoice.total)} (fee ${money(card.invoice.fee)}) - card present ${money(card.present.total)} (fee ${money(card.present.fee)}) - manual ${money(card.manual.total)} (fee ${money(card.manual.fee)})`, M, CW, 8.5, { color: GREY });
+    d.para(`If paying the balance (${money(balance(w))}) by credit card: ${money(card.invoice.total)} (3% + $0.30 fee = ${money(card.invoice.fee)}, added when the card is used)`, M, CW, 8.5, { color: GREY });
   }
   d.y -= 8; d.para("Thank you for your business. Questions? Write to us or call " + COMPANY.phone + ".", M, CW, 9, { color: GREY });
   return d.bytes();

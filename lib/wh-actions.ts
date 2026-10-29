@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
 import { waParcel, waNowReceipt, waNowStatus, waFailed, waSay } from "./whatsapp";
 import { receiptPdf } from "./pdf";
-import { db, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
+import { db, isCardMethod, addCardFee, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
 import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailTo, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -571,9 +571,11 @@ export const addPayment = act("addPayment", async (f: F) => {
   const method = s(f, "method");
   if (!method || method.length > 30) back(wrPath(w.id), { err: "Choose how the customer paid (or type a new payment method)." });
   const paid = r2(amount);
-  w.payments.push({ date: nowStr(), time: timeNow(), amount: paid, method, ref: s(f, "ref") });
+  // A card payment: the fee (3% + $0.30) goes on the receipt and the customer pays it with the amount.
+  const fee = isCardMethod(method) ? addCardFee(w, paid) : 0;
+  w.payments.push({ date: nowStr(), time: timeNow(), amount: r2(paid + fee), method, ref: s(f, "ref") });
   rememberName(db.payMethods, method);
-  back(wrPath(w.id), { ok: `Payment of ${money(paid)} by ${method} added. ${balance(w) > 0 ? `Balance left: ${money(balance(w))}.` : "Paid in full."}` });
+  back(wrPath(w.id), { ok: `Payment of ${money(paid + fee)} by ${method} added${fee ? ` (${money(paid)} + ${money(fee)} card fee: charge ${money(paid + fee)} on the card)` : ""}. ${balance(w) > 0 ? `Balance left: ${money(balance(w))}.` : "Paid in full."}` });
 });
 // Bound from the page: voidPayment.bind(null, receiptId, paymentIndex).
 export const voidPayment = act("voidPayment", async (wr: string, i: number) => {
@@ -603,6 +605,11 @@ export const receivePayment = act("receivePayment", async (f: F) => {
     if (take <= 0) break;
     w.payments.push({ date, time, amount: r2(take), method, ref, batch });
     left = r2(left - take);
+  }
+  // A card payment: the fee (3% + $0.30 of what was applied) goes on the oldest receipt paid, and the customer pays it too.
+  if (isCardMethod(method)) {
+    const applied = r2(amount - left), first = open.find((w) => w.payments.some((p) => p.batch === batch));
+    if (applied > 0 && first) { const fee = addCardFee(first, applied); first.payments.push({ date, time, amount: fee, method, ref, batch }); }
   }
   if (left > 0) (c!.creditLog ??= []).push({ date, time, amount: left, note: `Paid more than owed (${method})`, batch, method, ref });
   rememberName(db.payMethods, method);
