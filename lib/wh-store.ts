@@ -23,7 +23,7 @@ export type Customer = {
   consignee: string; consigneePhone: string; consigneeAddress: string; consigneeCity: string; consigneeCountry: string;
   rep: string; route: string; creditLog?: CreditEntry[];
   // Set when the customer created an account on the website (same Supabase database): the website client id, the box number, the language.
-  clientId?: string; box?: string; lang?: string;
+  clientId?: string; box?: string; lang?: string; siteJoined?: number;
   // From the old system (customer import): other contact details, this customer's own rates (per lb by Air, per cubic foot by Ocean, and the
   // other routes), whether an ID is on file, the old rep code.
   whatsapp?: string; waOff?: boolean; altPhone?: string; emailMore?: string; idOnFile?: boolean; legacyRep?: string; since?: string;
