@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import { Nav } from "@/components/nav";
 import { Crumbs } from "@/components/crumbs";
 import { NotifyResult } from "@/components/notify";
+import { backgroundSiteSync } from "@/lib/site-clients";
 import { notifyRetry } from "@/lib/wh-actions";
 import { menuBadges } from "@/lib/badges";
 import { currentUser } from "@/lib/users";
@@ -35,7 +36,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const user = path === "/login" ? null : await currentUser();
   if (path !== "/login" && !user) redirect("/login"); // cookie of someone removed or changed, or a restart
   if (user && (!ps.enabled || ps.loaded) && storageFeesDue() && applyStorageFees() > 0) await flush(); // the storage fee of the terms, added by itself
-  if (ps.loaded) syncSiteReceiptsSoon();
+  if (ps.loaded) { syncSiteReceiptsSoon(); if (user) backgroundSiteSync(); }
   const mode = !ps.enabled ? "memory" : ps.loaded ? "database" : "down";
   return (
     <html lang="en">

@@ -58,6 +58,7 @@ export const SECTIONS: MenuSection[] = [
     slug: "admin", title: "Administration", icon: ShieldCheck, blurb: "Users, access and e-mails to customers",
     pages: [
       { href: "/settings/users", label: "Users & access", icon: ShieldCheck, desc: "Create the people who sign in and choose the pages each may open", adminOnly: true },
+      { href: "/settings/signups", label: "Website sign-ups", icon: UserCheck, desc: "Everyone who created an account on the website: when, contact details, and their Customers record", adminOnly: true },
       { href: "/settings/invite", label: "Invite customers", icon: UserPlus, desc: "Open each customer's account on the website and e-mail the temporary password (100 a day)", adminOnly: true },
       { href: "/settings/activity", label: "Activity log", icon: History, desc: "Everything each person does in the app", adminOnly: true },
       { href: "/settings/whatsapp", label: "WhatsApp", icon: MessageCircle, desc: "Automatic WhatsApp messages to customers: turn on, choose the moments, send a test", adminOnly: true },

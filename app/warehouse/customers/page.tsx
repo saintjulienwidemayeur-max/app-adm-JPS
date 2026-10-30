@@ -55,7 +55,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
             <tbody>{rows.map((c) => (
               <tr key={c.no} className="border-b border-zinc-100">
                 <td className={`${td} font-semibold`}>{c.no}</td>
-                <td className={`${td} truncate`} title={c.name}>{c.name}{c.clientId && <span className="ml-1.5 rounded bg-[#eaeefb] px-1.5 py-0.5 text-[10px] font-semibold text-brand">Website</span>}</td>
+                <td className={`${td} truncate`} title={c.name}>{c.name}{c.clientId && <span className="ml-1.5 rounded bg-[#eaeefb] px-1.5 py-0.5 text-[10px] font-semibold text-brand">Website</span>}{c.clientId && c.siteJoined && Date.now() - c.siteJoined < 7 * 86_400_000 && <span className="ml-1 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-800">New</span>}</td>
                 <td className={`${td} truncate`}>{c.box || "–"}</td><td className={`${td} truncate`} title={c.phone}>{c.phone || "–"}</td><td className={`${td} truncate`} title={c.email}>{c.email || "–"}{emailProblem(c) && <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800" title={PROBLEM_TEXT[emailProblem(c) as "missing"]}>fix</span>}</td>
                 <td className={`${td} truncate`}>{c.consigneeCountry}</td><td className={td}>{wrCount.get(c.no) ?? 0}</td>
                 <td className={td}><Link href={`/warehouse/customers/${c.no}`} className="text-brand underline">Open</Link></td>
