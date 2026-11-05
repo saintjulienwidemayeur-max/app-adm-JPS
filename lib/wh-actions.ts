@@ -9,7 +9,7 @@ import { db, isCardMethod, addCardFee, siteUSA, findPiece, nowStr, balance, mone
 import { clearSiteTestData, syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailTo, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
-import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailPartial, emailStatus, payLinkOf } from "./auto-mail";
+import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, type ParcelLine, emailHaiti, emailPartial, emailStatus, payLinkOf } from "./auto-mail";
 import { isoToUs, usToIso } from "./clock";
 import { trackingOk, cleanTrackingNo, HAZARD_FLAGS, reviewFlags, type HazardKey, type PrealertItem } from "./compliance";
 import { nextDeparture } from "./schedule";
@@ -56,11 +56,14 @@ export const endDelivery = act("endDelivery", async () => {
 });
 // The customer of a parcel is known (announced, typed at the scan, or set later): tell the website. That creates the parcel on the customer's
 // tracking page (status 0, "received in Miami") and the website sends the push notification and the e-mail "your parcel arrived at our office".
-async function notifyReceived(item: Item, c: { name: string; email: string; clientId?: string; box?: string } | undefined, ship: Ship, mails?: Map<number, { c: Customer; t: string[] }>): Promise<string> {
+async function notifyReceived(item: Item, c: { name: string; email: string; clientId?: string; box?: string } | undefined, ship: Ship, mails?: Map<number, { c: Customer; t: ParcelLine[] }>): Promise<string> {
+  const line: ParcelLine = { carrier: item.carrier, tracking: item.tracking };
+  // ONE e-mail per customer for the whole delivery ("Finish and save"): the parcels are collected in `mails` and sent together; a single scan sends its own.
+  const add = (full: Customer, office?: "Haiti") => { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(line); mails.set(full.no, e); } else emailParcelArrived(full, [line], office); };
   // Received at the Haiti office (going to the USA): the website only knows the Miami -> Haiti route, so the customer is told by our own e-mail.
   if (item.office === "Haiti" && !siteUSA()) {
     const full = c && "no" in c ? (c as Customer) : db.customers.find((x) => x.name === c?.name);
-    if (full && usableEmail(full)) { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(item.tracking); mails.set(full.no, e); } else emailParcelArrived(full, [item.tracking], "Haiti"); }
+    if (full && usableEmail(full)) add(full, "Haiti");
     return "";
   }
   if (!syncEnabled()) return "";
@@ -71,11 +74,14 @@ async function notifyReceived(item: Item, c: { name: string; email: string; clie
   if (!clientId) {
     // No account on the website: the e-mail on file (if there is a real one) gets "your parcel arrived" from here.
     const full = c && "no" in c ? (c as Customer) : db.customers.find((x) => x.name === c?.name);
-    if (full && usableEmail(full)) { if (mails) { const e = mails.get(full.no) ?? { c: full, t: [] }; e.t.push(item.tracking); mails.set(full.no, e); } else emailParcelArrived(full, [item.tracking], item.office === "Haiti" ? "Haiti" : undefined); return ""; }
+    if (full && usableEmail(full)) { add(full, item.office === "Haiti" ? "Haiti" : undefined); return ""; }
     return `${c?.name ?? "This customer"} has no account on the website and no usable e-mail: no tracking and no notification.`;
   }
   item.clientId = clientId;
-  const usa = item.office === "Haiti", e = await pushStatus({ tracking: item.tracking, status: 0, clientId, type: ship, description: usa ? "Received at the Haiti office" : "Received at the Miami warehouse", ...(usa && { direction: "US" as const }) });
+  // A customer with a website account: the parcel is added to their tracking page without the website's own message (quiet), and our single e-mail tells them.
+  const full = db.customers.find((x) => x.clientId === clientId) ?? (c && "no" in c ? (c as Customer) : undefined), own = mailEnabled() && !!full;
+  const usa = item.office === "Haiti", e = await pushStatus({ tracking: item.tracking, status: 0, clientId, type: ship, description: usa ? "Received at the Haiti office" : "Received at the Miami warehouse", ...(usa && { direction: "US" as const }), ...(own && { quiet: true }) });
+  if (!e && own) add(full!, usa ? "Haiti" : undefined);
   return e ? `The website update failed: ${e}` : "";
 }
 // The customer field of Received items: "1001 · Name" (picked from the list), a number, a name or an e-mail.
@@ -91,7 +97,7 @@ function waForNew(fromId: number, office?: "Haiti") {
 const NOTRACK = "*NOTRACK*";
 const nextNoTrack = () => `JPS${String(db.n.nt++).padStart(7, "0")}`;
 // One scanned parcel: saves it and tells who it is for. Returns what the page shows (ok / info / warn / err). `mails`: collects the direct e-mails (customers with no website account) so a batch sends one e-mail per customer.
-async function receiveOne(sess: Sess, raw: string, typed: string, mails?: Map<number, { c: Customer; t: string[] }>): Promise<Res> {
+async function receiveOne(sess: Sess, raw: string, typed: string, mails?: Map<number, { c: Customer; t: ParcelLine[] }>): Promise<Res> {
   const made = raw.startsWith(NOTRACK), tracking = made ? nextNoTrack() : cleanTracking(raw);
   if (tracking.length < 6) return { err: "That doesn't look like a tracking number. Scan it again." };
   const dup = made ? undefined : db.items.find((i) => sameTracking(i.tracking, tracking));
@@ -141,7 +147,7 @@ export const receiveBatch = act("receiveBatch", async (f: F) => {
   const codes = [...new Set(s(f, "codes").split(/\r?\n/).map((x) => x.trim()).filter(Boolean))].slice(0, 300), typed = s(f, "customer");
   if (!codes.length) back(RX, { err: "Scan at least one parcel before you save." });
   if (typed && !pickCustomer(typed)) back(RX, { err: `No customer matches "${typed}". Nothing was saved.` });
-  const mails = new Map<number, { c: Customer; t: string[] }>(), firstId = db.n.item;
+  const mails = new Map<number, { c: Customer; t: ParcelLine[] }>(), firstId = db.n.item;
   let ok = 0; const bad: string[] = [], warns: string[] = [], who = new Set<string>(), madeCodes: string[] = [];
   for (const code of codes) {
     const r = await receiveOne(sess!, code, typed, mails);
