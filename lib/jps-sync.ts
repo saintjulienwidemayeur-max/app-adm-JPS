@@ -40,7 +40,7 @@ export async function findClientId(who: string): Promise<{ id?: string; name?: s
 
 // Creates the shipment (status 0) or moves it forward. Never moves a parcel backwards.
 // Returns an error message, or null when it worked.
-export async function pushStatus(a: { tracking: string; status: Status; clientId?: string; type?: "Air" | "Ocean"; description?: string; direction?: "US" }): Promise<string | null> {
+export async function pushStatus(a: { tracking: string; status: Status; clientId?: string; type?: "Air" | "Ocean"; description?: string; direction?: "US"; quiet?: boolean }): Promise<string | null> {
   const c = client();
   if (!c) return null;
   const ex = await c.from("shipments").select("id,status").eq("tracking_number", a.tracking).maybeSingle();
@@ -51,7 +51,11 @@ export async function pushStatus(a: { tracking: string; status: Status; clientId
     return u.error?.message ?? null;
   }
   if (!a.clientId) return "no client linked";
-  const i = await c.from("shipments").insert({ client_id: a.clientId, tracking_number: a.tracking, type: a.type === "Ocean" ? "Mer" : "Air", description: a.description ?? null, status: a.status, ...(a.direction && { direction: a.direction }) });
+  // `quiet`: the website does not send its own push / e-mail for this new row (the warehouse app sends ONE message for all the parcels of a delivery). Needs SQL section 19;
+  // without it the row is added the old way and the website tells the customer parcel by parcel.
+  const row: Record<string, unknown> = { client_id: a.clientId, tracking_number: a.tracking, type: a.type === "Ocean" ? "Mer" : "Air", description: a.description ?? null, status: a.status, ...(a.direction && { direction: a.direction }) };
+  let i = await c.from("shipments").insert((a.quiet ? { ...row, quiet: true } : row) as never);
+  if (i.error && a.quiet && /quiet/i.test(i.error.message)) i = await c.from("shipments").insert(row as never);
   return i.error?.message ?? null;
 }
 

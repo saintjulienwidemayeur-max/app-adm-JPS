@@ -35,7 +35,7 @@ export const BLOCKED_EMAILS = ["alainnonez@yahoo.com", "hantzjr.b@boulosdistribu
 export const PAY = {
   checkTo: "JPA LOGISTICS",
   haiti: { bank: "CAPITAL BANQUE", kind: "COMPTE COURANT", name: "JPA LOGISTICS", nameFr: "JPA LOGISTIQUE", gourdes: "1856676", usd: "1856677" },
-  zelle: "1(786) 424-8025",
+  zelle: "(786) 424-8025",
   us: { name: "JP's Logistics and More LLC", bank: "Bank of America", routing: "26009593", account: "229058052645" },
   address: "Miami, Florida 33166", phone: "+1(786) 424-8025",
 };

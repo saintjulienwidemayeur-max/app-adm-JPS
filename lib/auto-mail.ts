@@ -145,10 +145,31 @@ export async function emailReceipt(w: WR, why: string, force = false): Promise<s
 
 const hasAccount = (w: WR) => !!custOf(w)?.clientId || db.items.some((i) => i.wr === w.id && i.clientId);
 // "Parcel arrived": only for a customer with no account (the website sends it to the others).
-export function emailParcelArrived(c: Customer | undefined, trackings: string[], office?: "Haiti") {
-  if (!c || (c.clientId && !office) || !usableEmail(c) || !trackings.length) return; // received in Haiti: the website does not send it, so always from here
-  const tx = office ? TU[langOf(c)] : T[langOf(c)], tracking = trackings.join(", "), one = trackings.length === 1;
-  queueMail(async () => { const r = await deliver(c, "", tx.arrSubject, one ? tx.arr(tracking) : tx.arrMany(trackings.length, trackings.join("\n")), []); log(tx.arrSubject, r.to || c.name, r.error || undefined); });
+// One parcel of a delivery: the carrier and its tracking number.
+export type ParcelLine = { carrier: string; tracking: string };
+// The e-mail "your parcel(s) arrived", ONE per customer for a whole delivery (the owner's text, adapted for one or several parcels): how many, then the tracking numbers by carrier.
+export function parcelArrivedMail(lang: Lang, name: string, items: ParcelLine[], office?: "Haiti"): { subject: string; message: string } {
+  const n = items.length, one = n === 1, haiti = office === "Haiti", EMAIL = "jpslogisticsmiami@gmail.com";
+  const groups = new Map<string, string[]>();
+  for (const i of items) { const k = (i.carrier || "—").toUpperCase(); (groups.get(k) ?? groups.set(k, []).get(k)!).push(i.tracking); }
+  const list = (colon: string) => [...groups].map(([k, t]) => `==> ${k}${colon}\n${t.map((x, j) => `- ${x}${j === t.length - 1 ? "." : ";"}`).join("\n")}`).join("\n\n");
+  if (lang === "en") return {
+    subject: one ? (haiti ? "Your package arrived at our Haiti office" : "Your package arrived at our Miami warehouse") : (haiti ? "Your packages arrived at our Haiti office" : "Your packages arrived at our Miami warehouse"),
+    message: `Dear ${name},\n\nThis message is to inform you that ${one ? "a package has" : `${n} packages have`} been delivered to our ${haiti ? "Haiti office" : "Miami warehouse"}.\n\n- ${n} ${one ? "package" : "packages"}\n\nCarrier(s) and tracking number(s)\n\n${list(":")}\n\nIf you are expecting other deliveries and would like us to consolidate them before shipping, please contact our team ${haiti ? "in Haiti" : "in Miami"} at the following address:\n\nEmail: ${EMAIL}\n\nThank you for your trust!`,
+  };
+  if (lang === "es") return {
+    subject: one ? (haiti ? "Su paquete llegó a nuestra oficina de Haití" : "Su paquete llegó a nuestro almacén de Miami") : (haiti ? "Sus paquetes llegaron a nuestra oficina de Haití" : "Sus paquetes llegaron a nuestro almacén de Miami"),
+    message: `Estimado/a ${name},\n\nEste mensaje es para informarle que ${one ? "un paquete ha sido entregado" : `${n} paquetes han sido entregados`} en ${haiti ? "nuestra oficina de Haití" : "nuestro almacén de Miami"}.\n\n- ${n} ${one ? "paquete" : "paquetes"}\n\nTransportista(s) y número(s) de seguimiento\n\n${list(":")}\n\nSi espera otras entregas y desea que las consolidemos antes del envío, comuníquese con nuestro equipo ${haiti ? "en Haití" : "en Miami"} en la siguiente dirección:\n\nCorreo electrónico: ${EMAIL}\n\n¡Gracias por su confianza!`,
+  };
+  return {
+    subject: one ? (haiti ? "Votre colis est arrivé à notre bureau d'Haïti" : "Votre colis est arrivé dans notre entrepôt de Miami") : (haiti ? "Vos colis sont arrivés à notre bureau d'Haïti" : "Vos colis sont arrivés dans notre entrepôt de Miami"),
+    message: `Cher(ère) ${name},\n\nCe message a pour but de vous informer ${one ? "qu'un colis a été livré" : `que ${n} colis ont été livrés`} à notre ${haiti ? "bureau d'Haïti" : "entrepôt de Miami"}.\n\n- ${n} ${one ? "paquet" : "paquets"}\n\nTransporteur(s) et numéro(s) de suivi\n\n${list(" :")}\n\nSi vous attendez d'autres livraisons et souhaitez que nous les regroupions avant l'expédition, veuillez contacter notre équipe ${haiti ? "en Haïti" : "à Miami"} à l'adresse suivante :\n\nCourriel : ${EMAIL}\n\nMerci de votre confiance !`,
+  };
+}
+export function emailParcelArrived(c: Customer | undefined, items: ParcelLine[], office?: "Haiti") {
+  if (!c || !items.length || (!c.clientId && !usableEmail(c))) return; // a customer with a website account is reached through it (deliver)
+  const m = parcelArrivedMail(langOf(c), c.name, items, office);
+  queueMail(async () => { const r = await deliver(c, "", m.subject, m.message, []); log(m.subject, r.to || c.name, r.error || undefined); });
 }
 // Some of the pieces of a receipt arrived (a pallet was scanned), others not yet: the e-mail lists the tracking numbers that are here and those still to come.
 // Sent to every customer (the website only tells them when everything is here).
