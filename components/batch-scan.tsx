@@ -34,9 +34,15 @@ export function BatchScan({ action, customerListId }: { action: (fd: FormData) =
     el.focus();
   };
   const [nb, setNb] = useState(1);
+  // Scanners that do not press Enter (and are slower than a keyboard-wedge burst): add the code when the typing stops for a moment, so parcels can be scanned one after another.
+  const [auto, setAuto] = useState(true), idle = useRef<number | undefined>(undefined);
+  useEffect(() => { try { if (localStorage.getItem("jps_rcv_auto") === "0") setAuto(false); } catch { /* private mode */ } }, []);
+  const toggleAuto = (v: boolean) => { setAuto(v); try { localStorage.setItem("jps_rcv_auto", v ? "1" : "0"); } catch { /* private mode */ } };
   const addBlank = () => setCodes((c) => { const base = c.filter((x) => x.startsWith("*NOTRACK*")).length; return [...c, ...Array.from({ length: Math.max(1, Math.min(50, nb)) }, (_, i) => `*NOTRACK*${base + i + 1}`)]; });
   const show = (c: string) => (c.startsWith("*NOTRACK*") ? `No tracking number (JPS makes one) #${c.slice(9)}` : c);
   const onInput = () => {
+    window.clearTimeout(idle.current);
+    if (auto) idle.current = window.setTimeout(() => { const v = inp.current?.value.trim() ?? ""; if (v.length >= 8) add(); }, 700);
     times.current.push(Date.now()); window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => { const t = times.current; if (t.length === 1 || (t.length >= 6 && (t[t.length - 1] - t[0]) / (t.length - 1) < 45)) add(); }, 160);
   };
@@ -50,13 +56,14 @@ export function BatchScan({ action, customerListId }: { action: (fd: FormData) =
         <span className="flex flex-wrap items-center gap-2">
           <input ref={inp} id="tracking" placeholder="Scan a tracking number: it goes on the list" autoFocus autoComplete="off" spellCheck={false} className="h-9 min-w-60 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
             onFocus={() => setFocus(true)} onBlur={() => { setFocus(false); times.current = []; }} onInput={onInput}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); window.clearTimeout(timer.current); add(); } }} />
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); window.clearTimeout(timer.current); window.clearTimeout(idle.current); add(); } }} />
           <CameraScan target="tracking" />
           <span role="status" aria-live="polite" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${focus ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
             <span className={`h-2.5 w-2.5 rounded-full ${focus ? "bg-green-600" : "bg-red-600"}`} />{focus ? "Scanner ready" : "Scanner off: click the field"}
           </span>
         </span>
       </label>
+      <label className="flex items-center gap-2 text-xs text-zinc-700"><input type="checkbox" checked={auto} onChange={(e) => toggleAuto(e.target.checked)} /> Add each tracking number by itself when the scanner stops (no need to press Enter): scan the parcels one after another</label>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-xs font-semibold text-zinc-700">A box with no tracking number (nothing to scan)?</span>
         <input type="number" min={1} max={50} value={nb} onChange={(e) => setNb(Number(e.target.value) || 1)} aria-label="Number of boxes with no tracking number" className="h-9 w-16 rounded-md border border-zinc-300 bg-white px-2 text-right text-sm" />

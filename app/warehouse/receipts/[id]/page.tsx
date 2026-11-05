@@ -2,10 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { listDocs } from "@/lib/persist";
-import { db, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
+import { db, shToUSA, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
 import { NotifyForm } from "@/components/notify";
+import { loadReceipts } from "@/lib/wh-actions";
 import { updateWR, addPiece, updatePiece, deletePiece, movePiece, createInvoice, addPayment, voidPayment, applyCredit, addFee, saveFees, deleteFee, switchShip, notifyEmail } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,26 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <Input name="qty" type="number" step="1" min="1" max="100" defaultValue={1} aria-label="Number of boxes (same size and weight)" title="Number of boxes with these same measures" required />
           <Button type="submit" className="col-span-4 sm:col-span-1">Add piece</Button>
         </form>
+      </section>
+
+      <section className="no-print mt-4 rounded-lg border p-3 text-sm">
+        <h2 className="font-bold">Cargo</h2>
+        {(() => {
+          const loaded = db.loads.filter((l) => l.wr === w.id), onCargo = [...new Set(loaded.map((l) => l.shipment))];
+          const open = db.shipments.filter((x) => !x.shipped && x.ship === w.ship && shToUSA(x) === toUSA(w));
+          const todo = w.pieces.filter((p) => !loaded.some((l) => l.no === p.no)).length;
+          return <>
+            <p className="mt-1 text-xs text-zinc-600">{onCargo.length ? <>On {onCargo.map((n) => <Link key={n} href={`/warehouse/shipments/${encodeURIComponent(n)}`} className="text-brand underline">{n}</Link>)} ({loaded.length} of {w.pieces.length} pieces).</> : "Not on a cargo yet."}</p>
+            {todo > 0 && w.pieces.length > 0 && (open.length ? (
+              <form action={loadReceipts} className="mt-2 flex flex-wrap items-end gap-2">
+                <input type="hidden" name="wr" value={w.id} /><input type="hidden" name="ret" value={`/warehouse/receipts/${w.id}`} />
+                <label className="grid gap-1 text-xs font-medium text-zinc-600">Cargo ({w.ship}, {toUSA(w) ? "Haiti → Miami" : "Miami → Haiti"})<select name="shipment" className={sel}>{open.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}</select></label>
+                <label className="grid gap-1 text-xs font-medium text-zinc-600">Pallet / container<Input name="pallet" defaultValue="P1" className="w-28" /></label>
+                <Button type="submit">Add the {todo} piece{todo === 1 ? "" : "s"} to this cargo</Button>
+              </form>
+            ) : <p className="mt-2 text-xs text-amber-800">No open {w.ship} cargo for this direction: create one in Shipments first.</p>)}
+          </>;
+        })()}
       </section>
 
       <section className="mt-5 rounded-lg border p-3">
