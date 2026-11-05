@@ -327,3 +327,36 @@ export async function listDocs(kind: string, ref: string): Promise<DocInfo[]> {
   }
   return [...memDocs.values()].filter((d) => d.kind === kind && d.ref === ref).map(({ data: _d, ...i }) => i).reverse();
 }
+
+// ---- Administration > Delete test data ----
+// Tables the billing app owns (the warehouse app does not hold them in memory): emptied in the database; the billing app drops its copy within a minute.
+const BILLING_TABLES = ["wh_payables", "wh_expenses", "wh_debts"];
+export async function clearBillingTables(): Promise<{ [table: string]: number }> {
+  const out: { [table: string]: number } = {};
+  if (!st.pool || !st.loaded) return out;
+  for (const t of BILLING_TABLES) {
+    const ex = await st.pool.query("select to_regclass($1) as r", [t]);
+    if (!ex.rows[0]?.r) continue;
+    const r = await st.pool.query(`delete from ${t}`);
+    out[t] = r.rowCount ?? 0;
+  }
+  return out;
+}
+export async function countBillingTables(): Promise<{ [table: string]: number }> {
+  const out: { [table: string]: number } = {};
+  if (!st.pool || !st.loaded) return out;
+  for (const t of BILLING_TABLES) {
+    const ex = await st.pool.query("select to_regclass($1) as r", [t]);
+    if (ex.rows[0]?.r) out[t] = Number((await st.pool.query(`select count(*) from ${t}`)).rows[0].count);
+  }
+  return out;
+}
+// The PDFs that were e-mailed (the exact file the customer got): all of them.
+export async function clearDocs(): Promise<number> {
+  if (st.pool && st.loaded) return (await st.pool.query("delete from wh_docs")).rowCount ?? 0;
+  const n = memDocs.size; memDocs.clear(); return n;
+}
+export async function countDocs(): Promise<number> {
+  if (st.pool && st.loaded) return Number((await st.pool.query("select count(*) from wh_docs")).rows[0].count);
+  return memDocs.size;
+}

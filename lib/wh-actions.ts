@@ -6,7 +6,7 @@ import { actor } from "./actor";
 import { waParcel, waNowReceipt, waNowStatus, waFailed, waSay } from "./whatsapp";
 import { receiptPdf } from "./pdf";
 import { db, isCardMethod, addCardFee, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
-import { syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailTo, mailEnabled } from "./jps-sync";
+import { clearSiteTestData, syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailTo, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
 import { queueMail, queueReceiptSoon, emailReceipt, emailParcelArrived, emailHaiti, emailPartial, emailStatus, payLinkOf } from "./auto-mail";
@@ -16,6 +16,7 @@ import { nextDeparture } from "./schedule";
 import { extractTracking, sameTracking } from "./tracking";
 import { oldScanIndex } from "./cargo-import";
 import { parseEstimate, estimate } from "./estimate";
+import { flush, clearBillingTables, clearDocs } from "./persist";
 import { usableEmail } from "./mailrules";
 
 // Every action: make sure the database copy is loaded, run it, then save what changed (also when it ends with a redirect).
@@ -889,6 +890,30 @@ export const saveBooking = act("saveBooking", async (f: F) => {
 });
 
 // ---------- Pallets / containers / cargo ----------
+// Puts every piece of whole warehouse receipts on a cargo (shipment) in one go, on the pallet / container typed: from the shipment page (a list to tick, or the numbers typed)
+// or from a receipt. The same checks as scanning the pieces one by one (same Air / Ocean, same direction, not shipped yet, not loaded already).
+export const loadReceipts = act("loadReceipts", async (f: F) => {
+  const shipment = s(f, "shipment"), pallet = (s(f, "pallet") || "P1").slice(0, 30), ret = s(f, "ret") || `/warehouse/shipments/${encodeURIComponent(shipment)}`;
+  const sh = db.shipments.find((x) => x.name === shipment);
+  if (!sh) back(ret, { err: `There is no shipment named "${shipment}".` });
+  if (sh!.shipped) back(ret, { err: `${shipment} was already shipped.` });
+  const ids = [...new Set([...f.getAll("wr").map(String), ...s(f, "wrs").split(/[\s,;]+/)].map((x) => x.replace(/\D/g, "")).filter(Boolean))];
+  if (!ids.length) back(ret, { err: "Tick at least one receipt, or type its number (for example JPF-11028)." });
+  let pieces = 0; const done: string[] = [], bad: string[] = [];
+  for (const id of ids) {
+    const w = db.wrs.find((x) => x.id === id);
+    if (!w) { bad.push(`${id}: no such receipt`); continue; }
+    const code = wrCode(w);
+    if (!w.pieces.length) { bad.push(`${code} has no pieces yet`); continue; }
+    if (w.ship !== sh!.ship) { bad.push(`${code} is ${w.ship} but ${shipment} is ${sh!.ship}`); continue; }
+    if (toUSA(w) !== shToUSA(sh)) { bad.push(`${code} goes ${toUSA(w) ? "to Miami" : "to Haiti"} but ${shipment} goes ${shToUSA(sh) ? "Haiti -> Miami" : "Miami -> Haiti"}`); continue; }
+    const todo = w.pieces.filter((p) => !db.loads.some((l) => l.no === p.no));
+    if (!todo.length) { bad.push(`${code} is already loaded`); continue; }
+    for (const p of todo) db.loads.push({ shipment, pallet, wr: w.id, no: p.no, date: nowStr(), by: actor() });
+    pieces += todo.length; done.push(code);
+  }
+  back(ret, { ...(done.length && { ok: `${pieces} piece(s) of ${done.join(", ")} loaded on pallet ${pallet} of ${shipment}.` }), ...(bad.length && { err: bad.join(" · ") }) });
+});
 export const loadPiece = act("loadPiece", async (f: F) => {
   const shipment = s(f, "shipment"), pallet = s(f, "pallet"), ship = shipOf(s(f, "ship"));
   const q = { shipment, pallet, ship };
@@ -1075,4 +1100,36 @@ export const emailEstimateTo = act("emailEstimateTo", async (f: F) => {
   db.maillog.unshift({ id: db.n.mail++, date: nowStr(), time: timeNow(), by: "staff", subject: m.subject, to, sent: err ? 0 : 1, total: 1, failed: err ? [err] : [] });
   db.maillog.length = Math.min(db.maillog.length, 200);
   here(err ? { err: `Not sent: ${err}` } : { ok: `Estimate e-mailed to ${name || to} (${to}).` });
+});
+
+// ---------- Administration > Delete test data (administrators only: it is not in the rights table of act()) ----------
+// Removes what was added while testing, group by group. The customers, the reps, the users, the rates and settings and everything imported from the
+// old system (old receipts, old shipments, old invoices) are never touched. The numbering (next receipt, piece, invoice number) goes on where it was.
+export const cleanupTestData = act("cleanupTestData", async (f: F) => {
+  const to = "/settings/cleanup", on = (k: string) => f.get(k) === "on";
+  if (s(f, "confirm") !== "DELETE") back(to, { err: 'Type DELETE in the box to confirm.' });
+  const groups = ["receipts", "parcels", "cargo", "pickups", "prealerts", "orders", "billing", "credit", "docs", "mail", "activity", "site"].filter(on);
+  if (!groups.length) back(to, { err: "Tick what to delete." });
+  const done: string[] = [], has = (g: string) => groups.includes(g);
+  const trackings = has("site") && has("parcels") ? db.items.map((i) => i.tracking) : [];
+  if (has("receipts")) {
+    const n = db.wrs.length, inv = db.wrs.filter((w) => w.invoice).length;
+    db.items.forEach((i) => { if (i.wr || i.piece) { i.wr = undefined; i.piece = undefined; i.shipped = false; } }); // the parcels go back to "waiting to be consolidated"
+    db.loads = []; // what was loaded refers to the pieces of those receipts
+    db.wrs = []; done.push(`${n} receipt(s) (${inv} invoiced)`);
+  }
+  if (has("parcels")) { done.push(`${db.items.length} received parcel(s)`); db.items = []; }
+  if (has("cargo")) { done.push(`${db.shipments.length} shipment(s)`); db.shipments = []; db.loads = []; db.bookings = []; }
+  if (has("pickups")) { done.push(`${db.pickups.length} pickup(s)`); db.pickups = []; }
+  if (has("prealerts")) { done.push(`${db.prealerts.length} pre-alert(s)`); db.prealerts = []; }
+  if (has("orders")) { done.push(`${db.orders.length} order(s)`); db.orders = []; }
+  if (has("credit")) { const n = db.customers.filter((c) => (c.creditLog ?? []).length).length; db.customers.forEach((c) => { delete c.creditLog; }); done.push(`credit of ${n} customer(s)`); }
+  if (has("mail")) { done.push(`${db.maillog.length} e-mail history line(s)`); db.maillog = []; }
+  if (has("activity")) { done.push(`${db.audit.length} activity line(s)`); db.audit = []; }
+  await flush();
+  if (has("billing")) { const r = await clearBillingTables(); done.push(`billing: ${Object.entries(r).map(([k, v]) => `${v} ${k.replace("wh_", "")}`).join(", ") || "nothing"}`); }
+  if (has("docs")) done.push(`${await clearDocs()} stored PDF(s)`);
+  let warn = "";
+  if (has("site")) { const r = await clearSiteTestData(trackings, has("receipts")); done.push(`website: ${r.receipts} receipt(s) in customer spaces, ${r.shipments} tracking entr${r.shipments === 1 ? "y" : "ies"}`); if (r.error) warn = `Website: ${r.error}`; }
+  back(to, { ok: `Deleted: ${done.join(" · ")}.`, ...(warn && { warn }) });
 });

@@ -228,3 +228,24 @@ export async function dropSiteReceipt(wrId: string): Promise<string | null> {
   const b = await c.from("client_receipts").delete().eq("wr_id", wrId);
   return a.error?.message ?? b.error?.message ?? null;
 }
+
+// ---------- Administration > Delete test data: what the apps wrote on the website ----------
+// The receipts and payments shown in the customers' spaces (the apps write all of them), and the tracking entries made from the received parcels given.
+export async function clearSiteTestData(trackings: string[], receipts: boolean): Promise<{ receipts: number; shipments: number; error?: string }> {
+  const c = client();
+  const out = { receipts: 0, shipments: 0, error: undefined as string | undefined };
+  if (!c) return out;
+  if (receipts) {
+    const a = await c.from("client_payments").delete({ count: "exact" }).not("id", "is", null);
+    const b = await c.from("client_receipts").delete({ count: "exact" }).not("id", "is", null);
+    out.receipts = b.count ?? 0;
+    if (a.error && !/does not exist|schema cache/i.test(a.error.message)) out.error = a.error.message;
+    if (b.error && !/does not exist|schema cache/i.test(b.error.message)) out.error = b.error.message;
+  }
+  for (let i = 0; i < trackings.length; i += 100) {
+    const r = await c.from("shipments").delete({ count: "exact" }).in("tracking_number", trackings.slice(i, i + 100));
+    if (r.error) { out.error = r.error.message; break; }
+    out.shipments += r.count ?? 0;
+  }
+  return out;
+}
