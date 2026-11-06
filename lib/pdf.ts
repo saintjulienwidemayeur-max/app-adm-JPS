@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { DISCLAIMER, ESTIMATE_NOTE } from "./disclaimer";
-import { COMPANY, HAITI } from "./company";
+import { COMPANY, HAITI, PAY } from "./company";
 import { cardFees } from "./pricing";
 import { db, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, docLines, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
 
@@ -129,34 +129,55 @@ export async function receiptPdf(w: WR): Promise<Uint8Array> {
 
 // ---------- Invoice ----------
 export async function invoicePdf(w: WR): Promise<Uint8Array> {
-  const d = await Doc.make(), c = custOf(w), M = d.M, CW = d.W - 2 * M;
+  const d = await Doc.make(), c = custOf(w), M = d.M, CW = d.W - 2 * M, R = d.W - M;
   const lbs = r2(w.pieces.reduce((a, p) => a + p.lbs, 0));
   const shipment = db.loads.find((l) => l.wr === w.id)?.shipment ?? "";
-  const ref = ` - Ref. WR: ${w.id} - (${lbs} lbs) - Number Of Pieces: ${w.pieces.length}`;
-  const lines = docLines(w);
-  d.header([COMPANY.name, `${COMPANY.address}, ${COMPANY.city}`, COMPANY.phone]);
-  d.text(`Invoice ${w.invoice ?? ""}`, 0, 20, { bold: true, color: BLUE, right: d.W - M }); d.y -= 30;
-  const meta: [string, string][] = [["Invoice date", w.invoiceDate ?? w.date], ["Shipment ID", shipment || "-"], ["Receipt", wrCode(w)], ["Type", w.ship], ["Status", payStatus(w)], ["Representative", repOf(w.rep)?.initials ?? "-"]];
-  meta.forEach(([k, v], i) => { const x = M + (CW / 3) * (i % 3), yy = d.y - Math.floor(i / 3) * 28; d.page.drawText(safe(k), { x, y: yy - 8, size: 8, font: d.font, color: GREY }); d.page.drawText(safe(v), { x, y: yy - 21, size: 10, font: d.bold, color: BLACK }); });
-  d.y -= 62;
-  const top = d.y;
-  d.text("Bill To", M, 8.5, { color: GREY }); d.y -= 11; d.text(w.customer, M, 10.5, { bold: true }); d.y -= 14;
-  for (const l of [c?.billing, w.email].filter(Boolean) as string[]) d.para(l, M, 240, 9.5);
-  const left = d.y; d.y = top;
-  d.text("Consignee", M + 270, 8.5, { color: GREY }); d.y -= 11; d.text(c?.consignee || w.customer, M + 270, 10.5, { bold: true }); d.y -= 14;
-  d.text([c?.consigneeCity, c?.consigneeCountry].filter(Boolean).join(", "), M + 270, 9.5); d.y = Math.min(left, d.y - 12) - 8;
-  if (w.comments) d.para(`Notes: ${w.comments}`, M, CW, 9.5, { gap: 4 });
-  const cols = [{ w: CW - 190, t: "Description" }, { w: 55, t: "Qty", right: true }, { w: 65, t: "Rate", right: true }, { w: 70, t: "Amount", right: true }];
-  d.row(cols, 9, { head: true });
-  if (!lines.length) d.row([{ w: CW, t: "No fees on this receipt yet." }]);
-  for (const l of lines) d.row([{ w: CW - 190, t: l.desc }, { w: 55, t: String(l.qty ?? "1.00"), right: true }, { w: 65, t: l.rate !== undefined ? money(l.rate) : money(Math.abs(l.amount)), right: true }, { w: 70, t: `${l.amount < 0 ? "-" : ""}${money(Math.abs(l.amount))}`, right: true }]);
-  d.y -= 8;
-  for (const [k, v, b] of [["Total", money(total(w)), true], ["Paid", money(paidAmt(w))], ["Balance", money(balance(w)), true]] as [string, string, boolean?][]) { d.need(16); d.text(k, d.W - M - 190, 10.5, { bold: !!b }); d.text(v, 0, 10.5, { bold: !!b, right: d.W - M }); d.y -= 16; }
-  if (w.payments.length) { d.y -= 6; d.para("Payments received", M, CW, 9.5, { bold: true, gap: 1 }); for (const p of w.payments) d.row([{ w: CW - 90, t: `${p.date} - ${p.method}${p.ref ? ` - ${p.ref}` : ""}` }, { w: 90, t: money(p.amount), right: true }], 8.5); }
-  if (balance(w) > 0) {
-    const card = cardFees(balance(w)); d.y -= 8;
-    d.para(`If paying the balance (${money(balance(w))}) by credit card: ${money(card.invoice.total)} (3% + $0.30 fee = ${money(card.invoice.fee)}, added when the card is used)`, M, CW, 8.5, { color: GREY });
+  const lines = docLines(w), top = d.H - M;
+  // Top: the title on the left, the logo on the right, the invoice number, date, terms and rep under the logo.
+  if (d.logo) { const lw = 120, lh = (lw * d.logo.height) / d.logo.width; d.page.drawImage(d.logo, { x: R - lw, y: top - lh, width: lw, height: lh }); d.y = top - lh - 14; } else d.y = top - 40;
+  d.page.drawText("INVOICE", { x: M + 5, y: d.y - 40, size: 22, font: d.bold, color: BLUE });
+  const meta: [string, string][] = [["INVOICE #", w.invoice ?? ""], ["DATE", w.invoiceDate ?? w.date], ["Terms", "Other"], ["Rep", w.rep || c?.rep || ""]];
+  meta.forEach(([k, v], i) => { const yy = d.y - i * 16; d.page.drawText(safe(k), { x: 330, y: yy - 10, size: 10, font: d.bold }); d.page.drawText(safe(v), { x: 415, y: yy - 10, size: 10, font: d.font, color: i === 3 ? GREY : BLACK }); });
+  d.y -= 80;
+  // Two boxes: Bill To and Consignee.
+  const bh = 92, bw = (CW - 20) / 2, by = d.y;
+  const box = (x: number, title: string, lines2: string[]) => {
+    d.page.drawRectangle({ x, y: by - bh, width: bw, height: bh, borderColor: rgb(0.45, 0.45, 0.5), borderWidth: 0.8 });
+    d.page.drawText(safe(title), { x: x + 5, y: by - 14, size: 10, font: d.bold });
+    let yy = by - 28;
+    for (const l of lines2) for (const ln of d.wrap(l, bw - 12, 8.5)) { if (yy < by - bh + 6) break; d.page.drawText(ln, { x: x + 5, y: yy, size: 8.5, font: d.font, color: GREY }); yy -= 11.5; }
+  };
+  const rc = receiverOf(w);
+  box(M, "BILL TO", [w.customer, c?.billing ?? ""].filter(Boolean));
+  box(M + bw + 20, "CONSIGNEE", toUSA(w) ? [rc.name, rc.address, rc.phone] : [rc.name, [c?.consigneeCity, c?.consigneeCountry].filter(Boolean).join(", "), rc.phone, w.email].filter(Boolean));
+  d.y = by - bh - 14;
+  // The lines: Details, Qty, Rate, Amount.
+  const cols = [{ w: CW - 190, t: "Details" }, { w: 55, t: "Qty", right: true }, { w: 65, t: "Rate", right: true }, { w: 70, t: "", right: true }];
+  d.row(cols, 9, { head: true, border: false });
+  if (!lines.length) d.row([{ w: CW, t: "No fees on this receipt yet." }], 9, { border: false });
+  for (const l of lines) d.row([{ w: CW - 190, t: l.desc.includes("Ref. WR") ? l.desc : `${l.desc}` }, { w: 55, t: String(l.qty ?? "1.00"), right: true }, { w: 65, t: l.rate !== undefined ? money(l.rate) : money(Math.abs(l.amount)), right: true }, { w: 70, t: money(l.amount), right: true }], 9, { border: false });
+  d.y -= 2; d.rule(M, R, 1.6, BLUE); d.y -= 10;
+  // The three totals, blue labels and a box for each amount.
+  for (const [k, v] of [["INVOICE AMOUNT", money(total(w))], ["PAYMENT RECEIVED OR CREDIT APPLIED", money(paidAmt(w))], ["AMOUNT DUE", money(balance(w))]]) {
+    d.need(22);
+    d.page.drawText(k, { x: R - 90 - 8 - d.bold.widthOfTextAtSize(k, 8.5), y: d.y - 12, size: 8.5, font: d.bold, color: rgb(0.1, 0.25, 0.9) });
+    d.page.drawRectangle({ x: R - 90, y: d.y - 17, width: 90, height: 18, color: rgb(0.97, 0.97, 0.98) });
+    d.page.drawText(v, { x: R - 6 - d.font.widthOfTextAtSize(v, 9), y: d.y - 12, size: 9, font: d.font });
+    d.y -= 24;
   }
-  d.y -= 8; d.para("Thank you for your business. Questions? Write to us or call " + COMPANY.phone + ".", M, CW, 9, { color: GREY });
+  void lbs;
+  // The foot of the page: how to pay, the pick-up address, a QR code to pay online, the shipment name.
+  const fy = 150; let yy = fy;
+  const small = (s: string, x: number, bold = false, size = 6.5) => { d.page.drawText(safe(s), { x, y: yy, size, font: bold ? d.bold : d.font }); yy -= 8.6; };
+  small("Payment Options", M, false, 6.5);
+  small(`•  Make Check payable to '${PAY.checkTo}'`, M + 4);
+  small(`•  Zelle to ${PAY.zelle}`, M + 4);
+  small("•  For Credit Card Payment process fees applies, please, ask for a payment link", M + 4);
+  small("•  Local Wire Transfer to:", M + 4);
+  small(`${PAY.us.name} \\ ${PAY.us.bank}`, M + 22); small(`Routing: ${PAY.us.routing} \\ Account: ${PAY.us.account}`, M + 22);
+  small(`Pick Up address: ${HAITI.address}, ${HAITI.city}`, M); small(`Phone: ${HAITI.phone}`, M);
+  small("Thank You for your business!", M, true); small("JP's Logistics And More", M, true);
+  
+  if (shipment) d.page.drawText(safe(shipment), { x: R - d.bold.widthOfTextAtSize(safe(shipment), 7.5), y: 55, size: 7.5, font: d.bold });
   return d.bytes();
 }
