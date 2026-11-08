@@ -69,7 +69,7 @@ export type Prealert = {
 };
 export type Load = { shipment: string; pallet: string; wr: string; no: number; date: string; here?: string; by?: string; hereBy?: string };
 // `dir`: "USA" = goes from Haiti to Miami (absent = Miami to Haiti, as before).
-export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string; shippedBy?: string; dir?: "USA" };
+export type Shipment = { name: string; ship: Ship; cargoId: string; date: string; shipped?: string; shippedBy?: string; dir?: "USA" | "DR" };
 
 // Booking info of a shipment (the old "Shipment Booking Info" form). It feeds the Bill of Lading,
 // the Shipper's Letter of Instruction and the cargo list.
@@ -114,6 +114,16 @@ export const US_DEST = "Miami";
 export const siteUSA = () => db.settings.siteDirection === true;
 export const toUSA = (w: { dest?: string }) => w.dest === US_DEST;
 export const shToUSA = (sh: { dir?: string } | undefined) => sh?.dir === "USA";
+// Dominican Republic: a receipt whose destination is "Saint Domingue" goes to the DR (SDQ); a shipment made for those receipts has dir "DR".
+export const DR_DEST = "Saint Domingue";
+export const toDR = (w: { dest?: string }) => w.dest === DR_DEST;
+export const shToDR = (sh: { dir?: string } | undefined) => sh?.dir === "DR";
+// The direction of a receipt / of a shipment: "USA", "DR" or "" (Miami to Haiti, as before). A receipt can only go in a shipment with the same direction.
+export const wrDir = (w: { dest?: string }): "USA" | "DR" | "" => (toUSA(w) ? "USA" : toDR(w) ? "DR" : "");
+export const shDir = (sh: { dir?: string } | undefined): "USA" | "DR" | "" => (sh?.dir === "USA" ? "USA" : sh?.dir === "DR" ? "DR" : "");
+export const dirLabel = (d: "USA" | "DR" | "") => (d === "USA" ? "Haiti -> Miami" : d === "DR" ? "Miami -> DR (SDQ)" : "Miami -> Haiti");
+// What the shipping method is called for the customer: "Air DR" / "Ocean DR" for the Dominican Republic, else Air / Ocean.
+export const shipName = (w: { ship: string; dest?: string }) => (toDR(w) ? `${w.ship} DR` : w.ship);
 const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "");
 const ALIASES: Record<string, string> = { pap: "Port-au-Prince", portauprince: "Port-au-Prince", capehaitien: "Cap Haitien", caphaitien: "Cap Haitien", cap: "Cap Haitien", lescayes: "Cayes", cayes: "Cayes", stmarc: "St Marc", saintmarc: "St Marc", jeremie: "Jeremie", santodomingo: "Saint Domingue", saintdomingue: "Saint Domingue", stdomingue: "Saint Domingue", miragoane: "Miragoane", hinche: "Hinche", miami: "Miami", miamifl: "Miami", miamiflorida: "Miami" };
 // The destination a customer's consignee city points to (the usual one when it is not recognised).
@@ -276,7 +286,7 @@ export const freightQty = (w: WR) => r2(w.pieces.reduce((a, p) => a + (w.ship ==
 // What the receipt says about the size of the shipment, as the system figures it: Ocean = Total Cubic Feet, Air = Total Weight (the pounds the price is made from).
 export const totalMeasure = (w: WR) => (w.ship === "Ocean" ? { key: "cuft" as const, label: "Total Cubic Feet", value: `${freightQty(w)} cu ft` } : { key: "weight" as const, label: "Total Weight", value: `${freightQty(w)} lb` });
 export const freightFee = (w: WR) => ((w.rate ?? 0) > 0 ? (w.pieces.some(legacyRound) ? r2o : r2)(freightQty(w) * (w.rate ?? 0)) : 0);
-export const freightDesc = (w: WR) => `Freight Charges - Ref. WR: ${w.id} - (${freightQty(w)} ${w.ship === "Ocean" ? "cuf" : "lbs"}) - Number Of Pieces: ${w.pieces.length}`;
+export const freightDesc = (w: WR) => `Freight Charges${toDR(w) ? ` (${shipName(w).toUpperCase()})` : ""} - Ref. WR: ${w.id} - (${freightQty(w)} ${w.ship === "Ocean" ? "cuf" : "lbs"}) - Number Of Pieces: ${w.pieces.length}`;
 export const charges = (w: WR) => r2(freightFee(w) + w.fees.filter((f) => f.kind === "charge").reduce((a, f) => a + f.amount, 0));
 export const credits = (w: WR) => r2(w.fees.filter((f) => f.kind === "credit").reduce((a, f) => a + f.amount, 0));
 export const quote = (w: WR) => calcInsurance(w.declared);

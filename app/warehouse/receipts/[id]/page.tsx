@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { listDocs } from "@/lib/persist";
-import { db, shToUSA, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
+import { db, shipName, shDir, wrDir, shToUSA, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, custOf, shipperOf, receiverOf, toUSA, creditOf, freightFee, freightQty, freightDesc, noticeState, lastNotice, estimateFor, otherShip, defaultRate, DESTINATIONS, destLabel, destOf } from "@/lib/wh-store";
 import { CompareShip } from "@/components/compare-ship";
 import { cardFees } from "@/lib/pricing";
 import { NotifyForm } from "@/components/notify";
@@ -36,7 +36,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <main className="mx-auto max-w-5xl px-4 py-6">
       <Link href="/warehouse/receipts" className="text-sm text-brand underline">All receipts</Link>
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-        <h1>{code} · {w.customer} <span className="text-base font-normal text-zinc-600">· {w.ship} · {w.date}{w.route && ` · ${w.route}`}</span>{toUSA(w) && <span className="ml-2 rounded bg-sky-100 px-2 py-0.5 align-middle text-xs font-semibold text-sky-800">Haiti → Miami</span>}</h1>
+        <h1>{code} · {w.customer} <span className="text-base font-normal text-zinc-600">· {shipName(w)} · {w.date}{w.route && ` · ${w.route}`}</span>{toUSA(w) && <span className="ml-2 rounded bg-sky-100 px-2 py-0.5 align-middle text-xs font-semibold text-sky-800">Haiti → Miami</span>}</h1>
         <div className="flex flex-wrap gap-2">
           <Link href={`/warehouse/receipts/${w.id}/report`} className={lnk}>View receipt</Link>
           <a href={`/warehouse/receipts/${w.id}/pdf`} target="_blank" className={lnk}>Download PDF</a>
@@ -117,7 +117,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <h2 className="font-bold">Cargo</h2>
         {(() => {
           const loaded = db.loads.filter((l) => l.wr === w.id), onCargo = [...new Set(loaded.map((l) => l.shipment))];
-          const open = db.shipments.filter((x) => !x.shipped && x.ship === w.ship && shToUSA(x) === toUSA(w));
+          const open = db.shipments.filter((x) => !x.shipped && x.ship === w.ship && shDir(x) === wrDir(w));
           const todo = w.pieces.filter((p) => !loaded.some((l) => l.no === p.no)).length;
           return <>
             <p className="mt-1 text-xs text-zinc-600">{onCargo.length ? <>On {onCargo.map((n) => <Link key={n} href={`/warehouse/shipments/${encodeURIComponent(n)}`} className="text-brand underline">{n}</Link>)} ({loaded.length} of {w.pieces.length} pieces).</> : "Not on a cargo yet."}</p>

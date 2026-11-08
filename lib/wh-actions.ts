@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { actor } from "./actor";
 import { waParcel, waNowReceipt, waNowStatus, waFailed, waSay } from "./whatsapp";
 import { receiptPdf } from "./pdf";
-import { db, isCardMethod, addCardFee, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
+import { db, wrDir, shDir, dirLabel, toDR, isCardMethod, addCardFee, siteUSA, findPiece, nowStr, balance, money, wrCode, r2, findCustomer, newCustomer, openWR, repOf, insuranceFee, openBooking, cargoOf, timeNow, creditOf, custOf, newOrderId, orderBalance, orderSubtotal, orderTotal, ORDER_FEE_PCT, ORDER_STATUSES, type Order, type OrderStatus, SLI_SERVICES, type Item, type Customer, effectiveShip, type Pickup, type PickupStatus, type Prealert, rateFor, DESTINATIONS, destOf, US_DEST, toUSA, shToUSA, freightFee, OCEAN_HANDLING, HANDLING_LABEL, wrSig, PICKUP_STATUSES, PICKUP_FEE, pickupFeeLine, remember as rememberName, type Ship, type WR, type Fee, type Shipment, charges, similarCustomers, priced } from "./wh-store";
 import { clearSiteTestData, syncEnabled, findClientId, pushStatus, sitePrealerts, markSitePrealertReceived, siteEstimate, markSiteEstimateAnswered, mailOne, mailTo, mailEnabled } from "./jps-sync";
 import { adoptSitePrealert } from "./prealert-sync";
 import { act } from "./act";
@@ -865,7 +865,7 @@ export const createShipment = act("createShipment", async (f: F) => {
   const name = s(f, "name").replace(/\s+/g, " ");
   if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(name)) back(SH, { err: "Name the shipment with letters, numbers, spaces, dots, dashes or underscores (40 characters max), for example PL-AIR-10-06-2026." });
   if (db.shipments.some((x) => x.name.toLowerCase() === name.toLowerCase())) back(SH, { err: `${name} already exists.` });
-  const sh: Shipment = { name, ship: shipOf(s(f, "ship")), cargoId: String(db.n.cargo++), date: nowStr(), ...(s(f, "dir") === "USA" && { dir: "USA" as const }) };
+  const sh: Shipment = { name, ship: shipOf(s(f, "ship")), cargoId: String(db.n.cargo++), date: nowStr(), ...(s(f, "dir") === "USA" && { dir: "USA" as const }), ...(s(f, "dir") === "DR" && { dir: "DR" as const }) };
   db.shipments.push(sh);
   openBooking(sh);
   back(shipPath(name), { ok: `Shipment ${name} created (Cargo ID ${sh.cargoId}).` });
@@ -912,7 +912,7 @@ export const loadReceipts = act("loadReceipts", async (f: F) => {
     const code = wrCode(w);
     if (!w.pieces.length) { bad.push(`${code} has no pieces yet`); continue; }
     if (w.ship !== sh!.ship) { bad.push(`${code} is ${w.ship} but ${shipment} is ${sh!.ship}`); continue; }
-    if (toUSA(w) !== shToUSA(sh)) { bad.push(`${code} goes ${toUSA(w) ? "to Miami" : "to Haiti"} but ${shipment} goes ${shToUSA(sh) ? "Haiti -> Miami" : "Miami -> Haiti"}`); continue; }
+    if (wrDir(w) !== shDir(sh)) { bad.push(`${code} goes ${dirLabel(wrDir(w))} but ${shipment} goes ${dirLabel(shDir(sh))}`); continue; }
     const todo = w.pieces.filter((p) => !db.loads.some((l) => l.no === p.no));
     if (!todo.length) { bad.push(`${code} is already loaded`); continue; }
     for (const p of todo) db.loads.push({ shipment, pallet, wr: w.id, no: p.no, date: nowStr(), by: actor() });
@@ -931,10 +931,10 @@ export const loadPiece = act("loadPiece", async (f: F) => {
   let sh = db.shipments.find((x) => x.name === shipment);
   // A shipment is made on its own page, or by the first piece on the suggested name of the day. Any other unknown name is a typo (it would open a second shipment).
   if (!sh && db.shipments.some((x) => !x.shipped && x.ship === ship) && !/^(PL-AIR|CT-OCEAN)-\d\d-\d\d-\d{4}$/.test(shipment)) back(PL, { ...q, err: `There is no shipment named "${shipment}". Open shipments: ${db.shipments.filter((x) => !x.shipped && x.ship === ship).map((x) => x.name).join(", ")}. Pick one from the list, or create a new one on the Shipments page.` });
-  if (!sh) { sh = { name: shipment, ship, cargoId: String(db.n.cargo++), date: nowStr(), ...(toUSA(hit!.w) && { dir: "USA" as const }) }; db.shipments.push(sh); }
+  if (!sh) { sh = { name: shipment, ship, cargoId: String(db.n.cargo++), date: nowStr(), ...(toUSA(hit!.w) && { dir: "USA" as const }), ...(toDR(hit!.w) && { dir: "DR" as const }) }; db.shipments.push(sh); }
   if (sh.shipped) back(PL, { ...q, err: `${shipment} was already shipped.` });
   if (hit!.w.ship !== sh.ship) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} is ${hit!.w.ship} but ${shipment} is ${sh.ship}.` });
-  if (toUSA(hit!.w) !== shToUSA(sh)) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} goes ${toUSA(hit!.w) ? "to Miami" : "to Haiti"} but ${shipment} goes ${shToUSA(sh) ? "Haiti -> Miami" : "Miami -> Haiti"}. Use a ${toUSA(hit!.w) ? "Haiti -> Miami" : "Miami -> Haiti"} shipment.` });
+  if (wrDir(hit!.w) !== shDir(sh)) back(PL, { ...q, ship: sh.ship, err: `Piece ${no} goes ${dirLabel(wrDir(hit!.w))} but ${shipment} goes ${dirLabel(shDir(sh))}. Use a ${dirLabel(wrDir(hit!.w))} shipment.` });
   db.loads.push({ shipment, pallet, wr: hit!.w.id, no, date: nowStr(), by: actor() });
   back(PL, { ...q, ship: sh.ship, ok: String(no) });
 });

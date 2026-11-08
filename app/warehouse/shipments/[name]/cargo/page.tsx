@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, openBooking, cargoOf, receiverOf, cuft, chargeable, wrCode, r2, shToUSA } from "@/lib/wh-store";
+import { db, openBooking, cargoOf, receiverOf, cuft, chargeable, wrCode, r2, shToUSA, shDir, dirLabel } from "@/lib/wh-store";
 import { shortDate } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
 
@@ -21,7 +21,7 @@ export default async function Page({ params }: { params: Promise<{ name: string 
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
         <div><dt className="text-xs text-zinc-500">Shipment</dt><dd className="font-semibold"><Link href={`/warehouse/shipments/${encodeURIComponent(name)}`} className="text-brand underline print:no-underline">{name}</Link></dd></div>
-        <div><dt className="text-xs text-zinc-500">Ship type</dt><dd>{sh.ship} · {shToUSA(sh) ? "Haiti → Miami" : "Miami → Haiti"}</dd></div>
+        <div><dt className="text-xs text-zinc-500">Ship type</dt><dd>{sh.ship} · {dirLabel(shDir(sh)).replace(/->/g, "→")}</dd></div>
         <div><dt className="text-xs text-zinc-500">{sh.ship === "Air" ? "Airline" : "Shipping line"}</dt><dd>{b.line || "–"}</dd></div>
         <div><dt className="text-xs text-zinc-500">{sh.ship === "Air" ? "Flight date" : "Sailing date"}</dt><dd>{shortDate(b.sailDate) || "–"}</dd></div>
       </dl>

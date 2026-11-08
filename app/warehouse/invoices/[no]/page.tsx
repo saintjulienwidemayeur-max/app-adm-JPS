@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { markInvoiceSent, cancelInvoice } from "@/lib/wh-actions";
-import { db, docLines, custOf, repOf, wrCode, total, paidAmt, balance, payStatus, money, insuranceFee, quote, r2, freightFee, freightQty, freightDesc } from "@/lib/wh-store";
+import { db, shipName, docLines, custOf, repOf, wrCode, total, paidAmt, balance, payStatus, money, insuranceFee, quote, r2, freightFee, freightQty, freightDesc } from "@/lib/wh-store";
 import { cardFees } from "@/lib/pricing";
 import { shortDate } from "@/lib/fmt";
 import { PrintButton } from "@/components/print-button";
@@ -37,7 +37,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <div><dt className="text-xs text-zinc-500">Invoice date</dt><dd className="font-medium">{shortDate(w.invoiceDate ?? w.date)}</dd></div>
         <div><dt className="text-xs text-zinc-500">Shipment ID</dt><dd className="font-medium">{shipment || "–"}</dd></div>
         <div><dt className="text-xs text-zinc-500">Receipt</dt><dd className="font-medium">{wrCode(w)}</dd></div>
-        <div><dt className="text-xs text-zinc-500">Type</dt><dd>{w.ship}</dd></div>
+        <div><dt className="text-xs text-zinc-500">Type</dt><dd>{shipName(w)}</dd></div>
         <div><dt className="text-xs text-zinc-500">Status</dt><dd>{payStatus(w)}</dd></div>
         <div><dt className="text-xs text-zinc-500">Representative</dt><dd>{repOf(w.rep)?.initials ?? "–"}</dd></div>
       </dl>
