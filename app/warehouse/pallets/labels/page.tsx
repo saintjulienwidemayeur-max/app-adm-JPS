@@ -10,7 +10,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
     const ps = loads.filter((l) => l.pallet === name).map((l) => findPiece(l.no)!.p);
     const lbs = r2(ps.reduce((a, p) => a + p.lbs, 0));
     return {
-      code: `${shipment}|${name}`, ship: sh?.ship ?? "Air", route: `Cargo ${sh?.cargoId ?? ""}`, ...(shToUSA(sh) && { to: "TO MIAMI" }),
+      code: `${shipment}|${name}`, ship: sh?.ship ?? "Air", route: `Cargo ${sh?.cargoId ?? ""}`, ...(shToUSA(sh) && { to: "TO MIAMI" }), ...(sh?.dir === "DR" && { to: "TO DR" }),
       rows: [["Pieces", String(ps.length)], ["Weight", `${lbs} lb`], ["Chargeable", `${r2(ps.reduce((a, p) => a + chargeable(p), 0))} lb`], ["Weight", `${r2(lbs * 0.45359)} KG`]] as [string, string][],
     };
   });

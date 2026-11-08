@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { isoToday } from "@/lib/clock";
-import { db, findPiece, chargeable, r2, wrCode, shToUSA } from "@/lib/wh-store";
+import { db, findPiece, chargeable, r2, wrCode, shToUSA, shToDR } from "@/lib/wh-store";
 import { loadPiece, unloadPiece, shipCargo } from "@/lib/wh-actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,8 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   const d = new Date(`${isoToday()}T12:00`), ship = q.ship === "Ocean" ? "Ocean" : "Air";
   const stamp = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}-${d.getFullYear()}`;
   const usa = shToUSA(db.shipments.find((x) => x.name === q.shipment)) || (!q.shipment && q.dir === "USA"); // Haiti -> Miami: the first piece loaded makes the shipment go that way
-  const shipment = q.shipment || (usa ? (ship === "Air" ? `PL-AIR-HT-${stamp}` : `CT-OCEAN-HT-${stamp}`) : ship === "Air" ? `PL-AIR-${stamp}` : `CT-OCEAN-${stamp}`);
+  const dr = shToDR(db.shipments.find((x) => x.name === q.shipment)) || (!q.shipment && q.dir === "DR"); // Miami -> DR (SDQ)
+  const shipment = q.shipment || (dr ? (ship === "Air" ? `PL-AIR-DR-${stamp}` : `CT-OCEAN-DR-${stamp}`) : usa ? (ship === "Air" ? `PL-AIR-HT-${stamp}` : `CT-OCEAN-HT-${stamp}`) : ship === "Air" ? `PL-AIR-${stamp}` : `CT-OCEAN-${stamp}`);
   const pallet = q.pallet || (ship === "Air" ? "Pallet 1" : "Container 1");
   const sh = db.shipments.find((x) => x.name === shipment);
   const rows = db.loads.filter((l) => l.shipment === shipment).flatMap((l) => { const hit = findPiece(l.no); return hit ? [{ l, p: hit.p }] : []; }).reverse(); // the last scanned piece is on top
@@ -27,7 +28,7 @@ export default async function Page({ searchParams }: { searchParams: SP }) {
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
       <h1>Load pallet or container</h1>
-      <p className="text-sm text-zinc-600">Cargo going {usa ? <b>Haiti → Miami</b> : <b>Miami → Haiti</b>}. <Link href={`/warehouse/pallets?${new URLSearchParams({ ship, ...(!usa && { dir: "USA" }) })}`} className="text-brand underline">Switch to {usa ? "Miami → Haiti" : "Haiti → Miami"}</Link> (pieces of receipts going to Miami can only be loaded on a Haiti → Miami shipment).</p>
+      <p className="text-sm text-zinc-600">Cargo going {usa ? <b>Haiti → Miami</b> : dr ? <b>Miami → DR (SDQ)</b> : <b>Miami → Haiti</b>}. <Link href={`/warehouse/pallets?${new URLSearchParams({ ship, ...(!dr && { dir: "DR" }) })}`} className="text-brand underline">{dr ? "Back to Miami → Haiti" : "Miami → DR (SDQ)"}</Link> · <Link href={`/warehouse/pallets?${new URLSearchParams({ ship, ...(!usa && { dir: "USA" }) })}`} className="text-brand underline">Switch to {usa ? "Miami → Haiti" : "Haiti → Miami"}</Link> (pieces of receipts going to Miami can only be loaded on a Haiti → Miami shipment).</p>
       <form action={loadPiece} className="mt-4 grid gap-2 rounded-lg border p-3 sm:grid-cols-[6rem_1.2fr_1fr_1.5fr_auto]">
         <select name="ship" defaultValue={sh?.ship ?? ship} aria-label="Ship type" className="h-9 rounded-md border bg-white px-2 text-sm"><option>Air</option><option>Ocean</option></select>
         <Input name="shipment" list="shipments" defaultValue={shipment} aria-label="Shipment" />

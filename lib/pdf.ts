@@ -6,7 +6,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
 import { DISCLAIMER, ESTIMATE_NOTE } from "./disclaimer";
 import { COMPANY, HAITI, PAY } from "./company";
 import { cardFees } from "./pricing";
-import { db, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, docLines, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
+import { db, shipName, totalMeasure, vol, cuft, chargeable, r2, charges, credits, quote, insuranceFee, total, paidAmt, balance, payStatus, money, wrCode, docLines, custOf, shipperOf, receiverOf, toUSA, freightFee, freightQty, freightDesc, contentsOf, repOf, type WR } from "./wh-store";
 
 const MAP: Record<string, string> = { "−": "-", "–": "-", "—": "-", "·": "-", "•": "*", "‘": "'", "’": "'", "“": '"', "”": '"', "…": "...", "→": "->", "×": "x", "≥": ">=", "€": "EUR", " ": " " };
 const safe = (s: unknown) => String(s ?? "").normalize("NFC").replace(/[^\x20-\x7e¡-ÿ]/g, (c) => MAP[c] ?? (c === "\n" ? " " : "?"));
@@ -81,7 +81,7 @@ export async function receiptPdf(w: WR): Promise<Uint8Array> {
   const d = await Doc.make(), c = custOf(w), M = d.M, CW = d.W - 2 * M;
   const sh = shipperOf(w), rc = receiverOf(w), consignee = rc.name, place = [c?.consigneeCity, c?.consigneeCountry].filter(Boolean).join(", "), phone = rc.phone;
   const office = toUSA(w) ? HAITI : COMPANY; // received at the Haiti office when it goes to the USA
-  d.header([longDate(w.date), COMPANY.name, `${office.address}, ${office.city}`, office.phone]);
+  d.header([longDate(w.date), COMPANY.name, ...(toUSA(w) ? [`${office.address}, ${office.city}`] : []), office.phone]); // no Miami street address on the receipt (the Haiti office is shown for parcels going to Miami)
   d.y -= 4; d.text("Warehouse Receipt", 0, 20, { bold: true, right: d.W / 2 + d.width("Warehouse Receipt", 20, true) / 2 }); d.y -= 30;
   const top = d.y;
   d.text("Shipper", M, 9, { color: GREY }); d.text(`${sh.name} (customer ${w.cust})`, M + 48, 10, { bold: true }); d.y -= 14;
@@ -92,7 +92,7 @@ export async function receiptPdf(w: WR): Promise<Uint8Array> {
   const afterLeft = d.y; d.y = top;
   d.page.drawRectangle({ x: d.W - M - 150, y: d.y - 34, width: 150, height: 34, borderColor: GREY, borderWidth: 1.5 });
   d.text("WR #", 0, 9, { color: GREY, right: d.W - M - 150 + 38 }); d.page.drawText(safe(wrCode(w)), { x: d.W - M - 108, y: d.y - 23, size: 15, font: d.bold, color: BLACK });
-  d.y -= 44; d.text(`Ship Type: ${w.ship}   Type: ${w.kind ?? "Personal"}${w.dest ? `   To: ${w.dest}` : ""}${w.route ? `   Route: ${w.route}` : ""}`, 0, 9.5, { right: d.W - M }); d.y = Math.min(afterLeft, d.y - 14) - 10;
+  d.y -= 44; d.text(`Ship Type: ${shipName(w)}   Type: ${w.kind ?? "Personal"}${w.dest ? `   To: ${w.dest}` : ""}${w.route ? `   Route: ${w.route}` : ""}`, 0, 9.5, { right: d.W - M }); d.y = Math.min(afterLeft, d.y - 14) - 10;
   // pieces
   const cols = [{ w: 48, t: "Item #" }, { w: 215, t: "Description" }, { w: 55, t: "Weight", right: true }, { w: 45, t: "CUFT", right: true }, { w: CW - 363, t: "Contents" }];
   d.row(cols, 9, { head: true });

@@ -4,7 +4,7 @@
 //   WAAPI_INSTANCE_ID  the id of the WhatsApp instance (optional: the first instance of the account is used when it is not set)
 //   WAAPI_BASE_URL     optional, default https://waapi.app/api/v1
 // Turned on in Administration > WhatsApp. A customer can be switched off on the customer's page. Every message is logged (E-mail history).
-import { db, totalMeasure, nowStr, timeNow, wrCode, total, money, toUSA, type WR, type Customer } from "./wh-store";
+import { db, toDR, totalMeasure, nowStr, timeNow, wrCode, total, money, toUSA, type WR, type Customer } from "./wh-store";
 import { flush } from "./persist";
 import { HAITI, COMPANY } from "./company";
 
@@ -144,7 +144,7 @@ export function waPartial(w: WR, here: string[], missing: string[]) {
 
 // ---- the moments (called next to the e-mails) ----
 type FileOf = () => Promise<WaFile | undefined>;
-const shipOf = (w: WR, l: Lang) => (w.ship === "Air" ? { fr: "Par avion", en: "By air", es: "Por avión" }[l] : { fr: "Par bateau", en: "By ocean", es: "Por barco" }[l]);
+const shipOf = (w: WR, l: Lang) => (w.ship === "Air" ? { fr: "Par avion", en: "By air", es: "Por avión" }[l] : { fr: "Par bateau", en: "By ocean", es: "Por barco" }[l]) + (toDR(w) ? " (DR)" : "");
 const lbsOf = (w: WR) => Math.round(w.pieces.reduce((a, p) => a + p.lbs, 0) * 100) / 100;
 const receiptText = (w: WR, c: Customer | undefined, withPdf: boolean, link = "") => { const l = langOf(c); return waText("receipt", l, { name: w.customer, code: wrCode(w), pieces: w.pieces.length, lbs: lbsOf(w), total: money(total(w)), ship: shipOf(w, l), withPdf, measure: [({ fr: { cuft: "Total pieds cubes", weight: "Poids total" }, en: { cuft: "Total Cubic Feet", weight: "Total Weight" }, es: { cuft: "Total pies cúbicos", weight: "Peso total" } } as const)[l][totalMeasure(w).key], totalMeasure(w).value], ...(link && { payUrl: link }) }); };
 const invoiceText = (w: WR, c: Customer | undefined, balance: number, withPdf: boolean, link = "") => waText("invoice", langOf(c), { name: w.customer, code: wrCode(w), inv: w.invoice, total: money(total(w)), balance: money(Math.max(0, balance)), withPdf, ...(balance > 0.004 && link && { payUrl: link }) });
