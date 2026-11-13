@@ -149,7 +149,7 @@ const hasAccount = (w: WR) => !!custOf(w)?.clientId || db.items.some((i) => i.wr
 export type ParcelLine = { carrier: string; tracking: string };
 // The e-mail "your parcel(s) arrived", ONE per customer for a whole delivery (the owner's text, adapted for one or several parcels): how many, then the tracking numbers by carrier.
 export function parcelArrivedMail(lang: Lang, name: string, items: ParcelLine[], office?: "Haiti"): { subject: string; message: string } {
-  const n = items.length, one = n === 1, haiti = office === "Haiti", EMAIL = "jpslogisticsmiami@gmail.com";
+  const n = items.length, one = n === 1, haiti = office === "Haiti", EMAIL = haiti ? HAITI.email : "jpslogisticsmiami@gmail.com";
   const groups = new Map<string, string[]>();
   for (const i of items) { const k = (i.carrier || "—").toUpperCase(); (groups.get(k) ?? groups.set(k, []).get(k)!).push(i.tracking); }
   const list = (colon: string) => [...groups].map(([k, t]) => `==> ${k}${colon}\n${t.map((x, j) => `- ${x}${j === t.length - 1 ? "." : ";"}`).join("\n")}`).join("\n\n");
