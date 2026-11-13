@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { db, openBooking, cargoOf, wrCode, r2, shToUSA, toUSA, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
+import { daysSince } from "@/lib/clock";
+import { db, openBooking, cargoOf, wrCode, r2, shToUSA, toUSA, wrDir, shDir, dirLabel, SLI_SERVICES, SLI_PAYMENTS } from "@/lib/wh-store";
 import { currentUser } from "@/lib/users";
 import { ConfirmSubmit } from "@/components/confirm-submit";
 import { NotifyForm } from "@/components/notify";
@@ -42,11 +43,15 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <p className="mt-1 text-sm text-zinc-600">{c.rows.length} piece{c.rows.length === 1 ? "" : "s"} loaded on {c.pallets.length} pallet{c.pallets.length === 1 ? "" : "s"} · {c.lbs} lb ({c.kg} kg) · {c.cuft} cuft. Save the booking, then open a document: it prints what is saved here.</p>
 
       {!sh.shipped && (() => {
-        const waiting = db.wrs.filter((w) => w.pieces.length > 0 && w.ship === sh.ship && toUSA(w) === usa && w.pieces.some((p) => !db.loads.some((l) => l.no === p.no)));
+        const loaded = new Set(db.loads.map((l) => l.no)), fits = (w: (typeof db.wrs)[number]) => w.ship === sh.ship && wrDir(w) === shDir(sh);
+        const waiting = db.wrs.filter((w) => w.pieces.length > 0 && fits(w) && w.pieces.some((p) => !loaded.has(p.no)));
+        // Recent receipts that are NOT in the list, each with the reason (so nobody wonders where a receipt went).
+        const why = (w: (typeof db.wrs)[number]) => !w.pieces.length ? "it has no pieces yet (add its pieces first)" : w.ship !== sh.ship ? `it is ${w.ship} and this cargo is ${sh.ship}` : wrDir(w) !== shDir(sh) ? `it goes ${dirLabel(wrDir(w))} and this cargo goes ${dirLabel(shDir(sh))}` : !w.pieces.some((p) => !loaded.has(p.no)) ? `all its pieces are already loaded on ${[...new Set(db.loads.filter((l) => l.wr === w.id).map((l) => l.shipment))].join(", ") || "a cargo"}` : "";
+        const hidden = db.wrs.filter((w) => !waiting.includes(w) && daysSince(w.date) <= 30 && !w.estimate).sort((a, b) => Number(b.id) - Number(a.id)).slice(0, 40).map((w) => ({ w, r: why(w) })).filter((x) => x.r);
         return (
           <section className="mt-4 rounded-lg border p-3">
             <h2 className="font-bold">Add receipts to this cargo</h2>
-            <p className="text-xs text-zinc-600">Every piece of the receipts you tick goes on this {air ? "flight" : "vessel"} at once (no need to scan each piece). Only {sh.ship} receipts going {usa ? "Haiti → Miami" : "Miami → Haiti"} are listed.</p>
+            <p className="text-xs text-zinc-600">Every piece of the receipts you tick goes on this {air ? "flight" : "vessel"} at once (no need to scan each piece). Only {sh.ship} receipts going {dirLabel(shDir(sh)).replace(/->/g, "→")} are listed.</p>
             <form action={loadReceipts} className="mt-2 grid gap-2">
               <input type="hidden" name="shipment" value={name} />
               {waiting.length === 0 ? <p className="text-sm text-zinc-600">No {sh.ship} receipt is waiting for a cargo.</p> : (
@@ -54,6 +59,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   {waiting.map((w) => <label key={w.id} className="flex cursor-pointer items-center gap-2 border-b border-zinc-100 px-2 py-1 text-sm hover:bg-zinc-50"><input type="checkbox" name="wr" value={w.id} /> <b>{wrCode(w)}</b> <span className="text-zinc-600">{w.customer}</span> <span className="ml-auto text-xs text-zinc-500">{w.pieces.filter((p) => !db.loads.some((l) => l.no === p.no)).length} piece(s)</span></label>)}
                 </div>
               )}
+              {hidden.length > 0 && <details className="text-xs text-zinc-600"><summary className="cursor-pointer font-medium text-brand">Receipts of the last 30 days that are not in this list ({hidden.length}): why</summary><ul className="mt-1 grid gap-0.5">{hidden.map(({ w, r }) => <li key={w.id}><b>{wrCode(w)}</b> {w.customer}: {r}.</li>)}</ul></details>}
               <div className="flex flex-wrap items-end gap-2">
                 <label className="grid gap-1 text-xs font-medium text-zinc-600">Pallet / container<Input name="pallet" defaultValue="P1" className="w-32" /></label>
                 <label className="grid gap-1 text-xs font-medium text-zinc-600">Or type receipt numbers<Input name="wrs" placeholder="JPF-11028, JPF-11029" className="w-64" /></label>
